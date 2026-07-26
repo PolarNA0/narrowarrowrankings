@@ -45,7 +45,8 @@ export async function fetchLeaderboard(
     return leaderboardCache[levelId].data;
   }
 
-  if (inflight[levelId]) return inflight[levelId];
+  const pending = inflight[levelId] as Promise<LeaderboardEntry[]> | undefined;
+  if (pending) return pending;
   const promise = requestLeaderboard(levelId).finally(() => {
     delete inflight[levelId];
   });
