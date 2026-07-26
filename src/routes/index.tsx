@@ -13,11 +13,11 @@ export const Route = createFileRoute("/")({
         content:
           "Live Narrow Arrow leaderboards, player profiles, rank assignments, comparisons and custom level browsing.",
       },
-      { property: "og:title", content: "Narrow Arrow Rankings" },
+      { property: "og:title", content: "Narrow Arrow Rankings — Leaderboards & Player Ranks" },
       {
         property: "og:description",
         content:
-          "Live Narrow Arrow leaderboards, player profiles, rank assignments and level comparisons.",
+          "Live Narrow Arrow leaderboards, player profiles, rank assignments, comparisons and custom level browsing.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

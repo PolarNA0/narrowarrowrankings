@@ -77,14 +77,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Narrow Arrow Rankings" },
-      { name: "description", content: "Leaderboards, ranks and player stats for the Narrow Arrow game." },
+      { title: "Narrow Arrow Rankings — Leaderboards & Player Ranks" },
+      { name: "description", content: "Live Narrow Arrow leaderboards, player profiles, rank assignments, comparisons and custom level browsing." },
       
-      { property: "og:title", content: "Narrow Arrow Rankings" },
-      { property: "og:description", content: "Leaderboards, ranks and player stats for the Narrow Arrow game." },
+      { property: "og:title", content: "Narrow Arrow Rankings — Leaderboards & Player Ranks" },
+      { property: "og:description", content: "Live Narrow Arrow leaderboards, player profiles, rank assignments, comparisons and custom level browsing." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Narrow Arrow Rankings — Leaderboards & Player Ranks" },
+      { name: "twitter:description", content: "Live Narrow Arrow leaderboards, player profiles, rank assignments, comparisons and custom level browsing." },
     ],
     links: [
       {
