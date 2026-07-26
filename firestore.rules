@@ -1,0 +1,104 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: configs
+// Document ID: ranks (global) or levels/{levelId}
+// Fields:
+//   - ranks: map (required) - Map of rank names to settings { name, color, bgColor, borderColor, percentile }
+//   - updatedAt: timestamp (required)
+//   - updatedBy: string (optional)
+//
+// Collection: users
+// Document ID: {userId}
+// Fields:
+//   - email: string (required)
+//   - role: string (required) - 'admin' or 'user'
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         ((request.auth.token.email == "sirsamyou@gmail.com" || request.auth.token.email == "polarusx@gmail.com") && request.auth.token.email_verified == true));
+    }
+
+    function isValidRankConfig(data) {
+      return data.ranks is map &&
+             data.updatedAt is timestamp;
+    }
+
+    function isValidLevelPack(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 128;
+    }
+
+    function isValidLevel(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 128 &&
+             data.packId is string && data.packId.size() <= 128 &&
+             (data.gameOrder is int || data.gameOrder is float);
+    }
+
+    function isValidLegacyRun(data) {
+      return data.levelId is string &&
+             data.username is string &&
+             (data.completionTime is int || data.completionTime is float);
+    }
+
+    function isValidNameChange(data) {
+      return data.oldName is string && data.oldName.size() <= 128 &&
+             data.newName is string && data.newName.size() <= 128;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow write: if isAdmin();
+    }
+
+    match /configs/{configId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidRankConfig(request.resource.data);
+    }
+
+    match /levelConfigs/{levelId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidRankConfig(request.resource.data);
+    }
+
+    match /mapPacks/{packId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidLevelPack(request.resource.data);
+    }
+
+    match /levels/{levelId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidLevel(request.resource.data);
+    }
+
+    match /legacyRuns/{runId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidLegacyRun(request.resource.data);
+    }
+
+    match /nameChanges/{mappingId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidNameChange(request.resource.data);
+    }
+  }
+}
