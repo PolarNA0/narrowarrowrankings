@@ -9,38 +9,179 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
+import { Route as ApiPublishedLevelsRouteImport } from './routes/api/published-levels'
+import { Route as ApiDailySkinsRouteImport } from './routes/api/daily-skins'
+import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
+import { Route as ApiUserUsernameRouteImport } from './routes/api/user.$username'
+import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
+import { Route as ApiPacksSlugRouteImport } from './routes/api/packs.$slug'
+import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-details.$levelId'
+import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
 
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStartupDataRoute = ApiStartupDataRouteImport.update({
+  id: '/api/startup-data',
+  path: '/api/startup-data',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublishedLevelsRoute = ApiPublishedLevelsRouteImport.update({
+  id: '/api/published-levels',
+  path: '/api/published-levels',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDailySkinsRoute = ApiDailySkinsRouteImport.update({
+  id: '/api/daily-skins',
+  path: '/api/daily-skins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPacksIndexRoute = ApiPacksIndexRouteImport.update({
+  id: '/api/packs/',
+  path: '/api/packs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUserUsernameRoute = ApiUserUsernameRouteImport.update({
+  id: '/api/user/$username',
+  path: '/api/user/$username',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRunsRunIdRoute = ApiRunsRunIdRouteImport.update({
+  id: '/api/runs/$runId',
+  path: '/api/runs/$runId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPacksSlugRoute = ApiPacksSlugRouteImport.update({
+  id: '/api/packs/$slug',
+  path: '/api/packs/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiLevelDetailsLevelIdRoute = ApiLevelDetailsLevelIdRouteImport.update({
+  id: '/api/level-details/$levelId',
+  path: '/api/level-details/$levelId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiLeaderboardLevelRoute = ApiLeaderboardLevelRouteImport.update({
+  id: '/api/leaderboard/$level',
+  path: '/api/leaderboard/$level',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/published-levels': typeof ApiPublishedLevelsRoute
+  '/api/startup-data': typeof ApiStartupDataRoute
+  '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
+  '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
+  '/api/packs/$slug': typeof ApiPacksSlugRoute
+  '/api/runs/$runId': typeof ApiRunsRunIdRoute
+  '/api/user/$username': typeof ApiUserUsernameRoute
+  '/api/packs/': typeof ApiPacksIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/published-levels': typeof ApiPublishedLevelsRoute
+  '/api/startup-data': typeof ApiStartupDataRoute
+  '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
+  '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
+  '/api/packs/$slug': typeof ApiPacksSlugRoute
+  '/api/runs/$runId': typeof ApiRunsRunIdRoute
+  '/api/user/$username': typeof ApiUserUsernameRoute
+  '/api/packs': typeof ApiPacksIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/published-levels': typeof ApiPublishedLevelsRoute
+  '/api/startup-data': typeof ApiStartupDataRoute
+  '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
+  '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
+  '/api/packs/$slug': typeof ApiPacksSlugRoute
+  '/api/runs/$runId': typeof ApiRunsRunIdRoute
+  '/api/user/$username': typeof ApiUserUsernameRoute
+  '/api/packs/': typeof ApiPacksIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/sitemap.xml'
+    | '/api/daily-skins'
+    | '/api/published-levels'
+    | '/api/startup-data'
+    | '/api/leaderboard/$level'
+    | '/api/level-details/$levelId'
+    | '/api/packs/$slug'
+    | '/api/runs/$runId'
+    | '/api/user/$username'
+    | '/api/packs/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/sitemap.xml'
+    | '/api/daily-skins'
+    | '/api/published-levels'
+    | '/api/startup-data'
+    | '/api/leaderboard/$level'
+    | '/api/level-details/$levelId'
+    | '/api/packs/$slug'
+    | '/api/runs/$runId'
+    | '/api/user/$username'
+    | '/api/packs'
+  id:
+    | '__root__'
+    | '/'
+    | '/sitemap.xml'
+    | '/api/daily-skins'
+    | '/api/published-levels'
+    | '/api/startup-data'
+    | '/api/leaderboard/$level'
+    | '/api/level-details/$levelId'
+    | '/api/packs/$slug'
+    | '/api/runs/$runId'
+    | '/api/user/$username'
+    | '/api/packs/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  ApiDailySkinsRoute: typeof ApiDailySkinsRoute
+  ApiPublishedLevelsRoute: typeof ApiPublishedLevelsRoute
+  ApiStartupDataRoute: typeof ApiStartupDataRoute
+  ApiLeaderboardLevelRoute: typeof ApiLeaderboardLevelRoute
+  ApiLevelDetailsLevelIdRoute: typeof ApiLevelDetailsLevelIdRoute
+  ApiPacksSlugRoute: typeof ApiPacksSlugRoute
+  ApiRunsRunIdRoute: typeof ApiRunsRunIdRoute
+  ApiUserUsernameRoute: typeof ApiUserUsernameRoute
+  ApiPacksIndexRoute: typeof ApiPacksIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,22 +189,85 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/startup-data': {
+      id: '/api/startup-data'
+      path: '/api/startup-data'
+      fullPath: '/api/startup-data'
+      preLoaderRoute: typeof ApiStartupDataRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/published-levels': {
+      id: '/api/published-levels'
+      path: '/api/published-levels'
+      fullPath: '/api/published-levels'
+      preLoaderRoute: typeof ApiPublishedLevelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/daily-skins': {
+      id: '/api/daily-skins'
+      path: '/api/daily-skins'
+      fullPath: '/api/daily-skins'
+      preLoaderRoute: typeof ApiDailySkinsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/packs/': {
+      id: '/api/packs/'
+      path: '/api/packs'
+      fullPath: '/api/packs/'
+      preLoaderRoute: typeof ApiPacksIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/user/$username': {
+      id: '/api/user/$username'
+      path: '/api/user/$username'
+      fullPath: '/api/user/$username'
+      preLoaderRoute: typeof ApiUserUsernameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/runs/$runId': {
+      id: '/api/runs/$runId'
+      path: '/api/runs/$runId'
+      fullPath: '/api/runs/$runId'
+      preLoaderRoute: typeof ApiRunsRunIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/packs/$slug': {
+      id: '/api/packs/$slug'
+      path: '/api/packs/$slug'
+      fullPath: '/api/packs/$slug'
+      preLoaderRoute: typeof ApiPacksSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/level-details/$levelId': {
+      id: '/api/level-details/$levelId'
+      path: '/api/level-details/$levelId'
+      fullPath: '/api/level-details/$levelId'
+      preLoaderRoute: typeof ApiLevelDetailsLevelIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/leaderboard/$level': {
+      id: '/api/leaderboard/$level'
+      path: '/api/leaderboard/$level'
+      fullPath: '/api/leaderboard/$level'
+      preLoaderRoute: typeof ApiLeaderboardLevelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
+  ApiDailySkinsRoute: ApiDailySkinsRoute,
+  ApiPublishedLevelsRoute: ApiPublishedLevelsRoute,
+  ApiStartupDataRoute: ApiStartupDataRoute,
+  ApiLeaderboardLevelRoute: ApiLeaderboardLevelRoute,
+  ApiLevelDetailsLevelIdRoute: ApiLevelDetailsLevelIdRoute,
+  ApiPacksSlugRoute: ApiPacksSlugRoute,
+  ApiRunsRunIdRoute: ApiRunsRunIdRoute,
+  ApiUserUsernameRoute: ApiUserUsernameRoute,
+  ApiPacksIndexRoute: ApiPacksIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
