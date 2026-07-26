@@ -1,6 +1,61 @@
 const API_BASE = "https://api.narrowarrow.xyz";
 
 const cacheStore: Record<string, { data: unknown; expiresAt: number }> = {};
+const inflight: Record<string, Promise<unknown>> = {};
+
+// The upstream API rate-limits aggressively (429) when many leaderboards are
+// requested at once, so all upstream calls go through a small concurrency
+// queue with exponential backoff retries.
+const MAX_CONCURRENT = 3;
+const MIN_GAP_MS = 120;
+let active = 0;
+let lastStart = 0;
+const queue: Array<() => void> = [];
+
+function schedule<T>(task: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const run = async () => {
+      active++;
+      const wait = Math.max(0, lastStart + MIN_GAP_MS - Date.now());
+      if (wait > 0) await sleep(wait);
+      lastStart = Date.now();
+      try {
+        resolve(await task());
+      } catch (error) {
+        reject(error);
+      } finally {
+        active--;
+        const next = queue.shift();
+        if (next) next();
+      }
+    };
+    if (active < MAX_CONCURRENT) run();
+    else queue.push(run);
+  });
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function fetchWithRetry(url: string): Promise<unknown> {
+  const MAX_ATTEMPTS = 5;
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const response = await fetch(url);
+    if (response.ok) return response.json();
+    lastStatus = response.status;
+    if (response.status !== 429 && response.status < 500) break;
+    const retryAfter = Number(response.headers.get("retry-after"));
+    const delay = Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : 400 * 2 ** attempt + Math.random() * 250;
+    await sleep(Math.min(delay, 6000));
+  }
+  throw Object.assign(new Error(`Upstream request failed with status ${lastStatus}`), {
+    status: lastStatus,
+  });
+}
 
 export async function proxyJson(path: string, ttlMs: number): Promise<Response> {
   const url = `${API_BASE}${path}`;
@@ -11,19 +66,23 @@ export async function proxyJson(path: string, ttlMs: number): Promise<Response> 
   }
 
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      return Response.json(
-        { error: `Upstream request failed with status ${response.status}` },
-        { status: 502 },
-      );
-    }
-    const data = await response.json();
-    cacheStore[url] = { data, expiresAt: now + ttlMs };
+    const request =
+      inflight[url] ??
+      (inflight[url] = schedule(() => fetchWithRetry(url)).finally(() => {
+        delete inflight[url];
+      }));
+    const data = await request;
+    cacheStore[url] = { data, expiresAt: Date.now() + ttlMs };
     return Response.json(data);
   } catch (error) {
+    // Serve stale data rather than failing the UI when upstream is throttling.
+    if (cached) return Response.json(cached.data);
     console.error("Narrow Arrow proxy error:", path, error);
-    return Response.json({ error: "Upstream request failed" }, { status: 502 });
+    const status = (error as { status?: number }).status;
+    return Response.json(
+      { error: `Upstream request failed${status ? ` with status ${status}` : ""}` },
+      { status: 502 },
+    );
   }
 }
 
