@@ -425,14 +425,17 @@ export default function App() {
     if (Object.keys(allLevelsData).length === dynamicLevels.length) return;
     setIsFetchingAll(true);
     try {
-      const results = await Promise.all(dynamicLevels.map(async (l) => {
-        try {
-          return await fetchLeaderboard(l.id);
-        } catch (e) {
-          console.error(`Failed to fetch leaderboard for level ${l.id}:`, e);
-          return [];
-        }
-      }));
+      const results = await runWithConcurrency(
+        dynamicLevels.map((l) => async () => {
+          try {
+            return await fetchLeaderboard(l.id);
+          } catch (e) {
+            console.error(`Failed to fetch leaderboard for level ${l.id}:`, e);
+            return [] as LeaderboardEntry[];
+          }
+        }),
+        4,
+      );
       const newData: Record<string, LeaderboardEntry[]> = {};
       dynamicLevels.forEach((l, i) => {
         newData[l.id] = results[i];
