@@ -183,53 +183,59 @@ export default function App() {
           setDynamicPacks(mappedPacks);
         }
 
-        const allLevels: LevelInfo[] = [];
-        // Fetch all packs details in parallel
-        await Promise.all(
-          packsData.map(async (p: any) => {
-            try {
-              const pRes = await fetch(`/api/packs/${p.slug}`);
-              if (pRes.ok) {
-                const details = await pRes.json();
-                const packLevels = details.levels || [];
-                packLevels.forEach((l: any) => {
-                  allLevels.push({
-                    id: l.level_id || String(l.id),
-                    name: capitalizeName(l.name),
-                    packId: p.slug,
-                    gameOrder: l.position !== undefined ? l.position : 0
-                  });
-                });
-              }
-            } catch (e) {
-              console.error(`Failed to fetch pack details for ${p.slug}:`, e);
-            }
-          })
-        );
-
-        // Sort levels by pack position first, then level position to maintain game order
         const packPositions: Record<string, number> = {};
         packsData.forEach((p: any) => {
           packPositions[p.slug] = p.position !== undefined ? p.position : 99;
         });
 
-        allLevels.sort((a, b) => {
-          const packDiff = (packPositions[a.packId] || 0) - (packPositions[b.packId] || 0);
-          if (packDiff !== 0) return packDiff;
-          return a.gameOrder - b.gameOrder;
-        });
-
-        // Clear and mutate shared module constants
         LEVEL_PACKS.length = 0;
         mappedPacks.forEach(p => LEVEL_PACKS.push(p));
-        
-        LEVELS.length = 0;
-        allLevels.forEach(l => LEVELS.push(l));
 
-        if (isMounted) {
-          setDynamicLevels(allLevels);
-          if (allLevels.length > 0) {
-            setSelectedLevel(allLevels[0].id);
+        const allLevels: LevelInfo[] = [];
+        const publishLevels = () => {
+          const sorted = [...allLevels].sort((a, b) => {
+            const packDiff = (packPositions[a.packId] || 0) - (packPositions[b.packId] || 0);
+            if (packDiff !== 0) return packDiff;
+            return a.gameOrder - b.gameOrder;
+          });
+
+          LEVELS.length = 0;
+          sorted.forEach(l => LEVELS.push(l));
+
+          if (isMounted) {
+            setDynamicLevels(sorted);
+            setSelectedLevel(prev => prev || sorted[0]?.id || "");
+          }
+        };
+
+        const sortedPacksData = [...packsData].sort((a: any, b: any) => {
+          const posA = a.position !== undefined ? a.position : 99;
+          const posB = b.position !== undefined ? b.position : 99;
+          return posA - posB;
+        });
+
+        // Load pack details one at a time and publish after each pack so the UI
+        // never sits with an empty level selector while later packs are pending.
+        for (const p of sortedPacksData) {
+          try {
+            const pRes = await fetch(`/api/packs/${p.slug}`);
+            if (!pRes.ok) {
+              throw new Error(`Failed to fetch pack details: ${pRes.status}`);
+            }
+
+            const details = await pRes.json();
+            const packLevels = details.levels || [];
+            packLevels.forEach((l: any) => {
+              allLevels.push({
+                id: l.level_id || String(l.id),
+                name: capitalizeName(l.name),
+                packId: p.slug,
+                gameOrder: l.position !== undefined ? l.position : 0
+              });
+            });
+            publishLevels();
+          } catch (e) {
+            console.error(`Failed to fetch pack details for ${p.slug}:`, e);
           }
         }
       } catch (err) {
