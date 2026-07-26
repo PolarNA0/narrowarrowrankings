@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
 import { Route as ApiPublishedLevelsRouteImport } from './routes/api/published-levels'
@@ -20,6 +21,11 @@ import { Route as ApiPacksSlugRouteImport } from './routes/api/packs.$slug'
 import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-details.$levelId'
 import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
 
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -73,6 +79,7 @@ const ApiLeaderboardLevelRoute = ApiLeaderboardLevelRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
@@ -85,6 +92,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
@@ -98,6 +106,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
@@ -112,6 +121,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/sitemap.xml'
     | '/api/daily-skins'
     | '/api/published-levels'
     | '/api/startup-data'
@@ -124,6 +134,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/sitemap.xml'
     | '/api/daily-skins'
     | '/api/published-levels'
     | '/api/startup-data'
@@ -136,6 +147,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/sitemap.xml'
     | '/api/daily-skins'
     | '/api/published-levels'
     | '/api/startup-data'
@@ -149,6 +161,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiDailySkinsRoute: typeof ApiDailySkinsRoute
   ApiPublishedLevelsRoute: typeof ApiPublishedLevelsRoute
   ApiStartupDataRoute: typeof ApiStartupDataRoute
@@ -162,6 +175,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -237,6 +257,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiDailySkinsRoute: ApiDailySkinsRoute,
   ApiPublishedLevelsRoute: ApiPublishedLevelsRoute,
   ApiStartupDataRoute: ApiStartupDataRoute,
