@@ -71,7 +71,7 @@ import {
   HUMAN_LIMIT_DEFAULTS,
   LEVEL_PACKS
 } from "./constants";
-import { fetchLeaderboard } from "./services/api";
+import { fetchLeaderboard, runWithConcurrency } from "./services/api";
 import { assignRank } from "./lib/ranking";
 import { cn, capitalizeName } from "@/lib/utils";
 import { AdminPanel } from "./components/AdminPanel";
