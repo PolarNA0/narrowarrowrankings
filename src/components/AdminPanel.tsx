@@ -33,13 +33,10 @@ import {
   deleteDoc,
   collection
 } from "firebase/firestore";
-import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged, 
-  signOut,
-  User as FirebaseUser
-} from "firebase/auth";
+import { type User as FirebaseUser } from "firebase/auth";
+import { useAdminAuth } from "../hooks/useAdminAuth";
+import { useRemovedRuns, restoreRun } from "../hooks/useRemovedRuns";
+
 
 import { db, auth, OperationType, handleFirestoreError } from "../firebase";
 import { 
@@ -78,11 +75,11 @@ interface AdminPanelProps {
 }
 
 export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAll = false }: AdminPanelProps) {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const { user, isAdmin, loading, error: authError, login: handleLogin, logout: handleLogout } = useAdminAuth();
+  const { removedRuns, } = useRemovedRuns();
   const [selectedLevel, setSelectedLevel] = useState<string>(levels[0]?.id || "");
   const [selectedPack, setSelectedPack] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState<'maps' | 'general' | 'overall' | 'legacy'>('maps');
+  const [activeTab, setActiveTab] = useState<'maps' | 'general' | 'overall' | 'legacy' | 'removed'>('maps');
   const [rankConfig, setRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
   const [theoreticalMax, setTheoreticalMax] = useState<number | undefined>(undefined);
   const [humanLimit, setHumanLimit] = useState<number | undefined>(undefined);
@@ -90,7 +87,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
   const [overallConfig, setOverallConfig] = useState<Record<string, RankInfo>>(DEFAULT_OVERALL_RANKS);
   const [selectedOverallScope, setSelectedOverallScope] = useState<string>("all");
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
+  
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Legacy Runs State
@@ -164,28 +161,8 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
 
   // End of initialization checks
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      async (u) => {
-        setUser(u);
-        if (u) {
-          const isAdminEmail = ["sirsamyou@gmail.com", "polarusx@gmail.com"].includes(u.email || "");
-          setIsAdmin(isAdminEmail);
-        } else {
-          setIsAdmin(false);
-        }
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Auth state changed error:", err);
-        setUser(null);
-        setIsAdmin(false);
-        setLoading(false);
-      }
-    );
-    return unsubscribe;
-  }, []);
+
+
 
   // Listen for Global Config
   useEffect(() => {
@@ -469,16 +446,6 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
     }
   };
 
-  const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Login failed:", error);
-    }
-  };
-
-  const handleLogout = () => signOut(auth);
 
   const handleSaveMaps = async () => {
     if (!isAdmin || !selectedLevel) return;
@@ -600,9 +567,18 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
               You must be an authorized administrator to modify ranking configurations.
             </p>
           </div>
+          {authError && (
+            <div className="max-w-md text-left text-xs bg-red-500/10 border border-red-500/30 rounded-lg p-4 space-y-2">
+              <p className="text-red-300 font-medium">{authError}</p>
+              <p className="text-slate-400">
+                Current domain: <span className="font-mono text-white">{typeof window !== "undefined" ? window.location.hostname : ""}</span>
+              </p>
+            </div>
+          )}
           {user ? (
             <div className="space-y-4">
               <p className="text-xs text-slate-400">Logged in as: <span className="text-white font-mono">{user.email}</span></p>
+              <p className="text-[11px] text-slate-500 max-w-xs mx-auto">This account isn't on the admin list. Sign out and use an admin Google account.</p>
               <Button onClick={handleLogout} variant="outline" className="border-white/10 hover:bg-white/5">
                 <LogOut className="w-4 h-4 mr-2" /> Sign Out
               </Button>
@@ -612,6 +588,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
               <LogIn className="w-4 h-4 mr-2" /> Admin Login
             </Button>
           )}
+
         </div>
       </ErrorBoundary>
     );
@@ -632,7 +609,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
             <Button onClick={handleLogout} variant="ghost" className="text-slate-500 hover:text-white">
               <LogOut className="w-4 h-4 mr-2" /> Logout
             </Button>
-            {activeTab !== 'legacy' && (
+            {activeTab !== 'legacy' && activeTab !== 'removed' && (
               <Button 
                 onClick={activeTab === 'maps' ? handleSaveMaps : activeTab === 'general' ? handleSaveGeneral : handleSaveOverall} 
                 disabled={saving}
@@ -678,7 +655,16 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
           >
             Legacy Runs
           </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setActiveTab('removed')}
+            className={cn("text-[10px] uppercase tracking-widest h-8 px-4", activeTab === 'removed' ? "bg-white/10 text-white" : "text-slate-400")}
+          >
+            Removed Runs ({removedRuns.length})
+          </Button>
         </div>
+
 
         {activeTab === 'maps' ? (
           <Card className="bg-white/5 border-white/10">
@@ -1375,7 +1361,55 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
               </CardContent>
             </Card>
           </div>
+        ) : activeTab === 'removed' ? (
+          <Card className="bg-white/5 border-white/10">
+            <CardHeader className="border-b border-white/10 pb-4">
+              <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-400">
+                Removed Runs ({removedRuns.length})
+              </CardTitle>
+              <CardDescription>
+                Runs hidden from every leaderboard, average and world-record view. Restore to bring one back.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {removedRuns.length === 0 ? (
+                <div className="p-8 text-center text-slate-500 font-mono text-xs">
+                  No removed runs. Use the trash icon on a leaderboard row to hide a run.
+                </div>
+              ) : (
+                <div className="divide-y divide-white/5">
+                  {removedRuns.map(run => (
+                    <div key={run.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="text-sm text-white font-medium truncate">{run.username}</div>
+                        <div className="text-[11px] text-slate-500 font-mono truncate">
+                          {levels.find(l => l.id === run.levelId)?.name || run.levelId} · {Number(run.completionTime).toFixed(3)}s
+                          {run.reason ? ` · ${run.reason}` : ""}
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await restoreRun(run.id);
+                            setToast({ message: `Restored ${run.username}'s run`, type: "success" });
+                          } catch (err) {
+                            setToast({ message: `Failed to restore: ${err instanceof Error ? err.message : "error"}`, type: "error" });
+                          }
+                        }}
+                        className="border-white/10 hover:bg-white/5 text-[10px] uppercase tracking-widest shrink-0"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 mr-2" /> Restore
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         ) : null}
+
       </div>
 
       <AnimatePresence>

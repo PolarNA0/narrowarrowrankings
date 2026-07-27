@@ -34,7 +34,9 @@ import {
   Dices,
   Info,
   Play,
-  X
+  X,
+  Download
+
 } from "lucide-react";
 import { doc, onSnapshot, collection, getDocs, setDoc } from "firebase/firestore";
 import { db, OperationType, handleFirestoreError } from "./firebase";
@@ -80,8 +82,13 @@ import { PlayerProfile } from "./components/PlayerProfile";
 import { ComparePlayers } from "./components/ComparePlayers";
 import { RandomLevelSelector } from "./components/RandomLevelSelector";
 import { CustomsView } from "./components/CustomsView";
+import { useAdminAuth } from "./hooks/useAdminAuth";
+import { useRemovedRuns, removeRun } from "./hooks/useRemovedRuns";
+import { removedRunKey } from "./lib/removedRuns";
 
 export default function App() {
+  const { isAdmin, user: adminUser } = useAdminAuth();
+  const { removedKeys } = useRemovedRuns();
   const [dynamicPacks, setDynamicPacks] = useState<LevelPack[]>([]);
   const [dynamicLevels, setDynamicLevels] = useState<LevelInfo[]>([]);
   const [selectedLevel, setSelectedLevel] = useState<string>("");
@@ -587,17 +594,29 @@ export default function App() {
     return mergedEntries.sort((a, b) => a.completion_time - b.completion_time);
   };
 
+  const stripRemoved = (entries: LeaderboardEntry[], levelId: string) =>
+    removedKeys.size === 0
+      ? entries
+      : entries.filter(e => !removedKeys.has(removedRunKey(levelId, e.username, e.completion_time)));
+
   const processedData = useMemo(() => {
-    return applyLegacyRunsToLeaderboard(selectedLevel, data, hideLegacyRuns ? [] : mappedLegacyRuns);
-  }, [selectedLevel, data, mappedLegacyRuns, hideLegacyRuns]);
+    return stripRemoved(
+      applyLegacyRunsToLeaderboard(selectedLevel, data, hideLegacyRuns ? [] : mappedLegacyRuns),
+      selectedLevel,
+    );
+  }, [selectedLevel, data, mappedLegacyRuns, hideLegacyRuns, removedKeys]);
 
   const processedAllLevelsData = useMemo(() => {
     const result: Record<string, LeaderboardEntry[]> = {};
     Object.keys(allLevelsData).forEach(levelId => {
-      result[levelId] = applyLegacyRunsToLeaderboard(levelId, allLevelsData[levelId], hideLegacyRuns ? [] : mappedLegacyRuns);
+      result[levelId] = stripRemoved(
+        applyLegacyRunsToLeaderboard(levelId, allLevelsData[levelId], hideLegacyRuns ? [] : mappedLegacyRuns),
+        levelId,
+      );
     });
     return result;
-  }, [allLevelsData, mappedLegacyRuns, hideLegacyRuns]);
+  }, [allLevelsData, mappedLegacyRuns, hideLegacyRuns, removedKeys]);
+
 
   const allUsernames = useMemo(() => {
     const usernames = new Set<string>();
@@ -836,6 +855,31 @@ export default function App() {
     });
   };
 
+  const exportLeaderboardCsv = () => {
+    const levelName = sortedLevels.find(l => l.id === selectedLevel)?.name || selectedLevel || "leaderboard";
+    const rows = [
+      ["rank", "player", "time", "arrow", "date", "legacy"],
+      ...processedData.map((e, i) => [
+        String(i + 1),
+        e.username,
+        String(e.completion_time),
+        e.arrow_name || "",
+        e.created_at || "",
+        e.isLegacy ? "yes" : "no",
+      ]),
+    ];
+    const csv = rows
+      .map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${levelName.toLowerCase().replace(/\s+/g, "-")}-leaderboard.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-slate-200 font-sans selection:bg-[#38BDF8]/30">
       {/* Header */}
@@ -957,6 +1001,17 @@ export default function App() {
             >
               {showAdmin ? <LayoutDashboard className="w-4 h-4" /> : <Settings className="w-4 h-4" />}
             </Button>
+            {view === 'leaderboard' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Export current leaderboard as CSV"
+                onClick={exportLeaderboardCsv}
+                className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
+              >
+                <Download className="w-4 h-4" />
+              </Button>
+            )}
             <Button 
               variant="ghost" 
               size="icon" 
@@ -965,6 +1020,7 @@ export default function App() {
             >
               <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
             </Button>
+
           </div>
         </div>
       </header>
@@ -1735,6 +1791,9 @@ export default function App() {
                       <TableHead className="text-center font-mono text-[10px] uppercase tracking-widest text-slate-500">PB-WR</TableHead>
                       <TableHead className="text-center font-mono text-[10px] uppercase tracking-widest text-slate-500">Compare</TableHead>
                       <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest text-slate-500">Date</TableHead>
+                      {isAdmin && (
+                        <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest text-red-400/70">Remove</TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1841,6 +1900,36 @@ export default function App() {
                               <TableCell className="text-right text-slate-500 text-xs font-mono">
                                 {formatDate(entry.created_at)}
                               </TableCell>
+                              {isAdmin && (
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Remove run from leaderboard"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      const reason = window.prompt(`Remove ${entry.username}'s ${entry.completion_time}s run?\n\nOptional reason:`, "");
+                                      if (reason === null) return;
+                                      try {
+                                        await removeRun({
+                                          levelId: selectedLevel,
+                                          username: entry.username,
+                                          completionTime: entry.completion_time,
+                                          reason,
+                                          removedBy: adminUser?.email,
+                                        });
+                                      } catch (err) {
+                                        console.error("Failed to remove run:", err);
+                                        window.alert("Failed to remove run. Check your admin permissions.");
+                                      }
+                                    }}
+                                    className="text-slate-600 hover:text-red-400 hover:bg-red-500/10 h-8 w-8"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </TableCell>
+                              )}
+
                             </motion.tr>
                           );
                         })
