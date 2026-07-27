@@ -609,7 +609,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
             <Button onClick={handleLogout} variant="ghost" className="text-slate-500 hover:text-white">
               <LogOut className="w-4 h-4 mr-2" /> Logout
             </Button>
-            {activeTab !== 'legacy' && (
+            {activeTab !== 'legacy' && activeTab !== 'removed' && (
               <Button 
                 onClick={activeTab === 'maps' ? handleSaveMaps : activeTab === 'general' ? handleSaveGeneral : handleSaveOverall} 
                 disabled={saving}
