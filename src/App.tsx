@@ -1752,6 +1752,9 @@ export default function App() {
                       <TableHead className="text-center font-mono text-[10px] uppercase tracking-widest text-slate-500">PB-WR</TableHead>
                       <TableHead className="text-center font-mono text-[10px] uppercase tracking-widest text-slate-500">Compare</TableHead>
                       <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest text-slate-500">Date</TableHead>
+                      {isAdmin && (
+                        <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest text-red-400/70">Remove</TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1858,6 +1861,36 @@ export default function App() {
                               <TableCell className="text-right text-slate-500 text-xs font-mono">
                                 {formatDate(entry.created_at)}
                               </TableCell>
+                              {isAdmin && (
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Remove run from leaderboard"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      const reason = window.prompt(`Remove ${entry.username}'s ${entry.completion_time}s run?\n\nOptional reason:`, "");
+                                      if (reason === null) return;
+                                      try {
+                                        await removeRun({
+                                          levelId: selectedLevel,
+                                          username: entry.username,
+                                          completionTime: entry.completion_time,
+                                          reason,
+                                          removedBy: adminUser?.email,
+                                        });
+                                      } catch (err) {
+                                        console.error("Failed to remove run:", err);
+                                        window.alert("Failed to remove run. Check your admin permissions.");
+                                      }
+                                    }}
+                                    className="text-slate-600 hover:text-red-400 hover:bg-red-500/10 h-8 w-8"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </TableCell>
+                              )}
+
                             </motion.tr>
                           );
                         })
