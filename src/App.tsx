@@ -80,8 +80,13 @@ import { PlayerProfile } from "./components/PlayerProfile";
 import { ComparePlayers } from "./components/ComparePlayers";
 import { RandomLevelSelector } from "./components/RandomLevelSelector";
 import { CustomsView } from "./components/CustomsView";
+import { useAdminAuth } from "./hooks/useAdminAuth";
+import { useRemovedRuns, removeRun } from "./hooks/useRemovedRuns";
+import { removedRunKey } from "./lib/removedRuns";
 
 export default function App() {
+  const { isAdmin, user: adminUser } = useAdminAuth();
+  const { removedKeys } = useRemovedRuns();
   const [dynamicPacks, setDynamicPacks] = useState<LevelPack[]>([]);
   const [dynamicLevels, setDynamicLevels] = useState<LevelInfo[]>([]);
   const [selectedLevel, setSelectedLevel] = useState<string>("");
