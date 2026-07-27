@@ -655,7 +655,16 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
           >
             Legacy Runs
           </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setActiveTab('removed')}
+            className={cn("text-[10px] uppercase tracking-widest h-8 px-4", activeTab === 'removed' ? "bg-white/10 text-white" : "text-slate-400")}
+          >
+            Removed Runs ({removedRuns.length})
+          </Button>
         </div>
+
 
         {activeTab === 'maps' ? (
           <Card className="bg-white/5 border-white/10">
