@@ -87,7 +87,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
   const [overallConfig, setOverallConfig] = useState<Record<string, RankInfo>>(DEFAULT_OVERALL_RANKS);
   const [selectedOverallScope, setSelectedOverallScope] = useState<string>("all");
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
+  
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Legacy Runs State
@@ -161,28 +161,8 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
 
   // End of initialization checks
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      async (u) => {
-        setUser(u);
-        if (u) {
-          const isAdminEmail = ["sirsamyou@gmail.com", "polarusx@gmail.com"].includes(u.email || "");
-          setIsAdmin(isAdminEmail);
-        } else {
-          setIsAdmin(false);
-        }
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Auth state changed error:", err);
-        setUser(null);
-        setIsAdmin(false);
-        setLoading(false);
-      }
-    );
-    return unsubscribe;
-  }, []);
+
+
 
   // Listen for Global Config
   useEffect(() => {
@@ -466,16 +446,6 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
     }
   };
 
-  const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Login failed:", error);
-    }
-  };
-
-  const handleLogout = () => signOut(auth);
 
   const handleSaveMaps = async () => {
     if (!isAdmin || !selectedLevel) return;
