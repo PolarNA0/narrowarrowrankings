@@ -587,17 +587,29 @@ export default function App() {
     return mergedEntries.sort((a, b) => a.completion_time - b.completion_time);
   };
 
+  const stripRemoved = (entries: LeaderboardEntry[], levelId: string) =>
+    removedKeys.size === 0
+      ? entries
+      : entries.filter(e => !removedKeys.has(removedRunKey(levelId, e.username, e.completion_time)));
+
   const processedData = useMemo(() => {
-    return applyLegacyRunsToLeaderboard(selectedLevel, data, hideLegacyRuns ? [] : mappedLegacyRuns);
-  }, [selectedLevel, data, mappedLegacyRuns, hideLegacyRuns]);
+    return stripRemoved(
+      applyLegacyRunsToLeaderboard(selectedLevel, data, hideLegacyRuns ? [] : mappedLegacyRuns),
+      selectedLevel,
+    );
+  }, [selectedLevel, data, mappedLegacyRuns, hideLegacyRuns, removedKeys]);
 
   const processedAllLevelsData = useMemo(() => {
     const result: Record<string, LeaderboardEntry[]> = {};
     Object.keys(allLevelsData).forEach(levelId => {
-      result[levelId] = applyLegacyRunsToLeaderboard(levelId, allLevelsData[levelId], hideLegacyRuns ? [] : mappedLegacyRuns);
+      result[levelId] = stripRemoved(
+        applyLegacyRunsToLeaderboard(levelId, allLevelsData[levelId], hideLegacyRuns ? [] : mappedLegacyRuns),
+        levelId,
+      );
     });
     return result;
-  }, [allLevelsData, mappedLegacyRuns, hideLegacyRuns]);
+  }, [allLevelsData, mappedLegacyRuns, hideLegacyRuns, removedKeys]);
+
 
   const allUsernames = useMemo(() => {
     const usernames = new Set<string>();
