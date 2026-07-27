@@ -33,13 +33,10 @@ import {
   deleteDoc,
   collection
 } from "firebase/firestore";
-import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged, 
-  signOut,
-  User as FirebaseUser
-} from "firebase/auth";
+import { type User as FirebaseUser } from "firebase/auth";
+import { useAdminAuth } from "../hooks/useAdminAuth";
+import { useRemovedRuns, restoreRun } from "../hooks/useRemovedRuns";
+
 
 import { db, auth, OperationType, handleFirestoreError } from "../firebase";
 import { 
@@ -78,11 +75,11 @@ interface AdminPanelProps {
 }
 
 export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAll = false }: AdminPanelProps) {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const { user, isAdmin, loading, error: authError, login: handleLogin, logout: handleLogout } = useAdminAuth();
+  const { removedRuns, } = useRemovedRuns();
   const [selectedLevel, setSelectedLevel] = useState<string>(levels[0]?.id || "");
   const [selectedPack, setSelectedPack] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState<'maps' | 'general' | 'overall' | 'legacy'>('maps');
+  const [activeTab, setActiveTab] = useState<'maps' | 'general' | 'overall' | 'legacy' | 'removed'>('maps');
   const [rankConfig, setRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
   const [theoreticalMax, setTheoreticalMax] = useState<number | undefined>(undefined);
   const [humanLimit, setHumanLimit] = useState<number | undefined>(undefined);
