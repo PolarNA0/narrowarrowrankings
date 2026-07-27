@@ -62,6 +62,13 @@ service cloud.firestore {
              data.newName is string && data.newName.size() <= 128;
     }
 
+    function isValidRemovedRun(data) {
+      return data.levelId is string && data.levelId.size() <= 128 &&
+             data.username is string && data.username.size() <= 128 &&
+             (data.completionTime is int || data.completionTime is float);
+    }
+
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -100,5 +107,12 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin() && isValidNameChange(request.resource.data);
     }
+
+    match /removedRuns/{removedId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidRemovedRun(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
   }
 }
