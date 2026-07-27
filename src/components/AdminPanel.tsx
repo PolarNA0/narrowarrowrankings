@@ -1361,7 +1361,55 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
               </CardContent>
             </Card>
           </div>
+        ) : activeTab === 'removed' ? (
+          <Card className="bg-white/5 border-white/10">
+            <CardHeader className="border-b border-white/10 pb-4">
+              <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-400">
+                Removed Runs ({removedRuns.length})
+              </CardTitle>
+              <CardDescription>
+                Runs hidden from every leaderboard, average and world-record view. Restore to bring one back.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {removedRuns.length === 0 ? (
+                <div className="p-8 text-center text-slate-500 font-mono text-xs">
+                  No removed runs. Use the trash icon on a leaderboard row to hide a run.
+                </div>
+              ) : (
+                <div className="divide-y divide-white/5">
+                  {removedRuns.map(run => (
+                    <div key={run.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="text-sm text-white font-medium truncate">{run.username}</div>
+                        <div className="text-[11px] text-slate-500 font-mono truncate">
+                          {levels.find(l => l.id === run.levelId)?.name || run.levelId} · {Number(run.completionTime).toFixed(3)}s
+                          {run.reason ? ` · ${run.reason}` : ""}
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await restoreRun(run.id);
+                            setToast({ message: `Restored ${run.username}'s run`, type: "success" });
+                          } catch (err) {
+                            setToast({ message: `Failed to restore: ${err instanceof Error ? err.message : "error"}`, type: "error" });
+                          }
+                        }}
+                        className="border-white/10 hover:bg-white/5 text-[10px] uppercase tracking-widest shrink-0"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 mr-2" /> Restore
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         ) : null}
+
       </div>
 
       <AnimatePresence>
