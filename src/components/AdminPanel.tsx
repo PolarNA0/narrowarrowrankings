@@ -567,9 +567,18 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
               You must be an authorized administrator to modify ranking configurations.
             </p>
           </div>
+          {authError && (
+            <div className="max-w-md text-left text-xs bg-red-500/10 border border-red-500/30 rounded-lg p-4 space-y-2">
+              <p className="text-red-300 font-medium">{authError}</p>
+              <p className="text-slate-400">
+                Current domain: <span className="font-mono text-white">{typeof window !== "undefined" ? window.location.hostname : ""}</span>
+              </p>
+            </div>
+          )}
           {user ? (
             <div className="space-y-4">
               <p className="text-xs text-slate-400">Logged in as: <span className="text-white font-mono">{user.email}</span></p>
+              <p className="text-[11px] text-slate-500 max-w-xs mx-auto">This account isn't on the admin list. Sign out and use an admin Google account.</p>
               <Button onClick={handleLogout} variant="outline" className="border-white/10 hover:bg-white/5">
                 <LogOut className="w-4 h-4 mr-2" /> Sign Out
               </Button>
@@ -579,6 +588,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
               <LogIn className="w-4 h-4 mr-2" /> Admin Login
             </Button>
           )}
+
         </div>
       </ErrorBoundary>
     );
