@@ -34,7 +34,9 @@ import {
   Dices,
   Info,
   Play,
-  X
+  X,
+  Download
+
 } from "lucide-react";
 import { doc, onSnapshot, collection, getDocs, setDoc } from "firebase/firestore";
 import { db, OperationType, handleFirestoreError } from "./firebase";
@@ -852,6 +854,31 @@ export default function App() {
       day: 'numeric'
     });
   };
+
+  const exportLeaderboardCsv = () => {
+    const levelName = sortedLevels.find(l => l.id === selectedLevel)?.name || selectedLevel || "leaderboard";
+    const rows = [
+      ["rank", "player", "time", "arrow", "date", "legacy"],
+      ...processedData.map((e, i) => [
+        String(i + 1),
+        e.username,
+        String(e.completion_time),
+        e.arrow_name || "",
+        e.created_at || "",
+        e.isLegacy ? "yes" : "no",
+      ]),
+    ];
+    const csv = rows
+      .map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${levelName.toLowerCase().replace(/\s+/g, "-")}-leaderboard.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-slate-200 font-sans selection:bg-[#38BDF8]/30">
