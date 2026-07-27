@@ -39,7 +39,7 @@ function sleep(ms: number) {
 }
 
 async function fetchWithRetry(url: string): Promise<unknown> {
-  const MAX_ATTEMPTS = 5;
+  const MAX_ATTEMPTS = 7;
   let lastStatus = 0;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const response = await fetch(url);
