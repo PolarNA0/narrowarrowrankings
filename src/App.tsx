@@ -221,30 +221,62 @@ export default function App() {
           return posA - posB;
         });
 
+        const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+        // Upstream rate-limits bursts, so each pack gets its own retry loop.
+        const fetchPackDetails = async (slug: string) => {
+          let lastStatus = 0;
+          for (let attempt = 0; attempt < 5; attempt++) {
+            try {
+              const res = await fetch(`/api/packs/${slug}`);
+              if (res.ok) return await res.json();
+              lastStatus = res.status;
+              if (res.status !== 502 && res.status !== 429 && res.status < 500) break;
+            } catch {
+              // network hiccup — retry
+            }
+            await wait(600 * 2 ** attempt + Math.random() * 300);
+          }
+          throw new Error(`Failed to fetch pack details: ${lastStatus}`);
+        };
+
+        const addPackLevels = (slug: string, details: any) => {
+          const packLevels = details?.levels || [];
+          packLevels.forEach((l: any) => {
+            allLevels.push({
+              id: l.level_id || String(l.id),
+              name: capitalizeName(l.name),
+              packId: slug,
+              gameOrder: l.position !== undefined ? l.position : 0
+            });
+          });
+          publishLevels();
+        };
+
         // Load pack details one at a time and publish after each pack so the UI
         // never sits with an empty level selector while later packs are pending.
+        const failedPacks: string[] = [];
         for (const p of sortedPacksData) {
+          if (!isMounted) return;
           try {
-            const pRes = await fetch(`/api/packs/${p.slug}`);
-            if (!pRes.ok) {
-              throw new Error(`Failed to fetch pack details: ${pRes.status}`);
-            }
-
-            const details = await pRes.json();
-            const packLevels = details.levels || [];
-            packLevels.forEach((l: any) => {
-              allLevels.push({
-                id: l.level_id || String(l.id),
-                name: capitalizeName(l.name),
-                packId: p.slug,
-                gameOrder: l.position !== undefined ? l.position : 0
-              });
-            });
-            publishLevels();
+            addPackLevels(p.slug, await fetchPackDetails(p.slug));
           } catch (e) {
-            console.error(`Failed to fetch pack details for ${p.slug}:`, e);
+            console.warn(`Pack ${p.slug} failed on first pass, will retry:`, e);
+            failedPacks.push(p.slug);
           }
         }
+
+        // Second sweep after the burst has cooled down so no pack is dropped.
+        for (const slug of failedPacks) {
+          if (!isMounted) return;
+          await wait(1500);
+          try {
+            addPackLevels(slug, await fetchPackDetails(slug));
+          } catch (e) {
+            console.error(`Failed to fetch pack details for ${slug}:`, e);
+          }
+        }
+
       } catch (err) {
         console.error("Error loading packs and levels from API:", err);
       }
