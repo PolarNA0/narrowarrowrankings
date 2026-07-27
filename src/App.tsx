@@ -974,6 +974,17 @@ export default function App() {
             >
               {showAdmin ? <LayoutDashboard className="w-4 h-4" /> : <Settings className="w-4 h-4" />}
             </Button>
+            {view === 'leaderboard' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Export current leaderboard as CSV"
+                onClick={exportLeaderboardCsv}
+                className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
+              >
+                <Download className="w-4 h-4" />
+              </Button>
+            )}
             <Button 
               variant="ghost" 
               size="icon" 
@@ -982,6 +993,7 @@ export default function App() {
             >
               <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
             </Button>
+
           </div>
         </div>
       </header>
