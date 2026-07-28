@@ -1,88 +1,96 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signInWithPopup,
-  signInWithRedirect,
-  signOut,
-  type User as FirebaseUser,
-} from "firebase/auth";
-import { auth } from "../firebase";
+import type { Session, User } from "@supabase/supabase-js";
+import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable/index";
+import { claimAdmin } from "@/lib/admin.functions";
 
 export const ADMIN_EMAILS = ["sirsamyou@gmail.com", "polarusx@gmail.com"];
 
 export interface AdminAuthState {
-  user: FirebaseUser | null;
+  user: User | null;
   isAdmin: boolean;
   loading: boolean;
   error: string | null;
   login: () => Promise<void>;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 export function useAdminAuth(): AdminAuthState {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      (u) => {
-        setUser(u);
-        setIsAdmin(!!u && ADMIN_EMAILS.includes((u.email || "").toLowerCase()));
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Auth state error:", err);
-        setUser(null);
-        setIsAdmin(false);
-        setLoading(false);
-      },
-    );
-    return unsubscribe;
+  const syncRole = useCallback(async (session: Session | null) => {
+    if (!session?.user) {
+      setIsAdmin(false);
+      return;
+    }
+    try {
+      // Grants admin to allow-listed accounts on first sign-in.
+      await claimAdmin();
+    } catch (err) {
+      console.error("Admin claim failed:", err);
+    }
+    const { data, error: roleError } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", session.user.id)
+      .eq("role", "admin")
+      .maybeSingle();
+    if (roleError) console.error("Role lookup failed:", roleError);
+    setIsAdmin(!!data);
   }, []);
+
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+      void syncRole(session);
+    });
+
+    void supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
+      setLoading(false);
+      void syncRole(data.session);
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, [syncRole]);
 
   const login = useCallback(async () => {
     setError(null);
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: "select_account" });
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (err) {
-      const code = (err as { code?: string })?.code || "";
-      if (
-        code === "auth/popup-blocked" ||
-        code === "auth/operation-not-supported-in-this-environment" ||
-        code === "auth/cancelled-popup-request"
-      ) {
-        // Mobile browsers routinely block popups — fall back to a full redirect.
-        try {
-          await signInWithRedirect(auth, provider);
-          return;
-        } catch (redirectErr) {
-          console.error("Redirect login failed:", redirectErr);
-        }
-      }
-      if (code === "auth/popup-closed-by-user") {
-        setError("Sign-in window was closed before finishing.");
-        return;
-      }
-      if (code === "auth/unauthorized-domain") {
-        setError(
-          `This domain (${typeof window !== "undefined" ? window.location.hostname : ""}) isn't in the Firebase "Authorized domains" list, so Google sign-in is blocked. Add it in Firebase Console → Authentication → Settings → Authorized domains.`,
-        );
-        return;
-      }
-      console.error("Login failed:", err);
-      setError(err instanceof Error ? err.message : "Login failed.");
+    const result = await lovable.auth.signInWithOAuth("google", {
+      redirect_uri: window.location.origin,
+    });
+    if (result.error) {
+      setError(result.error.message || "Google sign-in failed.");
+      return;
     }
   }, []);
 
-  const logout = useCallback(async () => {
-    await signOut(auth);
+  const loginWithEmail = useCallback(async (email: string, password: string) => {
+    setError(null);
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    if (signInError) setError(signInError.message);
   }, []);
 
-  return { user, isAdmin, loading, error, login, logout };
+  const signUpWithEmail = useCallback(async (email: string, password: string) => {
+    setError(null);
+    const { error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: window.location.origin },
+    });
+    if (signUpError) setError(signUpError.message);
+  }, []);
+
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+    setIsAdmin(false);
+  }, []);
+
+  return { user, isAdmin, loading, error, login, loginWithEmail, signUpWithEmail, logout };
 }

@@ -31,14 +31,15 @@ import {
   onSnapshot, 
   serverTimestamp,
   deleteDoc,
-  collection
-} from "firebase/firestore";
-import { type User as FirebaseUser } from "firebase/auth";
+  collection,
+  db,
+  OperationType,
+  handleFirestoreError
+} from "../lib/cloud-db";
 import { useAdminAuth } from "../hooks/useAdminAuth";
 import { useRemovedRuns, restoreRun } from "../hooks/useRemovedRuns";
 
 
-import { db, auth, OperationType, handleFirestoreError } from "../firebase";
 import { 
   LEVELS, 
   DEFAULT_RANKS, 
