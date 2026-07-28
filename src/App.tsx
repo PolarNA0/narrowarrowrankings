@@ -38,8 +38,7 @@ import {
   Download
 
 } from "lucide-react";
-import { doc, onSnapshot, collection, getDocs, setDoc } from "firebase/firestore";
-import { db, OperationType, handleFirestoreError } from "./firebase";
+import { doc, onSnapshot, collection, getDocs, setDoc, db, OperationType, handleFirestoreError } from "./lib/cloud-db";
 import { ClickToCopy } from "./components/ClickToCopy";
 
 import { 

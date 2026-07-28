@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, db } from "../lib/cloud-db";
 import { removedRunDocId, removedRunKey, type RemovedRun } from "../lib/removedRuns";
 
 export function useRemovedRuns() {
