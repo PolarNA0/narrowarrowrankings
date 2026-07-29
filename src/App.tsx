@@ -88,9 +88,9 @@ import { removedRunKey } from "./lib/removedRuns";
 export default function App() {
   const { isAdmin, user: adminUser } = useAdminAuth();
   const { removedKeys } = useRemovedRuns();
-  const [dynamicPacks, setDynamicPacks] = useState<LevelPack[]>([]);
-  const [dynamicLevels, setDynamicLevels] = useState<LevelInfo[]>([]);
-  const [selectedLevel, setSelectedLevel] = useState<string>("");
+  const [dynamicPacks, setDynamicPacks] = useState<LevelPack[]>(LEVEL_PACKS);
+  const [dynamicLevels, setDynamicLevels] = useState<LevelInfo[]>(LEVELS);
+  const [selectedLevel, setSelectedLevel] = useState<string>(LEVELS[0]?.id || "");
   const [selectedPack, setSelectedPack] = useState<string>("all");
   const [selectedAveragePack, setSelectedAveragePack] = useState<string>("all");
   const [averageSearchQuery, setAverageSearchQuery] = useState<string>("");
@@ -185,7 +185,7 @@ export default function App() {
           name: capitalizeName(p.name)
         }));
         
-        if (isMounted) {
+        if (isMounted && mappedPacks.length >= LEVEL_PACKS.length) {
           setDynamicPacks(mappedPacks);
         }
 
@@ -194,19 +194,14 @@ export default function App() {
           packPositions[p.slug] = p.position !== undefined ? p.position : 99;
         });
 
-        LEVEL_PACKS.length = 0;
-        mappedPacks.forEach(p => LEVEL_PACKS.push(p));
-
         const allLevels: LevelInfo[] = [];
         const publishLevels = () => {
-          const sorted = [...allLevels].sort((a, b) => {
+          const sourceLevels = allLevels.length >= LEVELS.length ? allLevels : LEVELS;
+          const sorted = [...sourceLevels].sort((a, b) => {
             const packDiff = (packPositions[a.packId] || 0) - (packPositions[b.packId] || 0);
             if (packDiff !== 0) return packDiff;
             return a.gameOrder - b.gameOrder;
           });
-
-          LEVELS.length = 0;
-          sorted.forEach(l => LEVELS.push(l));
 
           if (isMounted) {
             setDynamicLevels(sorted);
@@ -242,8 +237,10 @@ export default function App() {
         const addPackLevels = (slug: string, details: any) => {
           const packLevels = details?.levels || [];
           packLevels.forEach((l: any) => {
+            const id = l.level_id || String(l.id);
+            if (allLevels.some(existing => existing.id === id)) return;
             allLevels.push({
-              id: l.level_id || String(l.id),
+              id,
               name: capitalizeName(l.name),
               packId: slug,
               gameOrder: l.position !== undefined ? l.position : 0
@@ -303,12 +300,14 @@ export default function App() {
 
   const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
-  const [wrsTab, setWrsTab] = useState<'wrs' | 'hof'>('wrs');
+  const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [player2ToCompare, setPlayer2ToCompare] = useState<string | null>(null);
   const [allLevelsData, setAllLevelsData] = useState<Record<string, LeaderboardEntry[]>>({});
   const [isFetchingAll, setIsFetchingAll] = useState(false);
+  const [leaderboardLoadStatus, setLeaderboardLoadStatus] = useState({ loaded: 0, total: LEVELS.length, failed: 0 });
+  const allLeaderboardFetchId = React.useRef(0);
   const [allRankConfigs, setAllRankConfigs] = useState<Record<string, LevelRankConfig>>({});
   const [globalRankConfig, setGlobalRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
   const [activeRankConfig, setActiveRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
@@ -465,30 +464,70 @@ export default function App() {
     };
   }, [selectedLevel, globalRankConfig]);
 
-  const fetchAllLevels = async () => {
-    if (Object.keys(allLevelsData).length === dynamicLevels.length) return;
+  const fetchAllLevels = async (forceRefresh = false) => {
+    const levelsToFetch = dynamicLevels.length >= LEVELS.length ? dynamicLevels : LEVELS;
+    const existingLoaded = levelsToFetch.filter(l => allLevelsData[l.id]?.length > 0).length;
+    if (!forceRefresh && existingLoaded === levelsToFetch.length) {
+      setLeaderboardLoadStatus({ loaded: existingLoaded, total: levelsToFetch.length, failed: 0 });
+      return;
+    }
+
+    const requestId = ++allLeaderboardFetchId.current;
     setIsFetchingAll(true);
+    setLeaderboardLoadStatus({ loaded: existingLoaded, total: levelsToFetch.length, failed: 0 });
     try {
-      const results = await runWithConcurrency(
-        dynamicLevels.map((l) => async () => {
-          try {
-            return await fetchLeaderboard(l.id);
-          } catch (e) {
-            console.error(`Failed to fetch leaderboard for level ${l.id}:`, e);
-            return [] as LeaderboardEntry[];
+      const newData: Record<string, LeaderboardEntry[]> = { ...allLevelsData };
+      let pending = forceRefresh
+        ? [...levelsToFetch]
+        : levelsToFetch.filter(l => !newData[l.id] || newData[l.id].length === 0);
+
+      for (let attempt = 0; attempt < 4 && pending.length > 0; attempt++) {
+        if (attempt > 0) {
+          await new Promise(r => setTimeout(r, 900 * attempt));
+        }
+
+        const results = await runWithConcurrency(
+          pending.map((level) => async () => {
+            try {
+              return { level, entries: await fetchLeaderboard(level.id, forceRefresh && attempt === 0) };
+            } catch (error) {
+              console.error(`Failed to fetch leaderboard for level ${level.id}:`, error);
+              return { level, entries: null as LeaderboardEntry[] | null };
+            }
+          }),
+          2,
+        );
+
+        results.forEach(({ level, entries }) => {
+          if (entries && entries.length > 0) {
+            newData[level.id] = entries;
           }
-        }),
-        4,
-      );
-      const newData: Record<string, LeaderboardEntry[]> = {};
-      dynamicLevels.forEach((l, i) => {
-        newData[l.id] = results[i];
+        });
+
+        pending = pending.filter(level => !newData[level.id] || newData[level.id].length === 0);
+        if (requestId === allLeaderboardFetchId.current) {
+          setAllLevelsData({ ...newData });
+          setLeaderboardLoadStatus({
+            loaded: levelsToFetch.length - pending.length,
+            total: levelsToFetch.length,
+            failed: pending.length,
+          });
+        }
+      }
+
+      if (requestId !== allLeaderboardFetchId.current) return;
+      setAllLevelsData({ ...newData });
+      setLeaderboardLoadStatus({
+        loaded: levelsToFetch.filter(l => newData[l.id]?.length > 0).length,
+        total: levelsToFetch.length,
+        failed: levelsToFetch.filter(l => !newData[l.id] || newData[l.id].length === 0).length,
       });
-      setAllLevelsData(newData);
     } catch (err) {
       console.error("Failed to fetch all levels", err);
     } finally {
-      setIsFetchingAll(false);
+      if (requestId === allLeaderboardFetchId.current) {
+        setIsFetchingAll(false);
+      }
     }
   };
 
@@ -784,6 +823,46 @@ export default function App() {
       };
     });
   }, [processedAllLevelsData, dynamicLevels]);
+
+  const worldRecordHistories = useMemo(() => {
+    return dynamicLevels.map(level => {
+      const datedEntries = [...(processedAllLevelsData[level.id] || [])]
+        .filter(entry => entry.created_at && Number.isFinite(new Date(entry.created_at).getTime()))
+        .sort((a, b) => {
+          const dateDiff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          return dateDiff || a.completion_time - b.completion_time;
+        });
+
+      let bestTime = Number.POSITIVE_INFINITY;
+      const history: Array<LeaderboardEntry & { previousTime: number | null; improvement: number | null }> = [];
+
+      datedEntries.forEach(entry => {
+        if (entry.completion_time < bestTime) {
+          history.push({
+            ...entry,
+            previousTime: Number.isFinite(bestTime) ? bestTime : null,
+            improvement: Number.isFinite(bestTime) ? bestTime - entry.completion_time : null,
+          });
+          bestTime = entry.completion_time;
+        }
+      });
+
+      return {
+        levelId: level.id,
+        levelName: level.name,
+        packId: level.packId,
+        history: history.reverse(),
+      };
+    });
+  }, [processedAllLevelsData, dynamicLevels]);
+
+  const recentWorldRecords = useMemo(() => {
+    return worldRecordHistories
+      .map(record => ({ ...record, latest: record.history[0] }))
+      .filter((record): record is typeof record & { latest: LeaderboardEntry & { previousTime: number | null; improvement: number | null } } => !!record.latest)
+      .sort((a, b) => new Date(b.latest.created_at).getTime() - new Date(a.latest.created_at).getTime())
+      .slice(0, 12);
+  }, [worldRecordHistories]);
 
   const sortedLevels = useMemo(() => {
     return [...allLevelsWithCustoms].sort((a, b) => {
@@ -1310,25 +1389,40 @@ export default function App() {
                 </h2>
                 <p className="text-slate-500 text-sm">The fastest times and top performers.</p>
               </div>
-              <div className="flex bg-white/5 border border-white/10 rounded-lg p-1 w-[300px]">
-                <button 
+              <div className="flex bg-white/5 border border-white/10 rounded-lg p-1 w-full sm:w-[420px]">
+                <Button 
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setWrsTab('wrs')}
                   className={cn(
-                    "flex-1 py-1.5 text-xs font-medium rounded-md transition-all",
+                    "flex-1 h-8 text-xs font-medium rounded-md transition-all",
                     wrsTab === 'wrs' ? "bg-[#38BDF8] text-slate-950 font-bold shadow-lg" : "text-slate-400 hover:text-white"
                   )}
                 >
                   World Records
-                </button>
-                <button 
+                </Button>
+                <Button 
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setWrsTab('hof')}
                   className={cn(
-                    "flex-1 py-1.5 text-xs font-medium rounded-md transition-all",
+                    "flex-1 h-8 text-xs font-medium rounded-md transition-all",
                     wrsTab === 'hof' ? "bg-[#38BDF8] text-slate-950 font-bold shadow-lg" : "text-slate-400 hover:text-white"
                   )}
                 >
                   Hall of Fame
-                </button>
+                </Button>
+                <Button 
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setWrsTab('history')}
+                  className={cn(
+                    "flex-1 h-8 text-xs font-medium rounded-md transition-all",
+                    wrsTab === 'history' ? "bg-[#38BDF8] text-slate-950 font-bold shadow-lg" : "text-slate-400 hover:text-white"
+                  )}
+                >
+                  History
+                </Button>
               </div>
             </div>
 
@@ -1423,6 +1517,118 @@ export default function App() {
                     </div>
                   );
                 })}
+              </div>
+            ) : wrsTab === 'history' ? (
+              <div className="space-y-8">
+                <Card className="bg-white/5 border-white/10 overflow-hidden">
+                  <CardHeader className="border-b border-white/10 bg-white/[0.02]">
+                    <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
+                      <History className="w-5 h-5 text-[#38BDF8]" />
+                      Recent World Records
+                    </CardTitle>
+                    <CardDescription className="text-slate-500 text-xs">
+                      Latest record-setting runs across loaded official maps.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader className="bg-white/[0.02]">
+                          <TableRow className="border-white/10 hover:bg-transparent">
+                            <TableHead className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Level</TableHead>
+                            <TableHead className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Player</TableHead>
+                            <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest text-slate-500">Time</TableHead>
+                            <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest text-slate-500">Set</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {recentWorldRecords.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center py-8 text-slate-500 font-mono text-xs">
+                                {isFetchingAll ? `Loading leaderboards ${leaderboardLoadStatus.loaded} / ${leaderboardLoadStatus.total}...` : "No record history loaded yet."}
+                              </TableCell>
+                            </TableRow>
+                          ) : recentWorldRecords.map(record => (
+                            <TableRow key={record.levelId} className="border-white/5 hover:bg-white/[0.02]">
+                              <TableCell className="font-bold text-[#38BDF8] whitespace-nowrap cursor-pointer hover:underline" onClick={() => { setSelectedLevel(record.levelId); setView('leaderboard'); }}>
+                                {record.levelName}
+                              </TableCell>
+                              <TableCell className="text-white whitespace-nowrap cursor-pointer hover:text-[#38BDF8]" onClick={() => handlePlayerClick(record.latest.username)}>
+                                {record.latest.username}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-bold text-yellow-400 whitespace-nowrap">
+                                {formatTime(record.latest.completion_time)}
+                              </TableCell>
+                              <TableCell className="text-right text-slate-500 text-xs font-mono whitespace-nowrap">
+                                {formatDate(record.latest.created_at)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="space-y-10">
+                  {dynamicPacks.map(pack => {
+                    const packHistories = worldRecordHistories.filter(record => record.packId === pack.id);
+                    if (packHistories.length === 0) return null;
+
+                    return (
+                      <div key={pack.id} className="space-y-4">
+                        <h3 className="text-sm font-extrabold uppercase tracking-widest text-[#38BDF8] border-b border-white/10 pb-2 flex items-center gap-2">
+                          <span className="w-2 h-4 bg-[#38BDF8] rounded shadow-[0_0_8px_rgba(56,189,248,0.6)]"></span>
+                          {pack.name}
+                          <span className="text-[10px] text-slate-500 font-mono font-normal lowercase">({packHistories.length} histories)</span>
+                        </h3>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          {packHistories.map(record => (
+                            <Card key={record.levelId} className="bg-white/5 border-white/10 overflow-hidden">
+                              <CardHeader className="bg-white/[0.02] border-b border-white/10 py-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <CardTitle className="text-sm font-bold text-[#38BDF8] truncate cursor-pointer hover:underline" onClick={() => { setSelectedLevel(record.levelId); setView('leaderboard'); }}>
+                                    {record.levelName}
+                                  </CardTitle>
+                                  <Badge variant="outline" className="bg-yellow-400/10 text-yellow-400 border-yellow-400/30 font-mono text-[10px] whitespace-nowrap">
+                                    {record.history.length} WR{record.history.length === 1 ? "" : "s"}
+                                  </Badge>
+                                </div>
+                              </CardHeader>
+                              <CardContent className="p-0">
+                                <Table>
+                                  <TableBody>
+                                    {record.history.slice(0, 6).map((entry, index) => (
+                                      <TableRow key={`${record.levelId}-${entry.run_id}-${index}`} className="border-white/5 hover:bg-white/[0.02]">
+                                        <TableCell className="py-2 text-xs font-bold text-white cursor-pointer hover:text-[#38BDF8]" onClick={() => handlePlayerClick(entry.username)}>
+                                          {entry.username}
+                                        </TableCell>
+                                        <TableCell className="py-2 text-right font-mono text-xs text-yellow-400 whitespace-nowrap">
+                                          {formatTime(entry.completion_time)}
+                                        </TableCell>
+                                        <TableCell className="py-2 text-right font-mono text-[10px] text-slate-500 whitespace-nowrap">
+                                          {formatDate(entry.created_at)}
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                    {record.history.length === 0 && (
+                                      <TableRow className="border-white/5">
+                                        <TableCell colSpan={3} className="py-4 text-center text-slate-500 text-xs font-mono">
+                                          Loading history...
+                                        </TableCell>
+                                      </TableRow>
+                                    )}
+                                  </TableBody>
+                                </Table>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
               <div className="space-y-12">
