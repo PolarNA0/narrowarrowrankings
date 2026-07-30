@@ -383,13 +383,14 @@ export function PlayerProfile({
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
       {[
         { label: "Levels Completed", value: aggregateStats?.totalCompleted || 0, icon: Target, color: "text-[var(--app-accent)]" },
         { label: "Average Time", value: aggregateStats ? formatTime(aggregateStats.avgTime, 'seconds') : "N/A", icon: Clock, color: "text-[#2DD4BF]" },
         { label: "Total Time", value: aggregateStats ? formatTime(aggregateStats.totalTime, 'minutes') : "N/A", icon: Clock, color: "text-[#6366F1]" },
         { label: "Overall Rank", value: aggregateStats?.overallRankId ? (overallRankConfig[aggregateStats.overallRankId]?.name || aggregateStats.overallRankId) : "---", icon: Star, color: "text-yellow-400", isRank: true },
         { label: "Completion Rate", value: `${((aggregateStats?.totalCompleted || 0) / (levels.length || 1) * 100).toFixed(1)}%`, icon: Medal, color: "text-green-400" },
+        { label: "World Records", value: computedMedals?.first ?? 0, icon: Trophy, color: "text-yellow-400" },
       ].map((stat, i) => (
           <Card key={i} className="bg-white/5 border-white/10 group hover:border-[var(--app-accent)]/30 transition-all duration-300">
             <CardContent className="p-4 flex items-center justify-between">
