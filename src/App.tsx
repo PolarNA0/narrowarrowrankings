@@ -18,6 +18,7 @@ import {
   RefreshCw,
   AlertCircle,
   Settings,
+  Palette,
   LayoutDashboard,
   Users,
   TrendingUp,
