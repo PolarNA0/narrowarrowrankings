@@ -47,6 +47,7 @@ interface PlayerProfileProps {
   onCompare: (username: string) => void;
   onLevelClick: (levelId: string) => void;
   worldRecords?: { levelId: string; levelName: string; wr: any }[];
+  computedMedals?: { first: number; second: number; third: number; top10: number; wrLevelIds: string[] };
 }
 
 export function PlayerProfile({ 
@@ -60,7 +61,8 @@ export function PlayerProfile({
   onBack, 
   onCompare, 
   onLevelClick,
-  worldRecords
+  worldRecords,
+  computedMedals
 }: PlayerProfileProps) {
   const [extraData, setExtraData] = useState<any>(null);
   const [loadingExtra, setLoadingExtra] = useState(false);
@@ -530,19 +532,19 @@ export function PlayerProfile({
               <div className="grid grid-cols-4 gap-2">
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-yellow-500/10">
                   <div className="w-6 h-6 rounded-full bg-yellow-400 text-black flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">1st</div>
-                  <div className="text-lg font-mono font-bold text-yellow-400 mt-1">{extraData.official_medals?.first ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-yellow-400 mt-1">{computedMedals?.first ?? extraData.official_medals?.first ?? 0}</div>
                 </div>
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-slate-400/10">
                   <div className="w-6 h-6 rounded-full bg-slate-300 text-black flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">2nd</div>
-                  <div className="text-lg font-mono font-bold text-slate-300 mt-1">{extraData.official_medals?.second ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-slate-300 mt-1">{computedMedals?.second ?? extraData.official_medals?.second ?? 0}</div>
                 </div>
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-amber-600/10">
                   <div className="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">3rd</div>
-                  <div className="text-lg font-mono font-bold text-amber-500 mt-1">{extraData.official_medals?.third ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-amber-500 mt-1">{computedMedals?.third ?? extraData.official_medals?.third ?? 0}</div>
                 </div>
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-blue-400/10">
                   <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">T10</div>
-                  <div className="text-lg font-mono font-bold text-blue-400 mt-1">{extraData.official_medals?.top10 ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-blue-400 mt-1">{computedMedals?.top10 ?? extraData.official_medals?.top10 ?? 0}</div>
                 </div>
               </div>
             </div>
