@@ -190,8 +190,8 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
             <ChevronLeft className="w-5 h-5" />
           </Button>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#38BDF8]/20 rounded-lg flex items-center justify-center border border-[#38BDF8]/30">
-              <Users className="w-6 h-6 text-[#38BDF8]" />
+            <div className="w-10 h-10 bg-[var(--app-accent)]/20 rounded-lg flex items-center justify-center border border-[var(--app-accent)]/30">
+              <Users className="w-6 h-6 text-[var(--app-accent)]" />
             </div>
             <div>
               <h2 className="text-2xl font-bold text-white tracking-tight">Compare Players</h2>
@@ -215,7 +215,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                   <button 
                     key={u}
                     onClick={() => addPlayer(u)}
-                    className="w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-[#38BDF8] hover:text-white transition-colors border-b border-white/5 last:border-0"
+                    className="w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-[var(--app-accent)] hover:text-white transition-colors border-b border-white/5 last:border-0"
                   >
                     {u}
                   </button>
@@ -232,7 +232,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
         {players.map((player, idx) => (
           <Card key={player.username} className={cn(
             "bg-white/5 border-white/10 relative overflow-hidden group",
-            idx === 0 ? "border-[#38BDF8]/30" : 
+            idx === 0 ? "border-[var(--app-accent)]/30" : 
             idx === 1 ? "border-[#6366F1]/30" :
             idx === 2 ? "border-[#2DD4BF]/30" : "border-[#F59E0B]/30"
           )}>
@@ -241,7 +241,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                 <div>
                   <p className={cn(
                     "text-[10px] uppercase tracking-widest font-bold mb-1",
-                    idx === 0 ? "text-[#38BDF8]" : 
+                    idx === 0 ? "text-[var(--app-accent)]" : 
                     idx === 1 ? "text-[#6366F1]" :
                     idx === 2 ? "text-[#2DD4BF]" : "text-[#F59E0B]"
                   )}>Player {idx + 1}</p>
@@ -281,7 +281,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
           <CardHeader className="border-b border-white/10 bg-white/[0.02] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
-                <ArrowUpDown className="w-5 h-5 text-[#38BDF8]" />
+                <ArrowUpDown className="w-5 h-5 text-[var(--app-accent)]" />
                 Performance Comparison Timeline
               </CardTitle>
               <p className="text-slate-500 text-xs mt-1">
@@ -298,7 +298,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                 className={cn(
                   "h-7 text-xs px-3 rounded-md font-medium transition-all",
                   chartViewMode === 'all' 
-                    ? "bg-[#38BDF8] text-white shadow-sm" 
+                    ? "bg-[var(--app-accent)] text-white shadow-sm" 
                     : "text-slate-400 hover:text-white"
                 )}
               >
@@ -311,7 +311,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                 className={cn(
                   "h-7 text-xs px-3 rounded-md font-medium transition-all",
                   chartViewMode === 'shared' 
-                    ? "bg-[#38BDF8] text-white shadow-sm" 
+                    ? "bg-[var(--app-accent)] text-white shadow-sm" 
                     : "text-slate-400 hover:text-white"
                 )}
               >
@@ -381,7 +381,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                                             {item.username} {isFirst && "👑"}
                                           </span>
                                         </div>
-                                        <span className={cn("font-bold shrink-0", isFirst ? "text-[#38BDF8]" : "text-slate-200")}>
+                                        <span className={cn("font-bold shrink-0", isFirst ? "text-[var(--app-accent)]" : "text-slate-200")}>
                                           {item.time !== null && item.time !== undefined ? `${item.time.toFixed(3)}s` : "No Run"}
                                         </span>
                                       </div>
@@ -478,7 +478,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                               <div className={cn(
                                 "font-mono font-bold text-sm flex items-center justify-center gap-1.5",
                                 isBest ? (
-                                  idx === 0 ? "text-[#38BDF8]" : 
+                                  idx === 0 ? "text-[var(--app-accent)]" : 
                                   idx === 1 ? "text-[#6366F1]" :
                                   idx === 2 ? "text-[#2DD4BF]" : "text-[#F59E0B]"
                                 ) : "text-slate-400"
@@ -533,7 +533,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                 {comparisonData.map(({ level, playerStats, bestTime }) => (
                   <TableRow key={level.id} className="border-white/5 hover:bg-white/[0.01] transition-colors">
                     <TableCell 
-                      className="font-medium text-slate-300 whitespace-nowrap hover:underline cursor-pointer hover:text-[#38BDF8] transition-colors"
+                      className="font-medium text-slate-300 whitespace-nowrap hover:underline cursor-pointer hover:text-[var(--app-accent)] transition-colors"
                       onClick={() => onLevelClick(level.id)}
                     >
                       <div className="flex items-center gap-3">
@@ -548,7 +548,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                         />
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-sm text-slate-200 group-hover:text-[#38BDF8] transition-colors">{level.name}</span>
+                            <span className="font-bold text-sm text-slate-200 group-hover:text-[var(--app-accent)] transition-colors">{level.name}</span>
                             <a
                               href={`https://narrowarrow.xyz/levelid=${level.id}`}
                               target="_blank"
@@ -573,7 +573,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                           <div className={cn(
                             "font-mono font-bold whitespace-nowrap",
                             ps.stats.bestTime === bestTime ? (
-                              idx === 0 ? "text-[#38BDF8]" : 
+                              idx === 0 ? "text-[var(--app-accent)]" : 
                               idx === 1 ? "text-[#6366F1]" :
                               idx === 2 ? "text-[#2DD4BF]" : "text-[#F59E0B]"
                             ) : "text-slate-500"

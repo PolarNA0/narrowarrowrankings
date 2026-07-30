@@ -384,7 +384,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between border-b border-white/10 pb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#38BDF8]/10 border border-[#38BDF8]/20 flex items-center justify-center text-[#38BDF8]">
+          <div className="w-10 h-10 rounded-xl bg-[var(--app-accent)]/10 border border-[var(--app-accent)]/20 flex items-center justify-center text-[var(--app-accent)]">
             <Dices className="w-5 h-5 animate-pulse" />
           </div>
           <div>
@@ -411,7 +411,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
           onClick={() => setRandomizerMode('campaign')}
           className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all duration-300 ${
             randomizerMode === 'campaign'
-              ? "bg-[#38BDF8] text-slate-950 font-black shadow-md"
+              ? "bg-[var(--app-accent)] text-slate-950 font-black shadow-md"
               : "text-slate-400 hover:text-white"
           }`}
         >
@@ -443,7 +443,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                     <CardDescription className="text-[11px] text-slate-500 mt-0.5">Select packs or single levels</CardDescription>
                   </div>
                   <div className="flex gap-2 text-[10px]">
-                    <button onClick={selectAll} className="text-[#38BDF8] hover:underline font-bold">All</button>
+                    <button onClick={selectAll} className="text-[var(--app-accent)] hover:underline font-bold">All</button>
                     <span className="text-slate-600">|</span>
                     <button onClick={deselectAll} className="text-slate-400 hover:underline">None</button>
                   </div>
@@ -454,7 +454,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                     placeholder="Search levels..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#38BDF8]/50 transition-colors"
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[var(--app-accent)]/50 transition-colors"
                   />
                   {searchQuery && (
                     <button 
@@ -486,7 +486,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-all shrink-0 ${
-                              isLevelSelected ? "bg-[#38BDF8] border-[#38BDF8] text-white" : "border-slate-600 bg-transparent"
+                              isLevelSelected ? "bg-[var(--app-accent)] border-[var(--app-accent)] text-white" : "border-slate-600 bg-transparent"
                             }`}>
                               {isLevelSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                             </div>
@@ -518,8 +518,8 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                               className="flex items-center justify-center shrink-0"
                             >
                               <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${
-                                status === 'all' ? "bg-[#38BDF8] border-[#38BDF8] text-white" :
-                                status === 'some' ? "bg-[#38BDF8]/35 border-[#38BDF8] text-white" :
+                                status === 'all' ? "bg-[var(--app-accent)] border-[var(--app-accent)] text-white" :
+                                status === 'some' ? "bg-[var(--app-accent)]/35 border-[var(--app-accent)] text-white" :
                                 "border-slate-500 bg-transparent"
                               }`}>
                                 {status === 'all' && <Check className="w-3 h-3 stroke-[3]" />}
@@ -530,7 +530,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                           </div>
                           <div className="flex items-center gap-2 shrink-0 ml-2">
                             <Badge variant="outline" className={`font-mono text-[9px] px-1.5 py-0 ${
-                              status !== 'none' ? "border-[#38BDF8]/30 text-[#38BDF8]" : "border-white/5 text-slate-500"
+                              status !== 'none' ? "border-[var(--app-accent)]/30 text-[var(--app-accent)]" : "border-white/5 text-slate-500"
                             }`}>
                               {countSelected}/{packLevels.length}
                             </Badge>
@@ -560,7 +560,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                                   className="w-full flex items-center gap-2.5 py-1 px-1.5 rounded hover:bg-white/5 text-left text-[11px] text-slate-300 hover:text-white transition-all"
                                 >
                                   <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-all ${
-                                    isLevelSelected ? "bg-[#38BDF8] border-[#38BDF8] text-white" : "border-slate-600 bg-transparent"
+                                    isLevelSelected ? "bg-[var(--app-accent)] border-[var(--app-accent)] text-white" : "border-slate-600 bg-transparent"
                                   }`}>
                                     {isLevelSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                                   </div>
@@ -585,7 +585,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                     {filteredLevels.length} <span className="text-xs text-slate-500 font-normal">levels active</span>
                   </p>
                 </div>
-                <Dices className="w-8 h-8 text-[#38BDF8]/20" />
+                <Dices className="w-8 h-8 text-[var(--app-accent)]/20" />
               </div>
             </Card>
           </div>
@@ -593,7 +593,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
           {/* Right Side: Dynamic Wheel & Result View */}
           <div className="lg:col-span-8 flex flex-col items-center justify-center min-h-[460px] sm:min-h-[500px] bg-white/[0.02] border border-white/10 rounded-2xl p-3 sm:p-8 relative overflow-hidden">
             {/* Backdrop Radial Glowing Effects */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-[#38BDF8]/10 rounded-full blur-[100px] pointer-events-none z-0"></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-[var(--app-accent)]/10 rounded-full blur-[100px] pointer-events-none z-0"></div>
 
             {filteredLevels.length === 0 ? (
               <div className="relative z-10 flex flex-col items-center justify-center text-center max-w-md">
@@ -691,7 +691,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                     className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 min-[370px]:w-20 min-[370px]:h-20 rounded-full flex items-center justify-center font-extrabold text-[10px] min-[370px]:text-xs uppercase tracking-wider transition-all z-20 shadow-xl ${
                       isSpinning
                         ? "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed scale-95"
-                        : "bg-[#38BDF8] text-white border-2 border-white/20 hover:scale-105 active:scale-95 hover:shadow-[0_0_20px_rgba(56,189,248,0.6)]"
+                        : "bg-[var(--app-accent)] text-white border-2 border-white/20 hover:scale-105 active:scale-95 hover:shadow-[0_0_20px_rgba(56,189,248,0.6)]"
                     }`}
                   >
                     {isSpinning ? "Spin" : "SPIN"}
@@ -705,11 +705,11 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                       initial={{ opacity: 0, scale: 0.9, y: 15 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.9, y: -15 }}
-                      className="w-full max-w-md bg-gradient-to-b from-[#1c1c1e] to-[#121214] border border-[#38BDF8]/30 rounded-2xl p-5 shadow-[0_10px_40px_rgba(0,0,0,0.6)] text-center relative overflow-hidden"
+                      className="w-full max-w-md bg-gradient-to-b from-[#1c1c1e] to-[#121214] border border-[var(--app-accent)]/30 rounded-2xl p-5 shadow-[0_10px_40px_rgba(0,0,0,0.6)] text-center relative overflow-hidden"
                     >
                       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.15),_transparent_70%)] pointer-events-none"></div>
 
-                      <div className="inline-flex items-center gap-1 bg-[#38BDF8]/10 text-[#38BDF8] border border-[#38BDF8]/20 text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full mb-3.5 shadow-sm">
+                      <div className="inline-flex items-center gap-1 bg-[var(--app-accent)]/10 text-[var(--app-accent)] border border-[var(--app-accent)]/20 text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full mb-3.5 shadow-sm">
                         <Trophy className="w-3 h-3" /> Selected Level
                       </div>
 
@@ -724,7 +724,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                           }}
                         />
                         <div className="min-w-0 flex-1">
-                          <span className="text-[9px] uppercase font-bold tracking-widest text-[#38BDF8]">
+                          <span className="text-[9px] uppercase font-bold tracking-widest text-[var(--app-accent)]">
                             {packs.find(p => p.id === winningLevel.packId)?.name || capitalizeName(winningLevel.packId)}
                           </span>
                           <h4 className="text-lg font-bold text-white tracking-tight mt-0.5 truncate">{winningLevel.name}</h4>
@@ -738,7 +738,7 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                         <div className="flex gap-2">
                           <Button
                             onClick={() => onSelectLevel(winningLevel.id)}
-                            className="flex-1 bg-[#38BDF8] hover:bg-[#0284c7] text-white font-bold text-xs"
+                            className="flex-1 bg-[var(--app-accent)] hover:bg-[#0284c7] text-white font-bold text-xs"
                           >
                             Leaderboard <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                           </Button>

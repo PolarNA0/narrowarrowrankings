@@ -601,7 +601,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-              <Settings className="w-6 h-6 text-[#38BDF8]" />
+              <Settings className="w-6 h-6 text-[var(--app-accent)]" />
               Admin Panel
             </h2>
             <p className="text-slate-500 text-sm">Manage map-specific times and global rank colors.</p>
@@ -614,7 +614,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
               <Button 
                 onClick={activeTab === 'maps' ? handleSaveMaps : activeTab === 'general' ? handleSaveGeneral : handleSaveOverall} 
                 disabled={saving}
-                className="bg-[#38BDF8] text-slate-950 hover:bg-[#38BDF8]/80 font-bold shadow-[0_0_15px_rgba(56,189,248,0.2)]"
+                className="bg-[var(--app-accent)] text-slate-950 hover:bg-[var(--app-accent)]/80 font-bold shadow-[0_0_15px_rgba(56,189,248,0.2)]"
               >
                 <Save className={cn("w-4 h-4 mr-2", saving && "animate-spin")} />
                 {saving ? "Saving..." : "Save Changes"}
@@ -923,7 +923,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
               <Card className="bg-white/5 border-white/10">
                 <CardHeader className="border-b border-white/10 pb-4">
                   <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                    <Plus className="w-4 h-4 text-[#38BDF8]" />
+                    <Plus className="w-4 h-4 text-[var(--app-accent)]" />
                     Add Legacy Run
                   </CardTitle>
                   <CardDescription>Insert a verified historic run that is no longer on the active leaderboards.</CardDescription>
@@ -1003,7 +1003,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
                                   setLegacyPlayerQuery(u);
                                   setShowPlayerSuggestions(false);
                                 }}
-                                className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-[#38BDF8] hover:text-slate-950 transition-colors border-b border-white/5 last:border-0 flex items-center justify-between"
+                                className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-[var(--app-accent)] hover:text-slate-950 transition-colors border-b border-white/5 last:border-0 flex items-center justify-between"
                               >
                                 <span>{u}</span>
                                 {legacyPlayerSelect === u && (
@@ -1062,7 +1062,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
                     <Button
                       type="submit"
                       disabled={addingLegacy}
-                      className="w-full bg-[#38BDF8] text-slate-950 hover:bg-[#38BDF8]/80 font-bold h-10 mt-2"
+                      className="w-full bg-[var(--app-accent)] text-slate-950 hover:bg-[var(--app-accent)]/80 font-bold h-10 mt-2"
                     >
                       {addingLegacy ? "Saving Run..." : "Save Legacy Run"}
                     </Button>
@@ -1090,7 +1090,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
                       placeholder="Search player..." 
                       value={legacySearchQuery}
                       onChange={(e) => setLegacySearchQuery(e.target.value)}
-                      className="bg-black/30 border-white/10 h-8 pl-8 text-xs text-white placeholder-slate-500 min-w-[140px] focus-visible:ring-[#38BDF8]/50"
+                      className="bg-black/30 border-white/10 h-8 pl-8 text-xs text-white placeholder-slate-500 min-w-[140px] focus-visible:ring-[var(--app-accent)]/50"
                     />
                   </div>
 
@@ -1336,7 +1336,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
                                       setEditingCreatedAt(run.createdAt || "");
                                       setEditingArrow(run.arrow_name || run.arrowId || "Narrow Arrow");
                                     }}
-                                    className="text-[#38BDF8] hover:text-[#38BDF8]/80 hover:bg-[#38BDF8]/10 h-8 w-8"
+                                    className="text-[var(--app-accent)] hover:text-[var(--app-accent)]/80 hover:bg-[var(--app-accent)]/10 h-8 w-8"
                                     title="Edit Run"
                                   >
                                     <Edit2 className="w-4 h-4" />

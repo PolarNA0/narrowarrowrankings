@@ -152,3 +152,27 @@
     font-family: var(--font-sans);
   }
 }
+
+/* ---- App theming (user-selectable background / accent) ---- */
+:root {
+  --app-accent: #38bdf8;
+  --app-bg: radial-gradient(1200px 600px at 50% -10%, #101425 0%, #0a0a0a 60%);
+}
+
+.na-shell {
+  background: var(--app-bg);
+  background-attachment: fixed;
+}
+
+[data-density="compact"] .na-shell td,
+[data-density="compact"] .na-shell th {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+[data-motion="off"] .na-shell *,
+[data-motion="off"] .na-shell *::before,
+[data-motion="off"] .na-shell *::after {
+  animation: none !important;
+  transition: none !important;
+}

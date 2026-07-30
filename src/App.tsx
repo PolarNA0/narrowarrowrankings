@@ -18,6 +18,7 @@ import {
   RefreshCw,
   AlertCircle,
   Settings,
+  Palette,
   LayoutDashboard,
   Users,
   TrendingUp,
@@ -84,6 +85,10 @@ import { CustomsView } from "./components/CustomsView";
 import { useAdminAuth } from "./hooks/useAdminAuth";
 import { useRemovedRuns, removeRun } from "./hooks/useRemovedRuns";
 import { removedRunKey } from "./lib/removedRuns";
+import { computeMedals } from "./lib/medals";
+import { useAppSettings } from "./hooks/useAppSettings";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { toast } from "sonner";
 
 export default function App() {
   const { isAdmin, user: adminUser } = useAdminAuth();
@@ -288,15 +293,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAdmin, setShowAdmin] = useState(false);
-  const [hideLegacyRuns, setHideLegacyRuns] = useState<boolean>(() => {
-    const stored = localStorage.getItem("hideLegacyRuns");
-    if (stored === null) return false;
-    return stored === "true";
-  });
+  const [showSettings, setShowSettings] = useState(false);
+  const { settings, update: updateSetting, reset: resetSettings } = useAppSettings();
 
-  useEffect(() => {
-    localStorage.setItem("hideLegacyRuns", hideLegacyRuns ? "true" : "false");
-  }, [hideLegacyRuns]);
 
   const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
@@ -671,21 +670,21 @@ export default function App() {
 
   const processedData = useMemo(() => {
     return stripRemoved(
-      applyLegacyRunsToLeaderboard(selectedLevel, data, hideLegacyRuns ? [] : mappedLegacyRuns),
+      applyLegacyRunsToLeaderboard(selectedLevel, data, mappedLegacyRuns),
       selectedLevel,
     );
-  }, [selectedLevel, data, mappedLegacyRuns, hideLegacyRuns, removedKeys]);
+  }, [selectedLevel, data, mappedLegacyRuns, removedKeys]);
 
   const processedAllLevelsData = useMemo(() => {
     const result: Record<string, LeaderboardEntry[]> = {};
     Object.keys(allLevelsData).forEach(levelId => {
       result[levelId] = stripRemoved(
-        applyLegacyRunsToLeaderboard(levelId, allLevelsData[levelId], hideLegacyRuns ? [] : mappedLegacyRuns),
+        applyLegacyRunsToLeaderboard(levelId, allLevelsData[levelId], mappedLegacyRuns),
         levelId,
       );
     });
     return result;
-  }, [allLevelsData, mappedLegacyRuns, hideLegacyRuns, removedKeys]);
+  }, [allLevelsData, mappedLegacyRuns, removedKeys]);
 
 
   const allUsernames = useMemo(() => {
@@ -811,6 +810,11 @@ export default function App() {
       };
     });
   }, [processedAllLevelsData, allUsernames, allMapsPlayedFilter, overallRankConfig, dynamicLevels, selectedAveragePack]);
+
+  const selectedPlayerMedals = useMemo(() => {
+    if (!selectedPlayer) return undefined;
+    return computeMedals(selectedPlayer, dynamicLevels.map(l => l.id), processedAllLevelsData);
+  }, [selectedPlayer, dynamicLevels, processedAllLevelsData]);
 
   const worldRecords = useMemo(() => {
     return dynamicLevels.map(level => {
@@ -991,9 +995,22 @@ export default function App() {
 
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-slate-200 font-sans selection:bg-[#38BDF8]/30">
+    <div className="na-shell min-h-screen text-slate-200 font-sans selection:bg-[var(--app-accent)]/30">
+      <SettingsPanel
+        open={showSettings}
+        onOpenChange={setShowSettings}
+        settings={settings}
+        update={updateSetting}
+        reset={resetSettings}
+      />
+      {settings.starfield && (
+        <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+          <div className="absolute -top-40 left-1/4 h-96 w-96 rounded-full bg-[var(--app-accent)]/10 blur-[120px]" />
+          <div className="absolute bottom-0 right-1/4 h-96 w-96 rounded-full bg-[var(--app-accent)]/5 blur-[140px]" />
+        </div>
+      )}
       {/* Header */}
-      <header className="border-b border-white/10 bg-[#38BDF8]/5 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-white/10 bg-[var(--app-accent)]/5 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 md:gap-3 min-w-0">
             <ArrowIcon name="Narrow" className="w-8 h-8 md:w-10 md:h-10 shrink-0" />
@@ -1012,7 +1029,7 @@ export default function App() {
                 onClick={() => setView('leaderboard')}
                 className={cn(
                   "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", 
-                  view === 'leaderboard' ? "bg-[#38BDF8] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                  view === 'leaderboard' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
                 )}
               >
                 Levels
@@ -1026,7 +1043,7 @@ export default function App() {
                 }}
                 className={cn(
                   "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", 
-                  view === 'average' ? "bg-[#38BDF8] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                  view === 'average' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
                 )}
               >
                 Average
@@ -1040,7 +1057,7 @@ export default function App() {
                 }}
                 className={cn(
                   "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", 
-                  view === 'wrs' ? "bg-[#38BDF8] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                  view === 'wrs' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
                 )}
               >
                 WRs
@@ -1051,7 +1068,7 @@ export default function App() {
                 onClick={() => setView('random')}
                 className={cn(
                   "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", 
-                  view === 'random' ? "bg-[#38BDF8] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                  view === 'random' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
                 )}
               >
                 Randomizer
@@ -1062,7 +1079,7 @@ export default function App() {
                 onClick={() => setView('customs')}
                 className={cn(
                   "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", 
-                  view === 'customs' ? "bg-[#38BDF8] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                  view === 'customs' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
                 )}
               >
                 Customs
@@ -1080,29 +1097,38 @@ export default function App() {
                   }
                 }}
               >
-                <SelectTrigger className="bg-black/40 border-white/10 h-8 text-[9px] uppercase font-bold tracking-wider text-white px-2 focus:ring-[#38BDF8]/50">
+                <SelectTrigger className="bg-black/40 border-white/10 h-8 text-[9px] uppercase font-bold tracking-wider text-white px-2 focus:ring-[var(--app-accent)]/50">
                   <SelectValue placeholder="Navigate" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#121212] border-white/10 text-slate-200">
-                  <SelectItem value="leaderboard" className="focus:bg-[#38BDF8] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                  <SelectItem value="leaderboard" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     Levels
                   </SelectItem>
-                  <SelectItem value="average" className="focus:bg-[#38BDF8] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                  <SelectItem value="average" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     Average
                   </SelectItem>
-                  <SelectItem value="wrs" className="focus:bg-[#38BDF8] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                  <SelectItem value="wrs" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     World Records
                   </SelectItem>
-                  <SelectItem value="random" className="focus:bg-[#38BDF8] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                  <SelectItem value="random" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     Randomizer
                   </SelectItem>
-                  <SelectItem value="customs" className="focus:bg-[#38BDF8] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                  <SelectItem value="customs" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     Custom Levels
                   </SelectItem>
                 </SelectContent>
               </Select>
             </div>
             
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Appearance settings"
+              onClick={() => setShowSettings(true)}
+              className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
+            >
+              <Palette className="w-4 h-4" />
+            </Button>
             <Button 
               variant="ghost" 
               size="icon" 
@@ -1146,7 +1172,7 @@ export default function App() {
         ) : view === 'profile' && selectedPlayer ? (
           isFetchingAll ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
-              <RefreshCw className="w-12 h-12 text-[#38BDF8] animate-spin" />
+              <RefreshCw className="w-12 h-12 text-[var(--app-accent)] animate-spin" />
               <p className="text-slate-500 font-mono text-sm animate-pulse">Analyzing player performance across all levels...</p>
             </div>
           ) : getPlayerStats(selectedPlayer) ? (
@@ -1165,6 +1191,7 @@ export default function App() {
               }}
               onLevelClick={handleLevelClick}
               worldRecords={worldRecords}
+              computedMedals={selectedPlayerMedals}
             />
           ) : (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
@@ -1176,7 +1203,7 @@ export default function App() {
         ) : view === 'compare' && selectedPlayer ? (
           isFetchingAll ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
-              <RefreshCw className="w-12 h-12 text-[#38BDF8] animate-spin" />
+              <RefreshCw className="w-12 h-12 text-[var(--app-accent)] animate-spin" />
               <p className="text-slate-500 font-mono text-sm animate-pulse">Preparing comparison data...</p>
             </div>
           ) : getPlayerStats(selectedPlayer) ? (
@@ -1201,7 +1228,7 @@ export default function App() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                  <Globe className="w-6 h-6 text-[#38BDF8]" />
+                  <Globe className="w-6 h-6 text-[var(--app-accent)]" />
                   Average Rankings
                 </h2>
                 <p className="text-slate-500 text-sm">Overall performance based on average leaderboard position and rank.</p>
@@ -1212,7 +1239,7 @@ export default function App() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                   <Input 
                     placeholder="Search player..." 
-                    className="bg-white/5 border-white/10 h-10 pl-10 pr-10 focus-visible:ring-[#38BDF8]/50 text-white text-xs"
+                    className="bg-white/5 border-white/10 h-10 pl-10 pr-10 focus-visible:ring-[var(--app-accent)]/50 text-white text-xs"
                     value={averageSearchQuery}
                     onChange={(e) => setAverageSearchQuery(e.target.value)}
                   />
@@ -1229,17 +1256,17 @@ export default function App() {
                 {/* Pack Selector */}
                 <div className="w-48">
                   <Select value={selectedAveragePack} onValueChange={setSelectedAveragePack}>
-                    <SelectTrigger className="bg-white/5 border-white/10 h-10 focus:ring-[#38BDF8]/50 hover:bg-white/10 transition-all text-white text-xs">
+                    <SelectTrigger className="bg-white/5 border-white/10 h-10 focus:ring-[var(--app-accent)]/50 hover:bg-white/10 transition-all text-white text-xs">
                       <SelectValue placeholder="All Map Packs">
                         {selectedAveragePack === "all" ? "All Map Packs" : (dynamicPacks.find(p => p.id === selectedAveragePack)?.name || capitalizeName(selectedAveragePack))}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 text-xs">
-                      <SelectItem value="all" className="focus:bg-[#38BDF8] focus:text-slate-950 py-2 cursor-pointer">
+                      <SelectItem value="all" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2 cursor-pointer">
                         All Map Packs
                       </SelectItem>
                       {dynamicPacks.map(pack => (
-                        <SelectItem key={pack.id} value={pack.id} className="focus:bg-[#38BDF8] focus:text-slate-950 py-2 cursor-pointer">
+                        <SelectItem key={pack.id} value={pack.id} className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2 cursor-pointer">
                           {pack.name}
                         </SelectItem>
                       ))}
@@ -1260,7 +1287,7 @@ export default function App() {
                     variant="ghost" 
                     size="sm" 
                     onClick={() => setAllMapsPlayedFilter(true)}
-                    className={cn("text-[10px] uppercase tracking-widest h-8 px-3", allMapsPlayedFilter ? "bg-[#38BDF8] text-slate-950 font-bold" : "text-slate-400")}
+                    className={cn("text-[10px] uppercase tracking-widest h-8 px-3", allMapsPlayedFilter ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400")}
                   >
                     All Maps Only
                   </Button>
@@ -1303,7 +1330,7 @@ export default function App() {
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       />
                     ) : (
-                      <stat.icon className="w-6 h-6 md:w-8 md:h-8 text-white/5 group-hover:text-[#38BDF8]/20 transition-colors shrink-0" />
+                      <stat.icon className="w-6 h-6 md:w-8 md:h-8 text-white/5 group-hover:text-[var(--app-accent)]/20 transition-colors shrink-0" />
                     )}
                   </CardContent>
                 </Card>
@@ -1347,7 +1374,7 @@ export default function App() {
                             <TableCell className="text-center font-mono text-slate-500">{p.originalRank}</TableCell>
                             <TableCell className="font-bold text-white whitespace-nowrap">{p.username}</TableCell>
                             <TableCell className="text-center font-mono text-white">
-                              <span className="text-[#38BDF8]">#</span>{p.avgPosition.toFixed(1)}
+                              <span className="text-[var(--app-accent)]">#</span>{p.avgPosition.toFixed(1)}
                             </TableCell>
                             <TableCell className="text-center font-mono text-[#2DD4BF] whitespace-nowrap">{formatTime(p.avgTime, 'seconds')}</TableCell>
                             <TableCell className="text-center font-mono text-[#6366F1] whitespace-nowrap">{formatTime(p.totalTime, 'minutes')}</TableCell>
@@ -1396,7 +1423,7 @@ export default function App() {
                   onClick={() => setWrsTab('wrs')}
                   className={cn(
                     "flex-1 h-8 text-xs font-medium rounded-md transition-all",
-                    wrsTab === 'wrs' ? "bg-[#38BDF8] text-slate-950 font-bold shadow-lg" : "text-slate-400 hover:text-white"
+                    wrsTab === 'wrs' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-lg" : "text-slate-400 hover:text-white"
                   )}
                 >
                   World Records
@@ -1407,7 +1434,7 @@ export default function App() {
                   onClick={() => setWrsTab('hof')}
                   className={cn(
                     "flex-1 h-8 text-xs font-medium rounded-md transition-all",
-                    wrsTab === 'hof' ? "bg-[#38BDF8] text-slate-950 font-bold shadow-lg" : "text-slate-400 hover:text-white"
+                    wrsTab === 'hof' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-lg" : "text-slate-400 hover:text-white"
                   )}
                 >
                   Hall of Fame
@@ -1418,7 +1445,7 @@ export default function App() {
                   onClick={() => setWrsTab('history')}
                   className={cn(
                     "flex-1 h-8 text-xs font-medium rounded-md transition-all",
-                    wrsTab === 'history' ? "bg-[#38BDF8] text-slate-950 font-bold shadow-lg" : "text-slate-400 hover:text-white"
+                    wrsTab === 'history' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-lg" : "text-slate-400 hover:text-white"
                   )}
                 >
                   History
@@ -1434,8 +1461,8 @@ export default function App() {
 
                   return (
                     <div key={pack.id} className="space-y-4">
-                      <h3 className="text-sm font-extrabold uppercase tracking-widest text-[#38BDF8] border-b border-white/10 pb-2 flex items-center gap-2">
-                        <span className="w-2 h-4 bg-[#38BDF8] rounded shadow-[0_0_8px_rgba(56,189,248,0.6)]"></span>
+                      <h3 className="text-sm font-extrabold uppercase tracking-widest text-[var(--app-accent)] border-b border-white/10 pb-2 flex items-center gap-2">
+                        <span className="w-2 h-4 bg-[var(--app-accent)] rounded shadow-[0_0_8px_rgba(56,189,248,0.6)]"></span>
                         {pack.name}
                         <span className="text-[10px] text-slate-500 font-mono font-normal lowercase">({packLevels.length} levels)</span>
                       </h3>
@@ -1469,7 +1496,7 @@ export default function App() {
                                         />
                                         <div className="flex items-center gap-2">
                                           <span 
-                                            className="font-bold text-[#38BDF8] hover:underline cursor-pointer transition-colors"
+                                            className="font-bold text-[var(--app-accent)] hover:underline cursor-pointer transition-colors"
                                             onClick={() => {
                                               setSelectedLevel(level.id);
                                               setView('leaderboard');
@@ -1491,7 +1518,7 @@ export default function App() {
                                       </div>
                                     </TableCell>
                                     <TableCell 
-                                      className="text-white hover:text-[#38BDF8] cursor-pointer transition-colors whitespace-nowrap"
+                                      className="text-white hover:text-[var(--app-accent)] cursor-pointer transition-colors whitespace-nowrap"
                                       onClick={() => wr?.wr && handlePlayerClick(wr.wr.username)}
                                     >
                                       {wr?.wr?.username || "---"}
@@ -1501,7 +1528,7 @@ export default function App() {
                                         "w-5 h-5 mx-auto",
                                         wr.wr.arrow_name.toLowerCase().includes("energy") ? "text-[#22c55e]" :
                                         wr.wr.arrow_name.toLowerCase().includes("speedy") ? "text-[#3b82f6]" :
-                                        "text-[#38BDF8]"
+                                        "text-[var(--app-accent)]"
                                       )} />}
                                     </TableCell>
                                     <TableCell className="text-right font-mono font-bold text-yellow-400 whitespace-nowrap">
@@ -1523,7 +1550,7 @@ export default function App() {
                 <Card className="bg-white/5 border-white/10 overflow-hidden">
                   <CardHeader className="border-b border-white/10 bg-white/[0.02]">
                     <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
-                      <History className="w-5 h-5 text-[#38BDF8]" />
+                      <History className="w-5 h-5 text-[var(--app-accent)]" />
                       Recent World Records
                     </CardTitle>
                     <CardDescription className="text-slate-500 text-xs">
@@ -1550,10 +1577,10 @@ export default function App() {
                             </TableRow>
                           ) : recentWorldRecords.map(record => (
                             <TableRow key={record.levelId} className="border-white/5 hover:bg-white/[0.02]">
-                              <TableCell className="font-bold text-[#38BDF8] whitespace-nowrap cursor-pointer hover:underline" onClick={() => { setSelectedLevel(record.levelId); setView('leaderboard'); }}>
+                              <TableCell className="font-bold text-[var(--app-accent)] whitespace-nowrap cursor-pointer hover:underline" onClick={() => { setSelectedLevel(record.levelId); setView('leaderboard'); }}>
                                 {record.levelName}
                               </TableCell>
-                              <TableCell className="text-white whitespace-nowrap cursor-pointer hover:text-[#38BDF8]" onClick={() => handlePlayerClick(record.latest.username)}>
+                              <TableCell className="text-white whitespace-nowrap cursor-pointer hover:text-[var(--app-accent)]" onClick={() => handlePlayerClick(record.latest.username)}>
                                 {record.latest.username}
                               </TableCell>
                               <TableCell className="text-right font-mono font-bold text-yellow-400 whitespace-nowrap">
@@ -1577,8 +1604,8 @@ export default function App() {
 
                     return (
                       <div key={pack.id} className="space-y-4">
-                        <h3 className="text-sm font-extrabold uppercase tracking-widest text-[#38BDF8] border-b border-white/10 pb-2 flex items-center gap-2">
-                          <span className="w-2 h-4 bg-[#38BDF8] rounded shadow-[0_0_8px_rgba(56,189,248,0.6)]"></span>
+                        <h3 className="text-sm font-extrabold uppercase tracking-widest text-[var(--app-accent)] border-b border-white/10 pb-2 flex items-center gap-2">
+                          <span className="w-2 h-4 bg-[var(--app-accent)] rounded shadow-[0_0_8px_rgba(56,189,248,0.6)]"></span>
                           {pack.name}
                           <span className="text-[10px] text-slate-500 font-mono font-normal lowercase">({packHistories.length} histories)</span>
                         </h3>
@@ -1588,7 +1615,7 @@ export default function App() {
                             <Card key={record.levelId} className="bg-white/5 border-white/10 overflow-hidden">
                               <CardHeader className="bg-white/[0.02] border-b border-white/10 py-3">
                                 <div className="flex items-center justify-between gap-3">
-                                  <CardTitle className="text-sm font-bold text-[#38BDF8] truncate cursor-pointer hover:underline" onClick={() => { setSelectedLevel(record.levelId); setView('leaderboard'); }}>
+                                  <CardTitle className="text-sm font-bold text-[var(--app-accent)] truncate cursor-pointer hover:underline" onClick={() => { setSelectedLevel(record.levelId); setView('leaderboard'); }}>
                                     {record.levelName}
                                   </CardTitle>
                                   <Badge variant="outline" className="bg-yellow-400/10 text-yellow-400 border-yellow-400/30 font-mono text-[10px] whitespace-nowrap">
@@ -1601,7 +1628,7 @@ export default function App() {
                                   <TableBody>
                                     {record.history.slice(0, 6).map((entry, index) => (
                                       <TableRow key={`${record.levelId}-${entry.run_id}-${index}`} className="border-white/5 hover:bg-white/[0.02]">
-                                        <TableCell className="py-2 text-xs font-bold text-white cursor-pointer hover:text-[#38BDF8]" onClick={() => handlePlayerClick(entry.username)}>
+                                        <TableCell className="py-2 text-xs font-bold text-white cursor-pointer hover:text-[var(--app-accent)]" onClick={() => handlePlayerClick(entry.username)}>
                                           {entry.username}
                                         </TableCell>
                                         <TableCell className="py-2 text-right font-mono text-xs text-yellow-400 whitespace-nowrap">
@@ -1638,8 +1665,8 @@ export default function App() {
 
                   return (
                     <div key={pack.id} className="space-y-4">
-                      <h3 className="text-sm font-extrabold uppercase tracking-widest text-[#38BDF8] border-b border-white/10 pb-2 flex items-center gap-2">
-                        <span className="w-2 h-4 bg-[#38BDF8] rounded shadow-[0_0_8px_rgba(56,189,248,0.6)]"></span>
+                      <h3 className="text-sm font-extrabold uppercase tracking-widest text-[var(--app-accent)] border-b border-white/10 pb-2 flex items-center gap-2">
+                        <span className="w-2 h-4 bg-[var(--app-accent)] rounded shadow-[0_0_8px_rgba(56,189,248,0.6)]"></span>
                         {pack.name}
                         <span className="text-[10px] text-slate-500 font-mono font-normal lowercase">({packLevels.length} levels)</span>
                       </h3>
@@ -1648,7 +1675,7 @@ export default function App() {
                         {packLevels.map(level => {
                           const top3 = (processedAllLevelsData[level.id] || []).slice(0, 3);
                           return (
-                            <Card key={level.id} className="bg-white/5 border-white/10 overflow-hidden hover:border-[#38BDF8]/30 transition-all group flex flex-col">
+                            <Card key={level.id} className="bg-white/5 border-white/10 overflow-hidden hover:border-[var(--app-accent)]/30 transition-all group flex flex-col">
                               <div className="bg-white/[0.02] border-b border-white/10 p-3 flex items-center gap-3">
                                 <img 
                                   src={`https://api.narrowarrow.xyz/level-image/${level.id}.png`}
@@ -1662,7 +1689,7 @@ export default function App() {
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center justify-between gap-1.5">
                                     <h4 
-                                      className="text-sm font-bold text-[#38BDF8] truncate hover:underline cursor-pointer"
+                                      className="text-sm font-bold text-[var(--app-accent)] truncate hover:underline cursor-pointer"
                                       onClick={() => {
                                         setSelectedLevel(level.id);
                                         setView('leaderboard');
@@ -1705,7 +1732,7 @@ export default function App() {
                                           </TableCell>
                                           <TableCell className="py-2">
                                             <span 
-                                              className="text-xs font-medium text-white hover:text-[#38BDF8] cursor-pointer truncate block max-w-[120px]"
+                                              className="text-xs font-medium text-white hover:text-[var(--app-accent)] cursor-pointer truncate block max-w-[120px]"
                                               onClick={() => entry && handlePlayerClick(entry.username)}
                                             >
                                               {entry ? entry.username : "---"}
@@ -1761,17 +1788,17 @@ export default function App() {
            <div className="space-y-2">
              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">Select Pack</label>
              <Select value={selectedPack} onValueChange={setSelectedPack}>
-               <SelectTrigger className="bg-white/5 border-white/10 h-12 focus:ring-[#38BDF8]/50 hover:bg-white/10 transition-all text-white">
+               <SelectTrigger className="bg-white/5 border-white/10 h-12 focus:ring-[var(--app-accent)]/50 hover:bg-white/10 transition-all text-white">
                  <SelectValue placeholder="All">
                    {selectedPack === "all" ? "All" : (dynamicPacksWithCustom.find(p => p.id === selectedPack)?.name || capitalizeName(selectedPack))}
                  </SelectValue>
                </SelectTrigger>
                <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200">
-                 <SelectItem value="all" className="focus:bg-[#38BDF8] focus:text-slate-950 py-3 cursor-pointer">
+                 <SelectItem value="all" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-3 cursor-pointer">
                    All
                  </SelectItem>
                  {dynamicPacksWithCustom.map(pack => (
-                   <SelectItem key={pack.id} value={pack.id} className="focus:bg-[#38BDF8] focus:text-slate-950 py-3 cursor-pointer">
+                   <SelectItem key={pack.id} value={pack.id} className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-3 cursor-pointer">
                      {pack.name}
                    </SelectItem>
                  ))}
@@ -1784,14 +1811,14 @@ export default function App() {
                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Select Level</label>
              </div>
              <Select value={selectedLevel} onValueChange={setSelectedLevel}>
-               <SelectTrigger className="bg-white/5 border-white/10 h-12 focus:ring-[#38BDF8]/50 hover:bg-white/10 transition-all text-white">
+               <SelectTrigger className="bg-white/5 border-white/10 h-12 focus:ring-[var(--app-accent)]/50 hover:bg-white/10 transition-all text-white">
                  <SelectValue>
                    {allLevelsWithCustoms.find(l => l.id === selectedLevel)?.name || fetchedLevelDetails[selectedLevel]?.name || selectedLevel}
                  </SelectValue>
                </SelectTrigger>
                <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 max-h-[400px]">
                  {filteredLevelsForSelect.map(level => (
-                   <SelectItem key={level.id} value={level.id} className="focus:bg-[#38BDF8] focus:text-slate-950 py-3 cursor-pointer">
+                   <SelectItem key={level.id} value={level.id} className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-3 cursor-pointer">
                      <span className="font-medium">{level.name}</span>
                    </SelectItem>
                  ))}
@@ -1805,7 +1832,7 @@ export default function App() {
                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                <Input 
                  placeholder="Search by username..." 
-                 className="bg-white/5 border-white/10 h-12 pl-10 focus-visible:ring-[#38BDF8]/50"
+                 className="bg-white/5 border-white/10 h-12 pl-10 focus-visible:ring-[var(--app-accent)]/50"
                  value={searchQuery}
                  onChange={(e) => setSearchQuery(e.target.value)}
                />
@@ -1814,26 +1841,15 @@ export default function App() {
 
            <div className="space-y-2">
              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">Legacy Records</label>
-             <Button 
-               variant="outline" 
-               onClick={() => setHideLegacyRuns(!hideLegacyRuns)}
-               className={cn(
-                 "w-full h-12 rounded-xl text-xs font-mono uppercase tracking-wider transition-all border flex items-center justify-between px-4",
-                 !hideLegacyRuns 
-                   ? "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20" 
-                   : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10"
-               )}
-             >
+             <div className="w-full h-12 rounded-xl text-xs font-mono uppercase tracking-wider border border-amber-500/20 bg-amber-500/10 text-amber-400 flex items-center justify-between px-4">
                <div className="flex items-center gap-2">
-                 <History className={cn("w-4 h-4", !hideLegacyRuns ? "text-amber-400" : "text-slate-400")} />
-                 <span>{!hideLegacyRuns ? "Legacy: Visible" : "Legacy: Hidden"}</span>
+                 <History className="w-4 h-4 text-amber-400" />
+                 <span>Legacy: Always On</span>
                </div>
-               <span className={cn(
-                 "w-2 h-2 rounded-full",
-                 !hideLegacyRuns ? "bg-amber-500 animate-pulse" : "bg-slate-600"
-               )} />
-             </Button>
+               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+             </div>
            </div>
+
          </div>
 
         {/* Level Hero Card */}
@@ -1866,7 +1882,7 @@ export default function App() {
               </div>
               <div className="space-y-2 min-w-0">
                 <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-                  <Badge variant="outline" className="bg-[#38BDF8]/15 text-[#38BDF8] border-[#38BDF8]/30 uppercase font-mono tracking-wider text-[9px]">
+                  <Badge variant="outline" className="bg-[var(--app-accent)]/15 text-[var(--app-accent)] border-[var(--app-accent)]/30 uppercase font-mono tracking-wider text-[9px]">
                     {dynamicPacksWithCustom.find(p => p.id === (allLevelsWithCustoms.find(l => l.id === selectedLevel)?.packId || fetchedLevelDetails[selectedLevel]?.packId))?.name || 'Custom Level'}
                   </Badge>
                   <ClickToCopy text={selectedLevel} label="ID" className="h-5" />
@@ -1910,7 +1926,7 @@ export default function App() {
         {/* Stats Summary */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
           {[
-            { label: "Active Players", value: new Set(processedData.map(d => d.username)).size, icon: Users, color: "text-[#38BDF8]" },
+            { label: "Active Players", value: new Set(processedData.map(d => d.username)).size, icon: Users, color: "text-[var(--app-accent)]" },
             { 
               label: "Top Time", 
               value: processedData.length > 0 ? formatTime(processedData[0].completion_time, 'seconds') : "N/A", 
@@ -1960,12 +1976,12 @@ export default function App() {
                     onClick={() => setShowRankLegend(true)}
                     variant="outline"
                     size="sm"
-                    className="bg-[#38BDF8]/10 hover:bg-[#38BDF8]/20 text-[#38BDF8] border-[#38BDF8]/20 text-[10px] h-7 font-bold uppercase tracking-wider px-2.5"
+                    className="bg-[var(--app-accent)]/10 hover:bg-[var(--app-accent)]/20 text-[var(--app-accent)] border-[var(--app-accent)]/20 text-[10px] h-7 font-bold uppercase tracking-wider px-2.5"
                   >
                     <Trophy className="w-3 h-3 mr-1 fill-current" /> View Ranks
                   </Button>
                 )}
-                <Badge variant="outline" className="bg-[#38BDF8]/10 text-[#38BDF8] border-[#38BDF8]/20 font-mono text-[10px]">
+                <Badge variant="outline" className="bg-[var(--app-accent)]/10 text-[var(--app-accent)] border-[var(--app-accent)]/20 font-mono text-[10px]">
                   LIVE DATA
                 </Badge>
               </div>
@@ -2090,7 +2106,7 @@ export default function App() {
                                     "w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0",
                                     entry.arrow_name.toLowerCase().includes("energy") ? "text-[#22c55e]" :
                                     entry.arrow_name.toLowerCase().includes("speedy") ? "text-[#3b82f6]" :
-                                    "text-[#38BDF8]"
+                                    "text-[var(--app-accent)]"
                                   )} />
                                   <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                                     <img 
@@ -2099,7 +2115,7 @@ export default function App() {
                                       className="w-3 h-3 sm:w-3.5 sm:h-3.5 object-contain opacity-50 group-hover:opacity-100 transition-opacity shrink-0"
                                       onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                     />
-                                    <span className="font-bold text-slate-200 group-hover:text-[#38BDF8] transition-colors text-xs sm:text-sm truncate">
+                                    <span className="font-bold text-slate-200 group-hover:text-[var(--app-accent)] transition-colors text-xs sm:text-sm truncate">
                                       {entry.username}
                                     </span>
                                     {entry.isLegacy && (
@@ -2129,7 +2145,7 @@ export default function App() {
                                     e.stopPropagation();
                                     handleCompareClick(entry.username);
                                   }}
-                                  className="text-slate-500 hover:text-[#38BDF8] hover:bg-[#38BDF8]/10 h-8 w-8 mx-auto"
+                                  className="text-slate-500 hover:text-[var(--app-accent)] hover:bg-[var(--app-accent)]/10 h-8 w-8 mx-auto"
                                 >
                                   <TrendingUp className="w-4 h-4" />
                                 </Button>
@@ -2155,9 +2171,10 @@ export default function App() {
                                           reason,
                                           removedBy: adminUser?.email,
                                         });
+                                        toast.success(`Removed ${entry.username}'s run`);
                                       } catch (err) {
                                         console.error("Failed to remove run:", err);
-                                        window.alert("Failed to remove run. Check your admin permissions.");
+                                        toast.error(err instanceof Error ? err.message : "Failed to remove run.");
                                       }
                                     }}
                                     className="text-slate-600 hover:text-red-400 hover:bg-red-500/10 h-8 w-8"
@@ -2269,7 +2286,7 @@ export default function App() {
                 <div className="p-3 bg-white/[0.02] border-t border-white/10 text-center">
                   <Button
                     onClick={() => setShowRankLegend(false)}
-                    className="bg-[#38BDF8] hover:bg-[#38BDF8]/90 text-slate-950 font-bold text-xs uppercase tracking-wider py-1.5 h-8 px-6"
+                    className="bg-[var(--app-accent)] hover:bg-[var(--app-accent)]/90 text-slate-950 font-bold text-xs uppercase tracking-wider py-1.5 h-8 px-6"
                   >
                     Got it!
                   </Button>
