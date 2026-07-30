@@ -1808,26 +1808,15 @@ export default function App() {
 
            <div className="space-y-2">
              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">Legacy Records</label>
-             <Button 
-               variant="outline" 
-               onClick={() => setHideLegacyRuns(!hideLegacyRuns)}
-               className={cn(
-                 "w-full h-12 rounded-xl text-xs font-mono uppercase tracking-wider transition-all border flex items-center justify-between px-4",
-                 !hideLegacyRuns 
-                   ? "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20" 
-                   : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10"
-               )}
-             >
+             <div className="w-full h-12 rounded-xl text-xs font-mono uppercase tracking-wider border border-amber-500/20 bg-amber-500/10 text-amber-400 flex items-center justify-between px-4">
                <div className="flex items-center gap-2">
-                 <History className={cn("w-4 h-4", !hideLegacyRuns ? "text-amber-400" : "text-slate-400")} />
-                 <span>{!hideLegacyRuns ? "Legacy: Visible" : "Legacy: Hidden"}</span>
+                 <History className="w-4 h-4 text-amber-400" />
+                 <span>Legacy: Always On</span>
                </div>
-               <span className={cn(
-                 "w-2 h-2 rounded-full",
-                 !hideLegacyRuns ? "bg-amber-500 animate-pulse" : "bg-slate-600"
-               )} />
-             </Button>
+               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+             </div>
            </div>
+
          </div>
 
         {/* Level Hero Card */}
