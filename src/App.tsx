@@ -989,7 +989,14 @@ export default function App() {
 
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-slate-200 font-sans selection:bg-[var(--app-accent)]/30">
+    <div className="na-shell min-h-screen text-slate-200 font-sans selection:bg-[var(--app-accent)]/30">
+      <SettingsPanel
+        open={showSettings}
+        onOpenChange={setShowSettings}
+        settings={settings}
+        update={updateSetting}
+        reset={resetSettings}
+      />
       {/* Header */}
       <header className="border-b border-white/10 bg-[var(--app-accent)]/5 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-2">
@@ -1101,6 +1108,15 @@ export default function App() {
               </Select>
             </div>
             
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Appearance settings"
+              onClick={() => setShowSettings(true)}
+              className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
+            >
+              <Palette className="w-4 h-4" />
+            </Button>
             <Button 
               variant="ghost" 
               size="icon" 
@@ -1163,6 +1179,7 @@ export default function App() {
               }}
               onLevelClick={handleLevelClick}
               worldRecords={worldRecords}
+              computedMedals={computeMedals(selectedPlayer, dynamicLevels.map(l => l.id), processedAllLevelsData)}
             />
           ) : (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
@@ -2142,9 +2159,10 @@ export default function App() {
                                           reason,
                                           removedBy: adminUser?.email,
                                         });
+                                        toast.success(`Removed ${entry.username}'s run`);
                                       } catch (err) {
                                         console.error("Failed to remove run:", err);
-                                        window.alert("Failed to remove run. Check your admin permissions.");
+                                        toast.error(err instanceof Error ? err.message : "Failed to remove run.");
                                       }
                                     }}
                                     className="text-slate-600 hover:text-red-400 hover:bg-red-500/10 h-8 w-8"
