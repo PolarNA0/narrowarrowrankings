@@ -1003,6 +1003,12 @@ export default function App() {
         update={updateSetting}
         reset={resetSettings}
       />
+      {settings.starfield && (
+        <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+          <div className="absolute -top-40 left-1/4 h-96 w-96 rounded-full bg-[var(--app-accent)]/10 blur-[120px]" />
+          <div className="absolute bottom-0 right-1/4 h-96 w-96 rounded-full bg-[var(--app-accent)]/5 blur-[140px]" />
+        </div>
+      )}
       {/* Header */}
       <header className="border-b border-white/10 bg-[var(--app-accent)]/5 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-2">
