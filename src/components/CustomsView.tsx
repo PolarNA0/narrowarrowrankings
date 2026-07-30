@@ -345,7 +345,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
             </div>
             <div className="space-y-2 min-w-0">
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-                <Badge variant="outline" className="bg-[#38BDF8]/15 text-[#38BDF8] border-[#38BDF8]/30 uppercase font-mono tracking-wider text-[9px]">
+                <Badge variant="outline" className="bg-[var(--app-accent)]/15 text-[var(--app-accent)] border-[var(--app-accent)]/30 uppercase font-mono tracking-wider text-[9px]">
                   Custom Level
                 </Badge>
                 <ClickToCopy text={selectedLevelId} label="ID" className="h-5" />
@@ -365,7 +365,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
         {/* Core Stats Overview */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           {[
-            { label: "Active Players", value: leaderboardLoading ? "..." : activePlayersCount, icon: Users, color: "text-[#38BDF8]" },
+            { label: "Active Players", value: leaderboardLoading ? "..." : activePlayersCount, icon: Users, color: "text-[var(--app-accent)]" },
             { 
               label: "Top Time", 
               value: leaderboardLoading ? "..." : (topTime !== null ? formatTime(topTime, 'seconds') : "N/A"), 
@@ -419,7 +419,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <Input 
               placeholder="Search player name..." 
-              className="bg-black/40 border-white/10 h-9 pl-9 text-xs text-slate-200 focus-visible:ring-[#38BDF8]/50"
+              className="bg-black/40 border-white/10 h-9 pl-9 text-xs text-slate-200 focus-visible:ring-[var(--app-accent)]/50"
               value={leaderboardSearch}
               onChange={(e) => setLeaderboardSearch(e.target.value)}
             />
@@ -431,7 +431,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
           <CardContent className="p-0">
             {leaderboardLoading ? (
               <div className="flex flex-col items-center justify-center py-24 space-y-4">
-                <RefreshCw className="w-10 h-10 text-[#38BDF8] animate-spin" />
+                <RefreshCw className="w-10 h-10 text-[var(--app-accent)] animate-spin" />
                 <p className="text-slate-400 font-mono text-xs">Loading custom speedrun rankings...</p>
               </div>
             ) : leaderboardError ? (
@@ -468,7 +468,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
                                 "w-4 h-4 shrink-0",
                                 entry.arrow_name.toLowerCase().includes("energy") ? "text-[#22c55e]" :
                                 entry.arrow_name.toLowerCase().includes("speedy") ? "text-[#3b82f6]" :
-                                "text-[#38BDF8]"
+                                "text-[var(--app-accent)]"
                               )} />
                               <div className="flex items-center gap-2 min-w-0">
                                 <img 
@@ -483,7 +483,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
                                       onSelectPlayer(entry.username);
                                     }
                                   }}
-                                  className="font-bold text-slate-200 group-hover:text-[#38BDF8] transition-colors cursor-pointer"
+                                  className="font-bold text-slate-200 group-hover:text-[var(--app-accent)] transition-colors cursor-pointer"
                                 >
                                   {entry.username}
                                 </span>
@@ -515,7 +515,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6">
         <div>
           <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-            <Compass className="w-7 h-7 text-[#38BDF8]" />
+            <Compass className="w-7 h-7 text-[var(--app-accent)]" />
             Custom Levels
           </h2>
           <p className="text-slate-400 text-sm mt-1">
@@ -577,7 +577,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
               placeholder="Search levels by pasting ID, link, or search words..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="bg-black/40 border-white/10 text-xs text-slate-200 h-9 w-full pr-8 focus-visible:ring-[#38BDF8]/50"
+              className="bg-black/40 border-white/10 text-xs text-slate-200 h-9 w-full pr-8 focus-visible:ring-[var(--app-accent)]/50"
             />
             {searchInput && (
               <button
@@ -592,7 +592,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
           <Button 
             type="submit" 
             size="sm" 
-            className="bg-[#38BDF8] hover:bg-[#0EA5E9] text-slate-950 font-bold h-9"
+            className="bg-[var(--app-accent)] hover:bg-[#0EA5E9] text-slate-950 font-bold h-9"
           >
             <Search className="w-3.5 h-3.5" />
           </Button>
@@ -602,7 +602,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
       {/* Main Grid area */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 space-y-4">
-          <RefreshCw className="w-12 h-12 text-[#38BDF8] animate-spin" />
+          <RefreshCw className="w-12 h-12 text-[var(--app-accent)] animate-spin" />
           <p className="text-slate-400 font-mono text-sm animate-pulse">Scanning custom speedrun levels...</p>
         </div>
       ) : error ? (
@@ -632,7 +632,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-gradient-to-r from-violet-600/10 via-amber-500/10 to-[#38BDF8]/10 border border-amber-500/30 rounded-2xl p-6 shadow-2xl relative overflow-hidden"
+              className="bg-gradient-to-r from-violet-600/10 via-amber-500/10 to-[var(--app-accent)]/10 border border-amber-500/30 rounded-2xl p-6 shadow-2xl relative overflow-hidden"
             >
               {/* Subtle pulsing background glow */}
               <div className="absolute top-0 right-0 -translate-y-12 translate-x-12 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none animate-pulse"></div>
@@ -755,7 +755,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: Math.min(idx * 0.03, 0.4) }}
                 >
-                  <Card className="h-full bg-white/5 border-white/10 hover:border-[#38BDF8]/40 transition-all duration-300 flex flex-col overflow-hidden group">
+                  <Card className="h-full bg-white/5 border-white/10 hover:border-[var(--app-accent)]/40 transition-all duration-300 flex flex-col overflow-hidden group">
                     {/* Level embed image preview */}
                     <div className="relative h-40 bg-black/40 overflow-hidden shrink-0 border-b border-white/10">
                       <img 
@@ -782,7 +782,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
                     <CardContent className="p-4 flex-1 flex flex-col justify-between space-y-4">
                       {/* Name & Creator */}
                       <div>
-                        <h4 className="text-base font-bold text-slate-100 group-hover:text-[#38BDF8] transition-colors line-clamp-1">
+                        <h4 className="text-base font-bold text-slate-100 group-hover:text-[var(--app-accent)] transition-colors line-clamp-1">
                           {levelName}
                         </h4>
                         <p className="text-slate-400 text-xs mt-1 font-medium">
@@ -804,11 +804,11 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
 
                       {/* World Record Indicator */}
                       {worldRecord && typeof worldRecord.completion_time === "number" && (
-                        <div className="flex items-center justify-between text-[11px] bg-[#38BDF8]/5 border border-[#38BDF8]/10 rounded-lg px-2.5 py-1.5">
+                        <div className="flex items-center justify-between text-[11px] bg-[var(--app-accent)]/5 border border-[var(--app-accent)]/10 rounded-lg px-2.5 py-1.5">
                           <span className="text-slate-400 flex items-center gap-1 font-semibold">
                             <Trophy className="w-3.5 h-3.5 text-amber-400" /> World Record:
                           </span>
-                          <span className="font-mono text-[#38BDF8] font-bold">
+                          <span className="font-mono text-[var(--app-accent)] font-bold">
                             {worldRecord.completion_time.toFixed(3)}s
                           </span>
                         </div>
@@ -820,7 +820,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
                           size="sm"
                           variant="outline"
                           onClick={() => onSelectLevelId(levelId)}
-                          className="border-white/10 hover:bg-[#38BDF8] hover:text-slate-950 hover:border-transparent text-xs font-bold"
+                          className="border-white/10 hover:bg-[var(--app-accent)] hover:text-slate-950 hover:border-transparent text-xs font-bold"
                         >
                           Leaderboard
                         </Button>

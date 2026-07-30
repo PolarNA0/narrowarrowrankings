@@ -326,7 +326,7 @@ export function PlayerProfile({
             <ChevronLeft className="w-5 h-5" />
           </Button>
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-[#38BDF8]/20 rounded-2xl flex items-center justify-center border border-[#38BDF8]/30 shadow-[0_0_30px_rgba(56,189,248,0.15)] overflow-hidden">
+            <div className="w-16 h-16 bg-[var(--app-accent)]/20 rounded-2xl flex items-center justify-center border border-[var(--app-accent)]/30 shadow-[0_0_30px_rgba(56,189,248,0.15)] overflow-hidden">
               <img 
                 src="https://play.narrowarrow.xyz/assets/assets/images/account.svg" 
                 alt="Account" 
@@ -354,7 +354,7 @@ export function PlayerProfile({
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-400">
-                <Badge variant="outline" className="bg-[#38BDF8]/10 text-[#38BDF8] border-[#38BDF8]/20 py-0 px-1.5 text-[10px]">
+                <Badge variant="outline" className="bg-[var(--app-accent)]/10 text-[var(--app-accent)] border-[var(--app-accent)]/20 py-0 px-1.5 text-[10px]">
                   Player Profile
                 </Badge>
                 {extraData?.user?.joined && (
@@ -373,7 +373,7 @@ export function PlayerProfile({
         </div>
         <Button 
           onClick={() => onCompare(stats.username)}
-          className="bg-[#38BDF8] text-white hover:bg-[#38BDF8]/80 font-bold shadow-[0_0_15px_rgba(56,189,248,0.2)]"
+          className="bg-[var(--app-accent)] text-white hover:bg-[var(--app-accent)]/80 font-bold shadow-[0_0_15px_rgba(56,189,248,0.2)]"
         >
           <TrendingUp className="w-4 h-4 mr-2" />
           Compare Player
@@ -383,13 +383,13 @@ export function PlayerProfile({
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
       {[
-        { label: "Levels Completed", value: aggregateStats?.totalCompleted || 0, icon: Target, color: "text-[#38BDF8]" },
+        { label: "Levels Completed", value: aggregateStats?.totalCompleted || 0, icon: Target, color: "text-[var(--app-accent)]" },
         { label: "Average Time", value: aggregateStats ? formatTime(aggregateStats.avgTime, 'seconds') : "N/A", icon: Clock, color: "text-[#2DD4BF]" },
         { label: "Total Time", value: aggregateStats ? formatTime(aggregateStats.totalTime, 'minutes') : "N/A", icon: Clock, color: "text-[#6366F1]" },
         { label: "Overall Rank", value: aggregateStats?.overallRankId ? (overallRankConfig[aggregateStats.overallRankId]?.name || aggregateStats.overallRankId) : "---", icon: Star, color: "text-yellow-400", isRank: true },
         { label: "Completion Rate", value: `${((aggregateStats?.totalCompleted || 0) / (levels.length || 1) * 100).toFixed(1)}%`, icon: Medal, color: "text-green-400" },
       ].map((stat, i) => (
-          <Card key={i} className="bg-white/5 border-white/10 group hover:border-[#38BDF8]/30 transition-all duration-300">
+          <Card key={i} className="bg-white/5 border-white/10 group hover:border-[var(--app-accent)]/30 transition-all duration-300">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">{stat.label}</p>
@@ -435,8 +435,8 @@ export function PlayerProfile({
 
       {extraData && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <h3 className="text-sm font-extrabold uppercase tracking-widest text-[#38BDF8] border-b border-white/10 pb-2 flex items-center gap-2">
-            <span className="w-1.5 h-3 bg-[#38BDF8] rounded"></span>
+          <h3 className="text-sm font-extrabold uppercase tracking-widest text-[var(--app-accent)] border-b border-white/10 pb-2 flex items-center gap-2">
+            <span className="w-1.5 h-3 bg-[var(--app-accent)] rounded"></span>
             Stats
           </h3>
 
@@ -524,7 +524,7 @@ export function PlayerProfile({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Official Medals */}
             <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-              <h4 className="text-xs font-extrabold text-[#38BDF8] uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <h4 className="text-xs font-extrabold text-[var(--app-accent)] uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <Medal className="w-4 h-4 text-amber-400" /> Official Medals
               </h4>
               <div className="grid grid-cols-4 gap-2">
@@ -583,7 +583,7 @@ export function PlayerProfile({
             className={cn(
               "px-4 py-2.5 text-xs uppercase tracking-wider font-extrabold border-b-2 transition-all duration-300",
               profileTab === 'performance' 
-                ? "border-[#38BDF8] text-white bg-white/5" 
+                ? "border-[var(--app-accent)] text-white bg-white/5" 
                 : "border-transparent text-slate-400 hover:text-white"
             )}
           >
@@ -607,13 +607,13 @@ export function PlayerProfile({
         <>
           {/* Map Pack Breakdown section */}
           <div className="space-y-4">
-            <h3 className="text-sm font-extrabold uppercase tracking-widest text-[#38BDF8] border-b border-white/10 pb-2 flex items-center gap-2">
-              <span className="w-1.5 h-3 bg-[#38BDF8] rounded"></span>
+            <h3 className="text-sm font-extrabold uppercase tracking-widest text-[var(--app-accent)] border-b border-white/10 pb-2 flex items-center gap-2">
+              <span className="w-1.5 h-3 bg-[var(--app-accent)] rounded"></span>
               Map Pack Performance
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {packBreakdowns.map(pb => (
-                <Card key={pb.id} className="bg-white/5 border-white/10 hover:border-[#38BDF8]/20 transition-all">
+                <Card key={pb.id} className="bg-white/5 border-white/10 hover:border-[var(--app-accent)]/20 transition-all">
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-extrabold text-white uppercase tracking-wider">{pb.name}</span>
@@ -682,7 +682,7 @@ export function PlayerProfile({
                       <TableHead className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Rank</TableHead>
                       <TableHead className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Best Time</TableHead>
                       {levelSort === 'easiest_to_improve' && (
-                        <TableHead className="font-mono text-[10px] uppercase tracking-widest text-[#38BDF8] font-bold">To World Record</TableHead>
+                        <TableHead className="font-mono text-[10px] uppercase tracking-widest text-[var(--app-accent)] font-bold">To World Record</TableHead>
                       )}
                       <TableHead className="font-mono text-[10px] uppercase tracking-widest text-slate-500 text-center">Arrow</TableHead>
                       <TableHead className="font-mono text-[10px] uppercase tracking-widest text-slate-500 text-right">Date</TableHead>
@@ -728,7 +728,7 @@ export function PlayerProfile({
                           className="border-white/5 hover:bg-white/[0.03] transition-colors group"
                         >
                           <TableCell 
-                            className="font-medium text-slate-200 group-hover:text-[#38BDF8] cursor-pointer transition-colors"
+                            className="font-medium text-slate-200 group-hover:text-[var(--app-accent)] cursor-pointer transition-colors"
                             onClick={() => onLevelClick(level.id)}
                           >
                             <div className="flex items-center gap-3">
@@ -743,7 +743,7 @@ export function PlayerProfile({
                               />
                               <div>
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-bold text-sm text-slate-200 group-hover:text-[#38BDF8] transition-colors">{level.name}</span>
+                                  <span className="font-bold text-sm text-slate-200 group-hover:text-[var(--app-accent)] transition-colors">{level.name}</span>
                                   <a
                                     href={`https://narrowarrow.xyz/levelid=${level.id}`}
                                     target="_blank"
@@ -821,7 +821,7 @@ export function PlayerProfile({
                               "w-5 h-5",
                               levelStats.arrowName.toLowerCase().includes("energy") ? "text-[#22c55e]" :
                               levelStats.arrowName.toLowerCase().includes("speedy") ? "text-[#3b82f6]" :
-                              "text-[#38BDF8]"
+                              "text-[var(--app-accent)]"
                             )} />
                           </TableCell>
                           <TableCell className="text-right text-slate-500 text-xs font-mono">
