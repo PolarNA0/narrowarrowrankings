@@ -811,6 +811,11 @@ export default function App() {
     });
   }, [processedAllLevelsData, allUsernames, allMapsPlayedFilter, overallRankConfig, dynamicLevels, selectedAveragePack]);
 
+  const selectedPlayerMedals = useMemo(() => {
+    if (!selectedPlayer) return undefined;
+    return computeMedals(selectedPlayer, dynamicLevels.map(l => l.id), processedAllLevelsData);
+  }, [selectedPlayer, dynamicLevels, processedAllLevelsData]);
+
   const worldRecords = useMemo(() => {
     return dynamicLevels.map(level => {
       const levelData = processedAllLevelsData[level.id] || [];
@@ -1180,7 +1185,7 @@ export default function App() {
               }}
               onLevelClick={handleLevelClick}
               worldRecords={worldRecords}
-              computedMedals={computeMedals(selectedPlayer, dynamicLevels.map(l => l.id), processedAllLevelsData)}
+              computedMedals={selectedPlayerMedals}
             />
           ) : (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
