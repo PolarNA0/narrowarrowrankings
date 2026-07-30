@@ -288,15 +288,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAdmin, setShowAdmin] = useState(false);
-  const [hideLegacyRuns, setHideLegacyRuns] = useState<boolean>(() => {
-    const stored = localStorage.getItem("hideLegacyRuns");
-    if (stored === null) return false;
-    return stored === "true";
-  });
+  const [showSettings, setShowSettings] = useState(false);
+  const { settings, update: updateSetting, reset: resetSettings } = useAppSettings();
 
-  useEffect(() => {
-    localStorage.setItem("hideLegacyRuns", hideLegacyRuns ? "true" : "false");
-  }, [hideLegacyRuns]);
 
   const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
