@@ -84,6 +84,10 @@ import { CustomsView } from "./components/CustomsView";
 import { useAdminAuth } from "./hooks/useAdminAuth";
 import { useRemovedRuns, removeRun } from "./hooks/useRemovedRuns";
 import { removedRunKey } from "./lib/removedRuns";
+import { computeMedals } from "./lib/medals";
+import { useAppSettings } from "./hooks/useAppSettings";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { toast } from "sonner";
 
 export default function App() {
   const { isAdmin, user: adminUser } = useAdminAuth();
@@ -665,21 +669,21 @@ export default function App() {
 
   const processedData = useMemo(() => {
     return stripRemoved(
-      applyLegacyRunsToLeaderboard(selectedLevel, data, hideLegacyRuns ? [] : mappedLegacyRuns),
+      applyLegacyRunsToLeaderboard(selectedLevel, data, mappedLegacyRuns),
       selectedLevel,
     );
-  }, [selectedLevel, data, mappedLegacyRuns, hideLegacyRuns, removedKeys]);
+  }, [selectedLevel, data, mappedLegacyRuns, removedKeys]);
 
   const processedAllLevelsData = useMemo(() => {
     const result: Record<string, LeaderboardEntry[]> = {};
     Object.keys(allLevelsData).forEach(levelId => {
       result[levelId] = stripRemoved(
-        applyLegacyRunsToLeaderboard(levelId, allLevelsData[levelId], hideLegacyRuns ? [] : mappedLegacyRuns),
+        applyLegacyRunsToLeaderboard(levelId, allLevelsData[levelId], mappedLegacyRuns),
         levelId,
       );
     });
     return result;
-  }, [allLevelsData, mappedLegacyRuns, hideLegacyRuns, removedKeys]);
+  }, [allLevelsData, mappedLegacyRuns, removedKeys]);
 
 
   const allUsernames = useMemo(() => {
