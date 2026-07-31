@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Palette, RotateCcw, Sparkles, Rows3, Zap } from "lucide-react";
+import { Palette, RotateCcw, Sparkles, Rows3, Zap, Clock, Type, Square } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { ACCENTS, BACKGROUND_THEMES, type AppSettings } from "@/hooks/useAppSettings";
 
@@ -21,6 +22,14 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ open, onOpenChange, settings, update, reset }: SettingsPanelProps) {
+  const toggles: { key: keyof AppSettings; label: string; icon: React.ReactNode }[] = [
+    { key: "motion", label: "Animations", icon: <Zap className="w-4 h-4 text-slate-400" /> },
+    { key: "starfield", label: "Ambient glow", icon: <Sparkles className="w-4 h-4 text-slate-400" /> },
+    { key: "monoTimes", label: "Monospaced times", icon: <Type className="w-4 h-4 text-slate-400" /> },
+    { key: "rounded", label: "Rounded corners", icon: <Square className="w-4 h-4 text-slate-400" /> },
+    { key: "highlightWr", label: "Highlight world records", icon: <Sparkles className="w-4 h-4 text-slate-400" /> },
+  ];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-[#0d0d10] border-white/10 text-slate-200 max-w-lg max-h-[85vh] overflow-y-auto">
@@ -35,7 +44,9 @@ export function SettingsPanel({ open, onOpenChange, settings, update, reset }: S
 
         <div className="space-y-6 pt-2">
           <section className="space-y-3">
-            <h4 className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Background</h4>
+            <h4 className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+              Background ({BACKGROUND_THEMES.length})
+            </h4>
             <div className="grid grid-cols-4 gap-2">
               {BACKGROUND_THEMES.map((theme) => (
                 <button
@@ -94,18 +105,56 @@ export function SettingsPanel({ open, onOpenChange, settings, update, reset }: S
 
             <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-3">
               <div className="flex items-center gap-2 text-sm">
-                <Zap className="w-4 h-4 text-slate-400" />
-                <span>Animations</span>
+                <Clock className="w-4 h-4 text-slate-400" />
+                <span>Show times as 0:12.345</span>
               </div>
-              <Switch checked={settings.motion} onCheckedChange={(checked) => update("motion", checked)} />
+              <Switch
+                checked={settings.timeFormat === "minutes"}
+                onCheckedChange={(checked) => update("timeFormat", checked ? "minutes" : "seconds")}
+              />
             </div>
 
-            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-3">
-              <div className="flex items-center gap-2 text-sm">
-                <Sparkles className="w-4 h-4 text-slate-400" />
-                <span>Ambient glow</span>
+            {toggles.map((item) => (
+              <div
+                key={item.key}
+                className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-3"
+              >
+                <div className="flex items-center gap-2 text-sm">
+                  {item.icon}
+                  <span>{item.label}</span>
+                </div>
+                <Switch
+                  checked={Boolean(settings[item.key])}
+                  onCheckedChange={(checked) => update(item.key, checked as never)}
+                />
               </div>
-              <Switch checked={settings.starfield} onCheckedChange={(checked) => update("starfield", checked)} />
+            ))}
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span>Glow intensity</span>
+                <span className="font-mono text-xs text-slate-500">{settings.glow.toFixed(1)}x</span>
+              </div>
+              <Slider
+                value={[settings.glow]}
+                min={0}
+                max={2}
+                step={0.1}
+                onValueChange={([value]) => update("glow", value)}
+              />
+              <div className="flex items-center justify-between text-sm pt-1">
+                <span>Text size</span>
+                <span className="font-mono text-xs text-slate-500">
+                  {Math.round(settings.fontScale * 100)}%
+                </span>
+              </div>
+              <Slider
+                value={[settings.fontScale]}
+                min={0.85}
+                max={1.2}
+                step={0.05}
+                onValueChange={([value]) => update("fontScale", value)}
+              />
             </div>
           </section>
 
