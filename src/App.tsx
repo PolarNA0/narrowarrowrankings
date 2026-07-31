@@ -299,10 +299,12 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showAdmin, setShowAdmin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showProfileHub, setShowProfileHub] = useState(false);
   const { settings, update: updateSetting, reset: resetSettings } = useAppSettings();
+  const { byUsername: playerProfiles, reload: reloadProfiles } = usePlayerProfiles();
 
 
-  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs'>('leaderboard');
+  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
