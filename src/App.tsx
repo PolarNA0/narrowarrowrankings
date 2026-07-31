@@ -1010,6 +1010,11 @@ export default function App() {
         update={updateSetting}
         reset={resetSettings}
       />
+      <ProfileHub
+        open={showProfileHub}
+        onOpenChange={setShowProfileHub}
+        onProfilesChanged={reloadProfiles}
+      />
       {settings.starfield && (
         <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
           <div className="absolute -top-40 left-1/4 h-96 w-96 rounded-full bg-[var(--app-accent)]/10 blur-[120px]" />
