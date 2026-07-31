@@ -1814,6 +1814,26 @@ export default function App() {
             }}
             onBack={() => setView('leaderboard')}
           />
+        ) : view === 'score' ? (
+          isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 space-y-4">
+              <RefreshCw className="w-12 h-12 text-[var(--app-accent)] animate-spin" />
+              <p className="text-slate-500 font-mono text-sm animate-pulse">Crunching NarrowScores across every level...</p>
+            </div>
+          ) : (
+            <NarrowScoreView
+              levels={dynamicLevels}
+              packs={dynamicPacks}
+              data={processedAllLevelsData}
+              profiles={playerProfiles}
+              onPlayerClick={handlePlayerClick}
+              onLevelClick={(levelId) => {
+                setSelectedLevel(levelId);
+                setView('leaderboard');
+              }}
+              formatTime={(seconds) => formatTime(seconds)}
+            />
+          )
         ) : (
           <>
          {/* Controls */}
