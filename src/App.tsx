@@ -1016,7 +1016,7 @@ export default function App() {
         onProfilesChanged={reloadProfiles}
       />
       {settings.starfield && (
-        <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+        <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" style={{ opacity: settings.glow }}>
           <div className="absolute -top-40 left-1/4 h-96 w-96 rounded-full bg-[var(--app-accent)]/10 blur-[120px]" />
           <div className="absolute bottom-0 right-1/4 h-96 w-96 rounded-full bg-[var(--app-accent)]/5 blur-[140px]" />
         </div>
