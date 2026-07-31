@@ -329,7 +329,7 @@ export default function App() {
   });
 
   const formatTime = (seconds: number, forceMode?: 'seconds' | 'minutes') => {
-    const mode = forceMode || 'seconds';
+    const mode = forceMode || settings.timeFormat;
     if (mode === 'seconds') {
       return `${seconds.toFixed(3)}s`;
     }
