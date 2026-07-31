@@ -1113,7 +1113,7 @@ export default function App() {
                 value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score'].includes(view) ? view : 'leaderboard'} 
                 onValueChange={async (val: any) => {
                   setView(val);
-                  if (val === 'average' || val === 'wrs') {
+                  if (val === 'average' || val === 'wrs' || val === 'score') {
                     await fetchAllLevels();
                   }
                 }}
