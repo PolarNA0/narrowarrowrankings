@@ -36,11 +36,16 @@ import {
   Info,
   Play,
   X,
-  Download
+  Download,
+  UserRound,
+  Sparkles
 
 } from "lucide-react";
 import { doc, onSnapshot, collection, getDocs, setDoc, db, OperationType, handleFirestoreError } from "./lib/cloud-db";
 import { ClickToCopy } from "./components/ClickToCopy";
+import { NarrowScoreView } from "./components/NarrowScoreView";
+import { ProfileHub } from "./components/ProfileHub";
+import { usePlayerProfiles } from "./hooks/usePlayerProfiles";
 
 import { 
   Table, 
@@ -294,10 +299,12 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showAdmin, setShowAdmin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showProfileHub, setShowProfileHub] = useState(false);
   const { settings, update: updateSetting, reset: resetSettings } = useAppSettings();
+  const { byUsername: playerProfiles, reload: reloadProfiles } = usePlayerProfiles();
 
 
-  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs'>('leaderboard');
+  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -322,7 +329,7 @@ export default function App() {
   });
 
   const formatTime = (seconds: number, forceMode?: 'seconds' | 'minutes') => {
-    const mode = forceMode || 'seconds';
+    const mode = forceMode || settings.timeFormat;
     if (mode === 'seconds') {
       return `${seconds.toFixed(3)}s`;
     }
@@ -1003,8 +1010,13 @@ export default function App() {
         update={updateSetting}
         reset={resetSettings}
       />
+      <ProfileHub
+        open={showProfileHub}
+        onOpenChange={setShowProfileHub}
+        onProfilesChanged={reloadProfiles}
+      />
       {settings.starfield && (
-        <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+        <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" style={{ opacity: settings.glow }}>
           <div className="absolute -top-40 left-1/4 h-96 w-96 rounded-full bg-[var(--app-accent)]/10 blur-[120px]" />
           <div className="absolute bottom-0 right-1/4 h-96 w-96 rounded-full bg-[var(--app-accent)]/5 blur-[140px]" />
         </div>
@@ -1084,15 +1096,29 @@ export default function App() {
               >
                 Customs
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  setView('score');
+                  await fetchAllLevels();
+                }}
+                className={cn(
+                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
+                  view === 'score' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                )}
+              >
+                NarrowScore
+              </Button>
             </nav>
 
             {/* Mobile Dropdown Navigation */}
             <div className="block sm:hidden w-[110px] xs:w-[140px] shrink-0">
               <Select 
-                value={['leaderboard', 'average', 'wrs', 'random', 'customs'].includes(view) ? view : 'leaderboard'} 
+                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score'].includes(view) ? view : 'leaderboard'} 
                 onValueChange={async (val: any) => {
                   setView(val);
-                  if (val === 'average' || val === 'wrs') {
+                  if (val === 'average' || val === 'wrs' || val === 'score') {
                     await fetchAllLevels();
                   }
                 }}
@@ -1116,10 +1142,22 @@ export default function App() {
                   <SelectItem value="customs" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     Custom Levels
                   </SelectItem>
+                  <SelectItem value="score" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    NarrowScore
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
             
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Your profile"
+              onClick={() => setShowProfileHub(true)}
+              className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
+            >
+              <UserRound className="w-4 h-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -1781,6 +1819,26 @@ export default function App() {
             }}
             onBack={() => setView('leaderboard')}
           />
+        ) : view === 'score' ? (
+          isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 space-y-4">
+              <RefreshCw className="w-12 h-12 text-[var(--app-accent)] animate-spin" />
+              <p className="text-slate-500 font-mono text-sm animate-pulse">Crunching NarrowScores across every level...</p>
+            </div>
+          ) : (
+            <NarrowScoreView
+              levels={dynamicLevels}
+              packs={dynamicPacks}
+              data={processedAllLevelsData}
+              profiles={playerProfiles}
+              onPlayerClick={handlePlayerClick}
+              onLevelClick={(levelId) => {
+                setSelectedLevel(levelId);
+                setView('leaderboard');
+              }}
+              formatTime={(seconds) => formatTime(seconds)}
+            />
+          )
         ) : (
           <>
          {/* Controls */}
