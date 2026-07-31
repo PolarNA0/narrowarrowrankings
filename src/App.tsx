@@ -1137,6 +1137,9 @@ export default function App() {
                   <SelectItem value="customs" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     Custom Levels
                   </SelectItem>
+                  <SelectItem value="score" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    NarrowScore
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
