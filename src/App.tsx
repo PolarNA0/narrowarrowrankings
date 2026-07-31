@@ -1091,12 +1091,26 @@ export default function App() {
               >
                 Customs
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  setView('score');
+                  await fetchAllLevels();
+                }}
+                className={cn(
+                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
+                  view === 'score' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                )}
+              >
+                NarrowScore
+              </Button>
             </nav>
 
             {/* Mobile Dropdown Navigation */}
             <div className="block sm:hidden w-[110px] xs:w-[140px] shrink-0">
               <Select 
-                value={['leaderboard', 'average', 'wrs', 'random', 'customs'].includes(view) ? view : 'leaderboard'} 
+                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score'].includes(view) ? view : 'leaderboard'} 
                 onValueChange={async (val: any) => {
                   setView(val);
                   if (val === 'average' || val === 'wrs') {
