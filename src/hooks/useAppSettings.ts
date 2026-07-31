@@ -6,6 +6,12 @@ export interface AppSettings {
   density: "cozy" | "compact";
   motion: boolean;
   starfield: boolean;
+  glow: number;
+  timeFormat: "seconds" | "minutes";
+  fontScale: number;
+  monoTimes: boolean;
+  rounded: boolean;
+  highlightWr: boolean;
 }
 
 export const BACKGROUND_THEMES: { id: string; name: string; background: string; swatch: string }[] = [
@@ -16,6 +22,15 @@ export const BACKGROUND_THEMES: { id: string; name: string; background: string; 
   { id: "forest", name: "Forest", background: "radial-gradient(1000px 600px at 80% -10%, #0b2a1e 0%, #06120d 65%)", swatch: "#0b2a1e" },
   { id: "amoled", name: "AMOLED", background: "#000000", swatch: "#000000" },
   { id: "ember", name: "Ember", background: "radial-gradient(1000px 600px at 30% -10%, #3a1207 0%, #120705 65%)", swatch: "#3a1207" },
+  { id: "sakura", name: "Sakura", background: "radial-gradient(1000px 600px at 70% -10%, #3d1030 0%, #140715 65%)", swatch: "#3d1030" },
+  { id: "aurora", name: "Aurora", background: "linear-gradient(160deg, #04121d 0%, #062b2b 45%, #0b0f2a 100%)", swatch: "#062b2b" },
+  { id: "sunset", name: "Sunset", background: "linear-gradient(180deg, #2a0f2b 0%, #401a1a 55%, #10060a 100%)", swatch: "#401a1a" },
+  { id: "slate", name: "Slate", background: "linear-gradient(180deg, #1b212b 0%, #0f131a 100%)", swatch: "#1b212b" },
+  { id: "matrix", name: "Matrix", background: "radial-gradient(900px 500px at 50% 0%, #04240f 0%, #010703 70%)", swatch: "#04240f" },
+  { id: "vaporwave", name: "Vaporwave", background: "linear-gradient(180deg, #2b0f45 0%, #4b1247 45%, #10061c 100%)", swatch: "#4b1247" },
+  { id: "sand", name: "Dune", background: "linear-gradient(180deg, #2b2418 0%, #14100a 100%)", swatch: "#2b2418" },
+  { id: "cobalt", name: "Cobalt", background: "radial-gradient(1000px 600px at 50% -10%, #0b2f6b 0%, #050b1c 65%)", swatch: "#0b2f6b" },
+  { id: "blood", name: "Crimson", background: "radial-gradient(1000px 600px at 50% -10%, #4a0512 0%, #120306 65%)", swatch: "#4a0512" },
 ];
 
 export const ACCENTS: { id: string; name: string; value: string }[] = [
@@ -25,6 +40,12 @@ export const ACCENTS: { id: string; name: string; value: string }[] = [
   { id: "lime", name: "Lime", value: "#A3E635" },
   { id: "rose", name: "Rose", value: "#FB7185" },
   { id: "amber", name: "Amber", value: "#FBBF24" },
+  { id: "orange", name: "Ember", value: "#FB923C" },
+  { id: "pink", name: "Bubblegum", value: "#F472B6" },
+  { id: "indigo", name: "Indigo", value: "#818CF8" },
+  { id: "emerald", name: "Emerald", value: "#34D399" },
+  { id: "ice", name: "Ice", value: "#E2E8F0" },
+  { id: "gold", name: "Gold", value: "#EAB308" },
 ];
 
 const STORAGE_KEY = "naRankingsSettings";
@@ -35,6 +56,12 @@ const DEFAULTS: AppSettings = {
   density: "cozy",
   motion: true,
   starfield: true,
+  glow: 1,
+  timeFormat: "seconds",
+  fontScale: 1,
+  monoTimes: true,
+  rounded: true,
+  highlightWr: true,
 };
 
 function read(): AppSettings {
@@ -60,6 +87,9 @@ export function useAppSettings() {
     const root = document.documentElement;
     root.style.setProperty("--app-bg", theme.background);
     root.style.setProperty("--app-accent", settings.accent);
+    root.style.setProperty("--app-glow", String(settings.glow));
+    root.style.setProperty("--app-radius-scale", settings.rounded ? "1" : "0");
+    root.style.fontSize = `${16 * settings.fontScale}px`;
     root.dataset.density = settings.density;
     root.dataset.motion = settings.motion ? "on" : "off";
   }, [settings]);
@@ -71,4 +101,12 @@ export function useAppSettings() {
   const reset = useCallback(() => setSettings(DEFAULTS), []);
 
   return { settings, update, reset };
+}
+
+/** Formats a completion time using the user's preferred display format. */
+export function formatWithSettings(seconds: number, format: AppSettings["timeFormat"]) {
+  if (format === "seconds") return `${seconds.toFixed(3)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = (seconds % 60).toFixed(3);
+  return `${mins}:${secs.padStart(6, "0")}`;
 }
