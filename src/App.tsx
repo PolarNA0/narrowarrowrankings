@@ -1147,6 +1147,15 @@ export default function App() {
             <Button
               variant="ghost"
               size="icon"
+              title="Your profile"
+              onClick={() => setShowProfileHub(true)}
+              className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
+            >
+              <UserRound className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               title="Appearance settings"
               onClick={() => setShowSettings(true)}
               className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
