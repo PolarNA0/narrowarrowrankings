@@ -35,6 +35,90 @@ export type Database = {
         }
         Relationships: []
       }
+      player_profiles: {
+        Row: {
+          accent_color: string | null
+          avatar_url: string | null
+          banner_url: string | null
+          bio: string | null
+          country: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          socials: Json
+          updated_at: string
+          user_id: string
+          username: string | null
+          verified: boolean
+        }
+        Insert: {
+          accent_color?: string | null
+          avatar_url?: string | null
+          banner_url?: string | null
+          bio?: string | null
+          country?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          socials?: Json
+          updated_at?: string
+          user_id: string
+          username?: string | null
+          verified?: boolean
+        }
+        Update: {
+          accent_color?: string | null
+          avatar_url?: string | null
+          banner_url?: string | null
+          bio?: string | null
+          country?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          socials?: Json
+          updated_at?: string
+          user_id?: string
+          username?: string | null
+          verified?: boolean
+        }
+        Relationships: []
+      }
+      profile_link_requests: {
+        Row: {
+          created_at: string
+          id: string
+          note: string | null
+          proof_url: string | null
+          requested_username: string
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          note?: string | null
+          proof_url?: string | null
+          requested_username: string
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          note?: string | null
+          proof_url?: string | null
+          requested_username?: string
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
