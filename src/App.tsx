@@ -36,11 +36,16 @@ import {
   Info,
   Play,
   X,
-  Download
+  Download,
+  UserRound,
+  Sparkles
 
 } from "lucide-react";
 import { doc, onSnapshot, collection, getDocs, setDoc, db, OperationType, handleFirestoreError } from "./lib/cloud-db";
 import { ClickToCopy } from "./components/ClickToCopy";
+import { NarrowScoreView } from "./components/NarrowScoreView";
+import { ProfileHub } from "./components/ProfileHub";
+import { usePlayerProfiles } from "./hooks/usePlayerProfiles";
 
 import { 
   Table, 
