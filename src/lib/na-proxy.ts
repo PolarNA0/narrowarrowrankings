@@ -57,6 +57,26 @@ async function fetchWithRetry(url: string): Promise<unknown> {
   });
 }
 
+/** Cached, queued upstream GET that returns parsed JSON (server-side use). */
+export async function fetchJson(path: string, ttlMs: number): Promise<unknown> {
+  const url = `${API_BASE}${path}`;
+  const cached = cacheStore[url];
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+  const request =
+    inflight[url] ??
+    (inflight[url] = schedule(() => fetchWithRetry(url)).finally(() => {
+      delete inflight[url];
+    }));
+  try {
+    const data = await request;
+    cacheStore[url] = { data, expiresAt: Date.now() + ttlMs };
+    return data;
+  } catch (error) {
+    if (cached) return cached.data;
+    throw error;
+  }
+}
+
 export async function proxyJson(path: string, ttlMs: number): Promise<Response> {
   const url = `${API_BASE}${path}`;
   const now = Date.now();

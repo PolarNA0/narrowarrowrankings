@@ -17,7 +17,7 @@ async function requestLeaderboard(levelId: string): Promise<LeaderboardEntry[]> 
   const encodedLevel = encodeURIComponent(levelId);
   let lastStatus = 0;
   for (let attempt = 0; attempt < 4; attempt++) {
-    const response = await fetch(`${BASE_URL}/${encodedLevel}?infiniteLeaderboard=true`);
+    const response = await fetch(`${BASE_URL}/${encodedLevel}?limit=150`);
     if (response.ok) {
       const data = await response.json();
       leaderboardCache[levelId] = { data, timestamp: Date.now() };
