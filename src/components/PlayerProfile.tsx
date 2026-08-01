@@ -724,11 +724,12 @@ export function PlayerProfile({
                       const rankInfo = merged[levelStats.rankId] || DEFAULT_RANKS[levelStats.rankId] || DEFAULT_RANKS["Beginner"];
 
                       return (
+                        <React.Fragment key={level.id}>
                         <motion.tr 
-                          key={level.id}
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
-                          className="border-white/5 hover:bg-white/[0.03] transition-colors group"
+                          onClick={() => setExpandedLevel(expandedLevel === level.id ? null : level.id)}
+                          className="border-white/5 hover:bg-white/[0.03] transition-colors group cursor-pointer"
                         >
                           <TableCell 
                             className="font-medium text-slate-200 group-hover:text-[var(--app-accent)] cursor-pointer transition-colors"
