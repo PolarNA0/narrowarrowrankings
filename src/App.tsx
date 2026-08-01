@@ -304,8 +304,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showProfileHub, setShowProfileHub] = useState(false);
   const { settings, update: updateSetting, reset: resetSettings } = useAppSettings();
-  const { user: authUser } = useAdminAuth();
-  const { byUsername: playerProfiles, reload: reloadProfiles, myProfile: myLinkedProfile, saveMyProfile } = usePlayerProfiles(authUser?.id);
+  const { byUsername: playerProfiles, reload: reloadProfiles, myProfile: myLinkedProfile, saveMyProfile } = usePlayerProfiles(adminUser?.id);
 
 
   const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker'>('leaderboard');
@@ -1860,6 +1859,22 @@ export default function App() {
             }}
             onBack={() => setView('leaderboard')}
           />
+        ) : view === 'completions' ? (
+          <CustomCompletionsView onSelectPlayer={handlePlayerClick} />
+        ) : view === 'tracker' ? (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Record Tracker</h2>
+              <p className="text-slate-500 text-sm">Every recent run across all official levels, newest first.</p>
+            </div>
+            <RecordTracker
+              levels={dynamicLevels}
+              data={processedAllLevelsData}
+              onSelectPlayer={handlePlayerClick}
+              onSelectLevel={handleLevelClick}
+              formatTime={(t) => formatTime(t, 'seconds')}
+            />
+          </div>
         ) : view === 'score' ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
