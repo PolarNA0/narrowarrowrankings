@@ -399,6 +399,16 @@ export function PlayerProfile({
         </Button>
       </div>
 
+      <ProfileIdentityCard
+        username={stats.username}
+        profile={profile}
+        canEdit={canEditProfile}
+        onSave={onSaveProfile}
+        onRequestSignIn={onRequestSignIn}
+      />
+
+
+
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
       {[
