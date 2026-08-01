@@ -34,6 +34,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowIcon } from "./ArrowIcon";
 import { cn, capitalizeName } from "@/lib/utils";
+import { LevelHistoryDetail } from "./LevelHistoryDetail";
+import { ProfileIdentityCard } from "./ProfileIdentityCard";
+import type { LeaderboardEntry, LegacyRun } from "../types";
+import type { PlayerProfileRow } from "@/hooks/usePlayerProfiles";
 
 interface PlayerProfileProps {
   stats: PlayerStats;
@@ -48,6 +52,12 @@ interface PlayerProfileProps {
   onLevelClick: (levelId: string) => void;
   worldRecords?: { levelId: string; levelName: string; wr: any }[];
   computedMedals?: { first: number; second: number; third: number; top10: number; wrLevelIds: string[] };
+  levelStandings?: Record<string, LeaderboardEntry[]>;
+  legacyRuns?: LegacyRun[];
+  profile?: PlayerProfileRow | null;
+  canEditProfile?: boolean;
+  onSaveProfile?: (patch: Partial<PlayerProfileRow>) => Promise<void>;
+  onRequestSignIn?: () => void;
 }
 
 export function PlayerProfile({ 
@@ -62,8 +72,15 @@ export function PlayerProfile({
   onCompare, 
   onLevelClick,
   worldRecords,
-  computedMedals
+  computedMedals,
+  levelStandings,
+  legacyRuns,
+  profile,
+  canEditProfile,
+  onSaveProfile,
+  onRequestSignIn
 }: PlayerProfileProps) {
+  const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
   const [extraData, setExtraData] = useState<any>(null);
   const [loadingExtra, setLoadingExtra] = useState(false);
   const [profileTab, setProfileTab] = useState<'performance' | 'creator'>('performance');
