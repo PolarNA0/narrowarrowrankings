@@ -87,30 +87,23 @@ async function runJob(pages: number) {
         const rows = listOf(
           await fetchJson(`/leaderboard?levelId=${encodeURIComponent(level.id)}&limit=150`, 15 * 60 * 1000),
         );
-        const best = new Map<string, number>();
+        const best = new Map<string, { time: number; name: string }>();
         for (const entry of rows) {
           const name = String(entry.username ?? "").trim();
           const time = Number(entry.completion_time);
           if (!name || !Number.isFinite(time)) continue;
-          const current = best.get(name.toLowerCase());
-          if (current === undefined || time < current) best.set(name.toLowerCase(), time);
-        }
-        const times = [...best.values()].sort((a, b) => a - b);
-        for (const entry of rows) {
-          const name = String(entry.username ?? "").trim();
-          if (!name) continue;
           const key = name.toLowerCase();
-          const time = best.get(key);
-          if (time === undefined) continue;
-          if (state.players.has(key) && state.players.get(key)!.completedLevel === level.id) continue;
-          const place = times.findIndex((t) => t >= time - 1e-9) + 1;
+          const current = best.get(key);
+          if (current === undefined || time < current.time) best.set(key, { time, name });
+        }
+        const times = [...best.values()].map((v) => v.time).sort((a, b) => a - b);
+        for (const [key, value] of best) {
+          const place = times.findIndex((t) => t >= value.time - 1e-9) + 1;
           let row = state.players.get(key);
           if (!row) {
-            row = { username: name, first: 0, second: 0, third: 0, top10: 0, completed: 0, points: 0 };
+            row = { username: value.name, first: 0, second: 0, third: 0, top10: 0, completed: 0, points: 0 };
             state.players.set(key, row);
           }
-          if (row.completedLevel === level.id) continue;
-          row.completedLevel = level.id;
           bump(row, place);
         }
       } catch (error) {
