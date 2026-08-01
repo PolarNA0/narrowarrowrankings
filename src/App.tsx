@@ -44,6 +44,9 @@ import {
 import { doc, onSnapshot, collection, getDocs, setDoc, db, OperationType, handleFirestoreError } from "./lib/cloud-db";
 import { ClickToCopy } from "./components/ClickToCopy";
 import { NarrowScoreView } from "./components/NarrowScoreView";
+import { CustomCompletionsView } from "./components/CustomCompletionsView";
+import { RecordTracker } from "./components/RecordTracker";
+import { CommandPalette } from "./components/CommandPalette";
 import { ProfileHub } from "./components/ProfileHub";
 import { usePlayerProfiles } from "./hooks/usePlayerProfiles";
 
@@ -301,10 +304,11 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showProfileHub, setShowProfileHub] = useState(false);
   const { settings, update: updateSetting, reset: resetSettings } = useAppSettings();
-  const { byUsername: playerProfiles, reload: reloadProfiles } = usePlayerProfiles();
+  const { user: authUser } = useAdminAuth();
+  const { byUsername: playerProfiles, reload: reloadProfiles, myProfile: myLinkedProfile, saveMyProfile } = usePlayerProfiles(authUser?.id);
 
 
-  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score'>('leaderboard');
+  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -1110,15 +1114,40 @@ export default function App() {
               >
                 NarrowScore
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setView('completions')}
+                className={cn(
+                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
+                  view === 'completions' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                )}
+              >
+                Completions
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  setView('tracker');
+                  await fetchAllLevels();
+                }}
+                className={cn(
+                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
+                  view === 'tracker' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                )}
+              >
+                Tracker
+              </Button>
             </nav>
 
             {/* Mobile Dropdown Navigation */}
             <div className="block sm:hidden w-[110px] xs:w-[140px] shrink-0">
               <Select 
-                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score'].includes(view) ? view : 'leaderboard'} 
+                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker'].includes(view) ? view : 'leaderboard'} 
                 onValueChange={async (val: any) => {
                   setView(val);
-                  if (val === 'average' || val === 'wrs' || val === 'score') {
+                  if (val === 'average' || val === 'wrs' || val === 'score' || val === 'tracker') {
                     await fetchAllLevels();
                   }
                 }}
@@ -1144,6 +1173,12 @@ export default function App() {
                   </SelectItem>
                   <SelectItem value="score" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     NarrowScore
+                  </SelectItem>
+                  <SelectItem value="completions" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Custom Completions
+                  </SelectItem>
+                  <SelectItem value="tracker" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Record Tracker
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -1230,6 +1265,12 @@ export default function App() {
               onLevelClick={handleLevelClick}
               worldRecords={worldRecords}
               computedMedals={selectedPlayerMedals}
+              levelStandings={processedAllLevelsData}
+              legacyRuns={mappedLegacyRuns}
+              profile={playerProfiles[selectedPlayer.toLowerCase()]}
+              canEditProfile={!!myLinkedProfile && myLinkedProfile.username?.toLowerCase() === selectedPlayer.toLowerCase()}
+              onSaveProfile={async (patch) => { await saveMyProfile(patch); }}
+              onRequestSignIn={() => setShowProfileHub(true)}
             />
           ) : (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
