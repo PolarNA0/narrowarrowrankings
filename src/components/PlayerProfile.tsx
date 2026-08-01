@@ -831,7 +831,20 @@ export function PlayerProfile({
                             {new Date(levelStats.date).toLocaleDateString()}
                           </TableCell>
                         </motion.tr>
+                        {expandedLevel === level.id && (
+                          <LevelHistoryDetail
+                            levelId={level.id}
+                            username={stats.username}
+                            bestTime={levelStats.bestTime}
+                            bestDate={levelStats.date}
+                            standings={levelStandings?.[level.id]}
+                            legacyRuns={legacyRuns}
+                            colSpan={levelSort === 'easiest_to_improve' ? 6 : 5}
+                          />
+                        )}
+                        </React.Fragment>
                       );
+
                     })}
                     {Object.keys(stats.levels).length === 0 && (
                       <TableRow>
