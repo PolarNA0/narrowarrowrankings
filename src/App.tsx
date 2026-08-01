@@ -1013,6 +1013,16 @@ export default function App() {
         update={updateSetting}
         reset={resetSettings}
       />
+      <CommandPalette
+        levels={dynamicLevels}
+        players={allUsernames}
+        onSelectLevel={handleLevelClick}
+        onSelectPlayer={handlePlayerClick}
+        onNavigate={async (next) => {
+          setView(next as any);
+          if (['average', 'wrs', 'score', 'tracker'].includes(next)) await fetchAllLevels();
+        }}
+      />
       <ProfileHub
         open={showProfileHub}
         onOpenChange={setShowProfileHub}
