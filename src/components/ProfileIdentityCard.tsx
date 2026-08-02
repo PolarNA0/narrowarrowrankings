@@ -125,7 +125,9 @@ export function ProfileIdentityCard({ username, profile, canEdit, onSave, onRequ
               <span className="text-xs font-mono text-slate-500">@{username}</span>
             )}
           </div>
+          {badges && <div className="mt-2">{badges}</div>}
           <div className="flex flex-wrap items-center gap-2 mt-1">
+
             {profile?.country && (
               <Badge variant="outline" className="border-white/10 bg-white/5 text-[10px] text-slate-300">
                 <Globe2 className="w-3 h-3 mr-1" /> {profile.country}
