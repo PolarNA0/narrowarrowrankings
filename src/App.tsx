@@ -547,11 +547,13 @@ export default function App() {
 
       if (requestId !== allLeaderboardFetchId.current) return;
       setAllLevelsData({ ...newData });
+      persistLeaderboards(newData);
       setLeaderboardLoadStatus({
         loaded: levelsToFetch.filter(l => newData[l.id]?.length > 0).length,
         total: levelsToFetch.length,
         failed: levelsToFetch.filter(l => !newData[l.id] || newData[l.id].length === 0).length,
       });
+
     } catch (err) {
       console.error("Failed to fetch all levels", err);
     } finally {
