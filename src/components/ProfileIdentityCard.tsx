@@ -31,7 +31,7 @@ const EMPTY_FORM = {
 };
 
 /** Banner + avatar identity card with click-to-edit for the signed-in owner. */
-export function ProfileIdentityCard({ username, profile, canEdit, onSave, onRequestSignIn, children }: Props) {
+export function ProfileIdentityCard({ username, profile, canEdit, onSave, onRequestSignIn, badges, children }: Props) {
   const [editing, setEditing] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [form, setForm] = React.useState(EMPTY_FORM);
