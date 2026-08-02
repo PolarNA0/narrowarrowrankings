@@ -12,7 +12,14 @@ export interface AppSettings {
   monoTimes: boolean;
   rounded: boolean;
   highlightWr: boolean;
+  showBadges: boolean;
+  stickyHeaders: boolean;
+  zebraRows: boolean;
+  reducedBlur: boolean;
+  showAvatars: boolean;
+  cardOpacity: number;
 }
+
 
 export const BACKGROUND_THEMES: { id: string; name: string; background: string; swatch: string }[] = [
   { id: "midnight", name: "Midnight", background: "radial-gradient(1200px 600px at 50% -10%, #101425 0%, #0a0a0a 60%)", swatch: "#0a0a0a" },
