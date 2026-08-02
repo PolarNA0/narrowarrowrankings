@@ -320,7 +320,10 @@ export default function App() {
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [player2ToCompare, setPlayer2ToCompare] = useState<string | null>(null);
-  const [allLevelsData, setAllLevelsData] = useState<Record<string, LeaderboardEntry[]>>({});
+  const [allLevelsData, setAllLevelsData] = useState<Record<string, LeaderboardEntry[]>>(
+    () => hydratePersistedLeaderboards(),
+  );
+
   const [isFetchingAll, setIsFetchingAll] = useState(false);
   const [leaderboardLoadStatus, setLeaderboardLoadStatus] = useState({ loaded: 0, total: LEVELS.length, failed: 0 });
   const allLeaderboardFetchId = React.useRef(0);
