@@ -115,10 +115,15 @@ export function useAppSettings() {
     root.style.setProperty("--app-accent", settings.accent);
     root.style.setProperty("--app-glow", String(settings.glow));
     root.style.setProperty("--app-radius-scale", settings.rounded ? "1" : "0");
+    root.style.setProperty("--app-card-opacity", String(settings.cardOpacity));
     root.style.fontSize = `${16 * settings.fontScale}px`;
     root.dataset.density = settings.density;
     root.dataset.motion = settings.motion ? "on" : "off";
+    root.dataset.zebra = settings.zebraRows ? "on" : "off";
+    root.dataset.sticky = settings.stickyHeaders ? "on" : "off";
+    root.dataset.blur = settings.reducedBlur ? "off" : "on";
   }, [settings]);
+
 
   const update = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
