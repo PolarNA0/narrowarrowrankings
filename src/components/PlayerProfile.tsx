@@ -90,6 +90,8 @@ export function PlayerProfile({
   const [loadingCreatorLevels, setLoadingCreatorLevels] = useState(false);
   const [creatorLevelsFilter, setCreatorLevelsFilter] = useState<'popular' | 'new'>('popular');
   const [levelSort, setLevelSort] = useState<'default' | 'easiest_to_improve'>('default');
+  const officialCreators = useOfficialCreators();
+
 
   const getLeagueIconUrl = (league: string) => {
     if (!league) return "";
