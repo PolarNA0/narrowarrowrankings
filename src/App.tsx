@@ -1870,7 +1870,7 @@ export default function App() {
             onBack={() => setView('leaderboard')}
           />
         ) : view === 'completions' ? (
-          <CustomCompletionsView onSelectPlayer={handlePlayerClick} />
+          <CustomCompletionsView usernames={allUsernames} onSelectPlayer={handlePlayerClick} />
         ) : view === 'tracker' ? (
           <div className="space-y-6">
             <div>
