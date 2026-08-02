@@ -14,8 +14,10 @@ interface Props {
   canEdit?: boolean;
   onSave?: (patch: Partial<PlayerProfileRow>) => Promise<void>;
   onRequestSignIn?: () => void;
+  badges?: React.ReactNode;
   children?: React.ReactNode;
 }
+
 
 const EMPTY_FORM = {
   display_name: "",
