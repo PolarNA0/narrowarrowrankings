@@ -36,6 +36,8 @@ import { ArrowIcon } from "./ArrowIcon";
 import { cn, capitalizeName } from "@/lib/utils";
 import { LevelHistoryDetail } from "./LevelHistoryDetail";
 import { ProfileIdentityCard } from "./ProfileIdentityCard";
+import { PlayerBadges } from "./PlayerBadges";
+import { useOfficialCreators } from "@/hooks/useProfileSummaries";
 import type { LeaderboardEntry, LegacyRun } from "../types";
 import type { PlayerProfileRow } from "@/hooks/usePlayerProfiles";
 
