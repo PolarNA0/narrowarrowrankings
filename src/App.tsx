@@ -81,7 +81,14 @@ import {
   HUMAN_LIMIT_DEFAULTS,
   LEVEL_PACKS
 } from "./constants";
-import { fetchLeaderboard, runWithConcurrency } from "./services/api";
+import {
+  fetchLeaderboard,
+  runWithConcurrency,
+  fetchAllLeaderboards,
+  persistLeaderboards,
+  hydratePersistedLeaderboards,
+} from "./services/api";
+
 import { assignRank } from "./lib/ranking";
 import { cn, capitalizeName } from "@/lib/utils";
 import { AdminPanel } from "./components/AdminPanel";
@@ -313,7 +320,10 @@ export default function App() {
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [player2ToCompare, setPlayer2ToCompare] = useState<string | null>(null);
-  const [allLevelsData, setAllLevelsData] = useState<Record<string, LeaderboardEntry[]>>({});
+  const [allLevelsData, setAllLevelsData] = useState<Record<string, LeaderboardEntry[]>>(
+    () => hydratePersistedLeaderboards(),
+  );
+
   const [isFetchingAll, setIsFetchingAll] = useState(false);
   const [leaderboardLoadStatus, setLeaderboardLoadStatus] = useState({ loaded: 0, total: LEVELS.length, failed: 0 });
   const allLeaderboardFetchId = React.useRef(0);
@@ -345,7 +355,9 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchLeaderboard(levelId, forceRefresh);
+      // deep = merge every arrow board so players beyond the top 150 appear.
+      const result = await fetchLeaderboard(levelId, forceRefresh, true);
+
       setData(result);
       
       // Also fetch details from the API if we don't already have them, or on forceRefresh
@@ -486,14 +498,28 @@ export default function App() {
     setLeaderboardLoadStatus({ loaded: existingLoaded, total: levelsToFetch.length, failed: 0 });
     try {
       const newData: Record<string, LeaderboardEntry[]> = { ...allLevelsData };
-      let pending = forceRefresh
-        ? [...levelsToFetch]
-        : levelsToFetch.filter(l => !newData[l.id] || newData[l.id].length === 0);
+
+      // One warmed bulk request covers every official board in a single trip.
+      try {
+        const bulk = await fetchAllLeaderboards();
+        for (const [id, entries] of Object.entries(bulk)) {
+          if (entries?.length) newData[id] = entries;
+        }
+        if (requestId === allLeaderboardFetchId.current) {
+          setAllLevelsData({ ...newData });
+          persistLeaderboards(newData);
+        }
+      } catch (error) {
+        console.error("bulk leaderboard fetch failed, falling back", error);
+      }
+
+      let pending = levelsToFetch.filter(l => !newData[l.id] || newData[l.id].length === 0);
 
       for (let attempt = 0; attempt < 4 && pending.length > 0; attempt++) {
         if (attempt > 0) {
           await new Promise(r => setTimeout(r, 900 * attempt));
         }
+
 
         const results = await runWithConcurrency(
           pending.map((level) => async () => {
@@ -526,11 +552,13 @@ export default function App() {
 
       if (requestId !== allLeaderboardFetchId.current) return;
       setAllLevelsData({ ...newData });
+      persistLeaderboards(newData);
       setLeaderboardLoadStatus({
         loaded: levelsToFetch.filter(l => newData[l.id]?.length > 0).length,
         total: levelsToFetch.length,
         failed: levelsToFetch.filter(l => !newData[l.id] || newData[l.id].length === 0).length,
       });
+
     } catch (err) {
       console.error("Failed to fetch all levels", err);
     } finally {
@@ -1870,7 +1898,7 @@ export default function App() {
             onBack={() => setView('leaderboard')}
           />
         ) : view === 'completions' ? (
-          <CustomCompletionsView onSelectPlayer={handlePlayerClick} />
+          <CustomCompletionsView usernames={allUsernames} onSelectPlayer={handlePlayerClick} />
         ) : view === 'tracker' ? (
           <div className="space-y-6">
             <div>

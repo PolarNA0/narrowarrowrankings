@@ -13,8 +13,10 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
 import { Route as ApiPublishedLevelsRouteImport } from './routes/api/published-levels'
+import { Route as ApiProfilesRouteImport } from './routes/api/profiles'
+import { Route as ApiOfficialCreatorsRouteImport } from './routes/api/official-creators'
 import { Route as ApiDailySkinsRouteImport } from './routes/api/daily-skins'
-import { Route as ApiCustomCompletionsRouteImport } from './routes/api/custom-completions'
+import { Route as ApiAllLeaderboardsRouteImport } from './routes/api/all-leaderboards'
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
 import { Route as ApiUserUsernameRouteImport } from './routes/api/user.$username'
 import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
@@ -42,14 +44,24 @@ const ApiPublishedLevelsRoute = ApiPublishedLevelsRouteImport.update({
   path: '/api/published-levels',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProfilesRoute = ApiProfilesRouteImport.update({
+  id: '/api/profiles',
+  path: '/api/profiles',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOfficialCreatorsRoute = ApiOfficialCreatorsRouteImport.update({
+  id: '/api/official-creators',
+  path: '/api/official-creators',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiDailySkinsRoute = ApiDailySkinsRouteImport.update({
   id: '/api/daily-skins',
   path: '/api/daily-skins',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiCustomCompletionsRoute = ApiCustomCompletionsRouteImport.update({
-  id: '/api/custom-completions',
-  path: '/api/custom-completions',
+const ApiAllLeaderboardsRoute = ApiAllLeaderboardsRouteImport.update({
+  id: '/api/all-leaderboards',
+  path: '/api/all-leaderboards',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPacksIndexRoute = ApiPacksIndexRouteImport.update({
@@ -86,8 +98,10 @@ const ApiLeaderboardLevelRoute = ApiLeaderboardLevelRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/api/custom-completions': typeof ApiCustomCompletionsRoute
+  '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/official-creators': typeof ApiOfficialCreatorsRoute
+  '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -100,8 +114,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/api/custom-completions': typeof ApiCustomCompletionsRoute
+  '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/official-creators': typeof ApiOfficialCreatorsRoute
+  '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -115,8 +131,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/api/custom-completions': typeof ApiCustomCompletionsRoute
+  '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/official-creators': typeof ApiOfficialCreatorsRoute
+  '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -131,8 +149,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/sitemap.xml'
-    | '/api/custom-completions'
+    | '/api/all-leaderboards'
     | '/api/daily-skins'
+    | '/api/official-creators'
+    | '/api/profiles'
     | '/api/published-levels'
     | '/api/startup-data'
     | '/api/leaderboard/$level'
@@ -145,8 +165,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/sitemap.xml'
-    | '/api/custom-completions'
+    | '/api/all-leaderboards'
     | '/api/daily-skins'
+    | '/api/official-creators'
+    | '/api/profiles'
     | '/api/published-levels'
     | '/api/startup-data'
     | '/api/leaderboard/$level'
@@ -159,8 +181,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/sitemap.xml'
-    | '/api/custom-completions'
+    | '/api/all-leaderboards'
     | '/api/daily-skins'
+    | '/api/official-creators'
+    | '/api/profiles'
     | '/api/published-levels'
     | '/api/startup-data'
     | '/api/leaderboard/$level'
@@ -174,8 +198,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
-  ApiCustomCompletionsRoute: typeof ApiCustomCompletionsRoute
+  ApiAllLeaderboardsRoute: typeof ApiAllLeaderboardsRoute
   ApiDailySkinsRoute: typeof ApiDailySkinsRoute
+  ApiOfficialCreatorsRoute: typeof ApiOfficialCreatorsRoute
+  ApiProfilesRoute: typeof ApiProfilesRoute
   ApiPublishedLevelsRoute: typeof ApiPublishedLevelsRoute
   ApiStartupDataRoute: typeof ApiStartupDataRoute
   ApiLeaderboardLevelRoute: typeof ApiLeaderboardLevelRoute
@@ -216,6 +242,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublishedLevelsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/profiles': {
+      id: '/api/profiles'
+      path: '/api/profiles'
+      fullPath: '/api/profiles'
+      preLoaderRoute: typeof ApiProfilesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/official-creators': {
+      id: '/api/official-creators'
+      path: '/api/official-creators'
+      fullPath: '/api/official-creators'
+      preLoaderRoute: typeof ApiOfficialCreatorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/daily-skins': {
       id: '/api/daily-skins'
       path: '/api/daily-skins'
@@ -223,11 +263,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDailySkinsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/custom-completions': {
-      id: '/api/custom-completions'
-      path: '/api/custom-completions'
-      fullPath: '/api/custom-completions'
-      preLoaderRoute: typeof ApiCustomCompletionsRouteImport
+    '/api/all-leaderboards': {
+      id: '/api/all-leaderboards'
+      path: '/api/all-leaderboards'
+      fullPath: '/api/all-leaderboards'
+      preLoaderRoute: typeof ApiAllLeaderboardsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/packs/': {
@@ -278,8 +318,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
-  ApiCustomCompletionsRoute: ApiCustomCompletionsRoute,
+  ApiAllLeaderboardsRoute: ApiAllLeaderboardsRoute,
   ApiDailySkinsRoute: ApiDailySkinsRoute,
+  ApiOfficialCreatorsRoute: ApiOfficialCreatorsRoute,
+  ApiProfilesRoute: ApiProfilesRoute,
   ApiPublishedLevelsRoute: ApiPublishedLevelsRoute,
   ApiStartupDataRoute: ApiStartupDataRoute,
   ApiLeaderboardLevelRoute: ApiLeaderboardLevelRoute,

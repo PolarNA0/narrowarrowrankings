@@ -1,31 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { proxyJson } from "@/lib/na-proxy";
-
-// Upstream caps the leaderboard at 150 rows and ignores `depth`; `limit` is the
-// parameter that actually deepens the board past the default top 100.
-const MAX_LIMIT = 150;
+import { fetchLevelBoard } from "@/lib/leaderboard-source";
 
 export const Route = createFileRoute("/api/leaderboard/$level")({
   server: {
     handlers: {
       GET: async ({ params, request }) => {
         const incoming = new URL(request.url).searchParams;
-        const upstream = new URLSearchParams();
-        upstream.set("levelId", params.level);
+        const arrowFilter = incoming.get("arrowFilter") ?? undefined;
+        // `deep` merges the per-arrow boards so players outside the global
+        // top 150 (the hard upstream cap) still show up.
+        const deep = incoming.get("deep") === "1" && !arrowFilter;
 
-        const arrowFilter = incoming.get("arrowFilter");
-        if (arrowFilter) upstream.set("arrowFilter", arrowFilter);
-
-        const requested = Number(incoming.get("limit") ?? incoming.get("depth"));
-        const limit =
-          incoming.get("infiniteLeaderboard") === "true"
-            ? MAX_LIMIT
-            : Number.isFinite(requested) && requested > 0
-              ? Math.min(requested, MAX_LIMIT)
-              : MAX_LIMIT;
-        upstream.set("limit", String(limit));
-
-        return proxyJson(`/leaderboard?${upstream.toString()}`, 45 * 1000);
+        try {
+          const entries = await fetchLevelBoard(params.level, { deep, arrowFilter });
+          return Response.json(entries, {
+            headers: { "cache-control": "public, max-age=45, stale-while-revalidate=600" },
+          });
+        } catch (error) {
+          console.error("leaderboard fetch failed", params.level, error);
+          return Response.json({ error: "Upstream leaderboard request failed" }, { status: 502 });
+        }
       },
     },
   },

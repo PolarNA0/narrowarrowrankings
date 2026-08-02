@@ -28,7 +28,13 @@ export function SettingsPanel({ open, onOpenChange, settings, update, reset }: S
     { key: "monoTimes", label: "Monospaced times", icon: <Type className="w-4 h-4 text-slate-400" /> },
     { key: "rounded", label: "Rounded corners", icon: <Square className="w-4 h-4 text-slate-400" /> },
     { key: "highlightWr", label: "Highlight world records", icon: <Sparkles className="w-4 h-4 text-slate-400" /> },
+    { key: "showBadges", label: "Show player badges", icon: <Sparkles className="w-4 h-4 text-slate-400" /> },
+    { key: "stickyHeaders", label: "Sticky table headers", icon: <Rows3 className="w-4 h-4 text-slate-400" /> },
+    { key: "zebraRows", label: "Striped rows", icon: <Rows3 className="w-4 h-4 text-slate-400" /> },
+    { key: "reducedBlur", label: "Reduced blur (faster)", icon: <Zap className="w-4 h-4 text-slate-400" /> },
+    { key: "showAvatars", label: "Show avatars", icon: <Square className="w-4 h-4 text-slate-400" /> },
   ];
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -36,6 +36,8 @@ import { ArrowIcon } from "./ArrowIcon";
 import { cn, capitalizeName } from "@/lib/utils";
 import { LevelHistoryDetail } from "./LevelHistoryDetail";
 import { ProfileIdentityCard } from "./ProfileIdentityCard";
+import { PlayerBadges } from "./PlayerBadges";
+import { useOfficialCreators } from "@/hooks/useProfileSummaries";
 import type { LeaderboardEntry, LegacyRun } from "../types";
 import type { PlayerProfileRow } from "@/hooks/usePlayerProfiles";
 
@@ -88,6 +90,8 @@ export function PlayerProfile({
   const [loadingCreatorLevels, setLoadingCreatorLevels] = useState(false);
   const [creatorLevelsFilter, setCreatorLevelsFilter] = useState<'popular' | 'new'>('popular');
   const [levelSort, setLevelSort] = useState<'default' | 'easiest_to_improve'>('default');
+  const officialCreators = useOfficialCreators();
+
 
   const getLeagueIconUrl = (league: string) => {
     if (!league) return "";
@@ -405,7 +409,34 @@ export function PlayerProfile({
         canEdit={canEditProfile}
         onSave={onSaveProfile}
         onRequestSignIn={onRequestSignIn}
+        badges={
+          <PlayerBadges
+            username={stats.username}
+            verified={profile?.verified}
+            medals={computedMedals}
+            officialCreators={officialCreators}
+            summary={{
+              username: stats.username,
+              found: true,
+              customCompleted: extraData?.custom_levels_completed ?? 0,
+              customMedals: extraData?.custom_medals ?? {},
+              officialMedals: extraData?.official_medals ?? {},
+              packMedals: extraData?.pack_medals ?? {},
+              mapsCompleted: extraData?.maps_completed ?? 0,
+              totalRuns: extraData?.total_runs ?? 0,
+              league: extraData?.league ?? null,
+              trophies: extraData?.trophies ?? 0,
+              levelsPublished: extraData?.creator?.levels_published ?? 0,
+              totalLikes: extraData?.creator?.total_likes ?? 0,
+              totalPlays: extraData?.creator?.total_plays ?? 0,
+              joined: extraData?.user?.joined ?? null,
+              bio: extraData?.user?.bio ?? null,
+              dailyBestFinish: extraData?.daily_stats?.best_finish ?? null,
+            }}
+          />
+        }
       />
+
 
 
 

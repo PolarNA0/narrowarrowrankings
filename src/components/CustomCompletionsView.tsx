@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { useProfileSummaries } from "@/hooks/useProfileSummaries";
 
 interface CompletionRow {
   username: string;
@@ -17,53 +18,46 @@ interface CompletionRow {
   points: number;
 }
 
-interface Snapshot {
-  done: boolean;
-  loaded: number;
-  total: number;
-  updatedAt: number;
-  levels: Array<{ id: string; name: string; creator: string }>;
-  players: CompletionRow[];
-}
-
 type SortKey = "first" | "second" | "third" | "top10" | "completed" | "points";
 
 interface Props {
+  usernames: string[];
   onSelectPlayer?: (username: string) => void;
 }
 
-export function CustomCompletionsView({ onSelectPlayer }: Props) {
-  const [snapshot, setSnapshot] = React.useState<Snapshot | null>(null);
+/**
+ * Custom-level medal table. Counts come straight from each player's in-game
+ * profile, so no per-level scanning is needed and every known player appears.
+ */
+export function CustomCompletionsView({ usernames, onSelectPlayer }: Props) {
   const [query, setQuery] = React.useState("");
   const [sortKey, setSortKey] = React.useState<SortKey>("first");
-
-  const load = React.useCallback(async () => {
-    try {
-      const res = await fetch("/api/custom-completions");
-      if (!res.ok) return;
-      setSnapshot((await res.json()) as Snapshot);
-    } catch (error) {
-      console.error("custom completions load failed", error);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void load();
-    const timer = setInterval(() => {
-      setSnapshot((current) => {
-        if (!current || !current.done) void load();
-        return current;
-      });
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [load]);
+  const { profiles, loaded, total, running, refresh } = useProfileSummaries(usernames, true);
 
   const rows = React.useMemo(() => {
-    const list = [...(snapshot?.players ?? [])];
+    const list: CompletionRow[] = Object.values(profiles)
+      .filter((p) => p.found)
+      .map((p) => {
+        const first = p.customMedals?.first ?? 0;
+        const second = p.customMedals?.second ?? 0;
+        const third = p.customMedals?.third ?? 0;
+        const top10 = p.customMedals?.top10 ?? 0;
+        return {
+          username: p.username,
+          first,
+          second,
+          third,
+          top10,
+          completed: p.customCompleted,
+          points: first * 10 + second * 6 + third * 4 + Math.max(0, top10 - first - second - third) * 2,
+        };
+      })
+      .filter((r) => r.completed > 0 || r.top10 > 0);
+
     list.sort((a, b) => b[sortKey] - a[sortKey] || b.first - a.first || b.completed - a.completed);
     const q = query.trim().toLowerCase();
     return q ? list.filter((r) => r.username.toLowerCase().includes(q)) : list;
-  }, [snapshot, query, sortKey]);
+  }, [profiles, query, sortKey]);
 
   const exportCsv = () => {
     const header = "rank,player,1st,2nd,3rd,top10,completed,points\n";
@@ -78,7 +72,7 @@ export function CustomCompletionsView({ onSelectPlayer }: Props) {
     URL.revokeObjectURL(url);
   };
 
-  const progress = snapshot ? Math.round((snapshot.loaded / Math.max(1, snapshot.total)) * 100) : 0;
+  const progress = Math.round((loaded / Math.max(1, total)) * 100);
 
   const columns: Array<{ key: SortKey; label: string; className: string }> = [
     { key: "first", label: "1st", className: "text-amber-400" },
@@ -97,7 +91,7 @@ export function CustomCompletionsView({ onSelectPlayer }: Props) {
             <Sparkles className="w-5 h-5 text-[var(--app-accent)]" /> Custom Completions
           </h2>
           <p className="text-slate-500 text-sm">
-            Medal counts across the {snapshot?.levels.length ?? 0} most popular community levels.
+            Community-level medals for every tracked player, pulled from their in-game profile.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -113,18 +107,23 @@ export function CustomCompletionsView({ onSelectPlayer }: Props) {
           <Button variant="outline" size="icon" className="h-9 w-9 border-white/10 bg-white/5" onClick={exportCsv}>
             <Download className="w-4 h-4" />
           </Button>
-          <Button variant="outline" size="icon" className="h-9 w-9 border-white/10 bg-white/5" onClick={() => void load()}>
-            <RefreshCw className={cn("w-4 h-4", snapshot && !snapshot.done && "animate-spin")} />
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 border-white/10 bg-white/5"
+            onClick={() => void refresh()}
+          >
+            <RefreshCw className={cn("w-4 h-4", running && "animate-spin")} />
           </Button>
         </div>
       </div>
 
-      {snapshot && !snapshot.done && (
+      {running && (
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
           <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-widest text-slate-500">
-            <span>Scanning custom leaderboards…</span>
+            <span>Loading player profiles…</span>
             <span>
-              {snapshot.loaded}/{snapshot.total}
+              {loaded}/{total}
             </span>
           </div>
           <div className="mt-2 h-1.5 rounded-full bg-white/5 overflow-hidden">
@@ -135,17 +134,17 @@ export function CustomCompletionsView({ onSelectPlayer }: Props) {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: "Players tracked", value: snapshot?.players.length ?? 0, icon: Trophy },
-          { label: "Levels scanned", value: snapshot?.levels.length ?? 0, icon: Sparkles },
-          { label: "Golds handed out", value: snapshot?.players.reduce((a, p) => a + p.first, 0) ?? 0, icon: Crown },
-          { label: "Total completions", value: snapshot?.players.reduce((a, p) => a + p.completed, 0) ?? 0, icon: Medal },
+          { label: "Players tracked", value: rows.length, icon: Trophy },
+          { label: "Profiles loaded", value: loaded, icon: Sparkles },
+          { label: "Golds handed out", value: rows.reduce((a, p) => a + p.first, 0), icon: Crown },
+          { label: "Total completions", value: rows.reduce((a, p) => a + p.completed, 0), icon: Medal },
         ].map((stat) => (
           <Card key={stat.label} className="bg-white/5 border-white/10">
             <CardContent className="p-4">
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-slate-500 font-bold">
                 <stat.icon className="w-3.5 h-3.5 text-[var(--app-accent)]" /> {stat.label}
               </div>
-              <div className="text-2xl font-bold text-white mt-1 font-mono">{stat.value}</div>
+              <div className="text-2xl font-bold text-white mt-1 font-mono">{stat.value.toLocaleString()}</div>
             </CardContent>
           </Card>
         ))}
@@ -180,11 +179,11 @@ export function CustomCompletionsView({ onSelectPlayer }: Props) {
                 {rows.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-10 text-slate-500 font-mono text-xs">
-                      {snapshot?.done ? "No players found." : "Building the medal table…"}
+                      {running ? "Building the medal table…" : "No players found."}
                     </TableCell>
                   </TableRow>
                 )}
-                {rows.slice(0, 300).map((row, index) => (
+                {rows.map((row, index) => (
                   <TableRow
                     key={row.username}
                     className="border-white/5 hover:bg-white/[0.03] cursor-pointer"

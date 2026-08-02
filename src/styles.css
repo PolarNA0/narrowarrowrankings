@@ -176,3 +176,17 @@
   animation: none !important;
   transition: none !important;
 }
+
+/* User preference toggles from the appearance panel */
+[data-zebra="on"] .na-shell tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.025);
+}
+[data-sticky="on"] .na-shell thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+}
+[data-blur="off"] * {
+  backdrop-filter: none !important;
+}

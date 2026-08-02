@@ -14,8 +14,10 @@ interface Props {
   canEdit?: boolean;
   onSave?: (patch: Partial<PlayerProfileRow>) => Promise<void>;
   onRequestSignIn?: () => void;
+  badges?: React.ReactNode;
   children?: React.ReactNode;
 }
+
 
 const EMPTY_FORM = {
   display_name: "",
@@ -29,7 +31,7 @@ const EMPTY_FORM = {
 };
 
 /** Banner + avatar identity card with click-to-edit for the signed-in owner. */
-export function ProfileIdentityCard({ username, profile, canEdit, onSave, onRequestSignIn, children }: Props) {
+export function ProfileIdentityCard({ username, profile, canEdit, onSave, onRequestSignIn, badges, children }: Props) {
   const [editing, setEditing] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [form, setForm] = React.useState(EMPTY_FORM);
@@ -123,7 +125,9 @@ export function ProfileIdentityCard({ username, profile, canEdit, onSave, onRequ
               <span className="text-xs font-mono text-slate-500">@{username}</span>
             )}
           </div>
+          {badges && <div className="mt-2">{badges}</div>}
           <div className="flex flex-wrap items-center gap-2 mt-1">
+
             {profile?.country && (
               <Badge variant="outline" className="border-white/10 bg-white/5 text-[10px] text-slate-300">
                 <Globe2 className="w-3 h-3 mr-1" /> {profile.country}
