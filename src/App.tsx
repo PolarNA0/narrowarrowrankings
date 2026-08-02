@@ -486,14 +486,28 @@ export default function App() {
     setLeaderboardLoadStatus({ loaded: existingLoaded, total: levelsToFetch.length, failed: 0 });
     try {
       const newData: Record<string, LeaderboardEntry[]> = { ...allLevelsData };
-      let pending = forceRefresh
-        ? [...levelsToFetch]
-        : levelsToFetch.filter(l => !newData[l.id] || newData[l.id].length === 0);
+
+      // One warmed bulk request covers every official board in a single trip.
+      try {
+        const bulk = await fetchAllLeaderboards();
+        for (const [id, entries] of Object.entries(bulk)) {
+          if (entries?.length) newData[id] = entries;
+        }
+        if (requestId === allLeaderboardFetchId.current) {
+          setAllLevelsData({ ...newData });
+          persistLeaderboards(newData);
+        }
+      } catch (error) {
+        console.error("bulk leaderboard fetch failed, falling back", error);
+      }
+
+      let pending = levelsToFetch.filter(l => !newData[l.id] || newData[l.id].length === 0);
 
       for (let attempt = 0; attempt < 4 && pending.length > 0; attempt++) {
         if (attempt > 0) {
           await new Promise(r => setTimeout(r, 900 * attempt));
         }
+
 
         const results = await runWithConcurrency(
           pending.map((level) => async () => {
