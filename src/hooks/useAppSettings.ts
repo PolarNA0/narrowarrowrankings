@@ -38,6 +38,14 @@ export const BACKGROUND_THEMES: { id: string; name: string; background: string; 
   { id: "sand", name: "Dune", background: "linear-gradient(180deg, #2b2418 0%, #14100a 100%)", swatch: "#2b2418" },
   { id: "cobalt", name: "Cobalt", background: "radial-gradient(1000px 600px at 50% -10%, #0b2f6b 0%, #050b1c 65%)", swatch: "#0b2f6b" },
   { id: "blood", name: "Crimson", background: "radial-gradient(1000px 600px at 50% -10%, #4a0512 0%, #120306 65%)", swatch: "#4a0512" },
+  { id: "mono", name: "Paperwhite", background: "linear-gradient(180deg, #16171a 0%, #0b0b0c 100%)", swatch: "#16171a" },
+  { id: "teal", name: "Lagoon", background: "radial-gradient(1000px 600px at 20% -10%, #04353a 0%, #04141a 65%)", swatch: "#04353a" },
+  { id: "royal", name: "Royal", background: "linear-gradient(160deg, #1a0b3d 0%, #251357 45%, #08040f 100%)", swatch: "#251357" },
+  { id: "steel", name: "Steel", background: "linear-gradient(180deg, #202733 0%, #0a0d12 100%)", swatch: "#202733" },
+  { id: "mocha", name: "Mocha", background: "linear-gradient(180deg, #2b1d16 0%, #120b08 100%)", swatch: "#2b1d16" },
+  { id: "neon", name: "Neon Grid", background: "radial-gradient(900px 500px at 50% 110%, #16006b 0%, #05010f 70%)", swatch: "#16006b" },
+  { id: "arctic", name: "Arctic", background: "linear-gradient(180deg, #16283a 0%, #070d14 100%)", swatch: "#16283a" },
+  { id: "toxic", name: "Toxic", background: "radial-gradient(900px 500px at 80% -10%, #2c3a05 0%, #0a0e02 65%)", swatch: "#2c3a05" },
 ];
 
 export const ACCENTS: { id: string; name: string; value: string }[] = [
@@ -53,6 +61,10 @@ export const ACCENTS: { id: string; name: string; value: string }[] = [
   { id: "emerald", name: "Emerald", value: "#34D399" },
   { id: "ice", name: "Ice", value: "#E2E8F0" },
   { id: "gold", name: "Gold", value: "#EAB308" },
+  { id: "cyan", name: "Cyan", value: "#22D3EE" },
+  { id: "coral", name: "Coral", value: "#F87171" },
+  { id: "grape", name: "Grape", value: "#C084FC" },
+  { id: "sun", name: "Sunburst", value: "#FDE047" },
 ];
 
 const STORAGE_KEY = "naRankingsSettings";
@@ -69,7 +81,14 @@ const DEFAULTS: AppSettings = {
   monoTimes: true,
   rounded: true,
   highlightWr: true,
+  showBadges: true,
+  stickyHeaders: true,
+  zebraRows: false,
+  reducedBlur: false,
+  showAvatars: true,
+  cardOpacity: 1,
 };
+
 
 function read(): AppSettings {
   if (typeof window === "undefined") return DEFAULTS;
