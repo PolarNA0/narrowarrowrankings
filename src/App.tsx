@@ -355,7 +355,9 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchLeaderboard(levelId, forceRefresh);
+      // deep = merge every arrow board so players beyond the top 150 appear.
+      const result = await fetchLeaderboard(levelId, forceRefresh, true);
+
       setData(result);
       
       // Also fetch details from the API if we don't already have them, or on forceRefresh
