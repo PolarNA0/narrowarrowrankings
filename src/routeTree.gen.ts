@@ -17,6 +17,7 @@ import { Route as ApiProfilesRouteImport } from './routes/api/profiles'
 import { Route as ApiOfficialCreatorsRouteImport } from './routes/api/official-creators'
 import { Route as ApiDailySkinsRouteImport } from './routes/api/daily-skins'
 import { Route as ApiCustomCompletionsRouteImport } from './routes/api/custom-completions'
+import { Route as ApiAllLeaderboardsRouteImport } from './routes/api/all-leaderboards'
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
 import { Route as ApiUserUsernameRouteImport } from './routes/api/user.$username'
 import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
@@ -64,6 +65,11 @@ const ApiCustomCompletionsRoute = ApiCustomCompletionsRouteImport.update({
   path: '/api/custom-completions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAllLeaderboardsRoute = ApiAllLeaderboardsRouteImport.update({
+  id: '/api/all-leaderboards',
+  path: '/api/all-leaderboards',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPacksIndexRoute = ApiPacksIndexRouteImport.update({
   id: '/api/packs/',
   path: '/api/packs/',
@@ -98,6 +104,7 @@ const ApiLeaderboardLevelRoute = ApiLeaderboardLevelRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/custom-completions': typeof ApiCustomCompletionsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/custom-completions': typeof ApiCustomCompletionsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/custom-completions': typeof ApiCustomCompletionsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
@@ -149,6 +158,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/sitemap.xml'
+    | '/api/all-leaderboards'
     | '/api/custom-completions'
     | '/api/daily-skins'
     | '/api/official-creators'
@@ -165,6 +175,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/sitemap.xml'
+    | '/api/all-leaderboards'
     | '/api/custom-completions'
     | '/api/daily-skins'
     | '/api/official-creators'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/sitemap.xml'
+    | '/api/all-leaderboards'
     | '/api/custom-completions'
     | '/api/daily-skins'
     | '/api/official-creators'
@@ -198,6 +210,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  ApiAllLeaderboardsRoute: typeof ApiAllLeaderboardsRoute
   ApiCustomCompletionsRoute: typeof ApiCustomCompletionsRoute
   ApiDailySkinsRoute: typeof ApiDailySkinsRoute
   ApiOfficialCreatorsRoute: typeof ApiOfficialCreatorsRoute
@@ -270,6 +283,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCustomCompletionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/all-leaderboards': {
+      id: '/api/all-leaderboards'
+      path: '/api/all-leaderboards'
+      fullPath: '/api/all-leaderboards'
+      preLoaderRoute: typeof ApiAllLeaderboardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/packs/': {
       id: '/api/packs/'
       path: '/api/packs'
@@ -318,6 +338,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  ApiAllLeaderboardsRoute: ApiAllLeaderboardsRoute,
   ApiCustomCompletionsRoute: ApiCustomCompletionsRoute,
   ApiDailySkinsRoute: ApiDailySkinsRoute,
   ApiOfficialCreatorsRoute: ApiOfficialCreatorsRoute,
