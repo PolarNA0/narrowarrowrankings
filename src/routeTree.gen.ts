@@ -13,6 +13,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
 import { Route as ApiPublishedLevelsRouteImport } from './routes/api/published-levels'
+import { Route as ApiProfilesRouteImport } from './routes/api/profiles'
 import { Route as ApiDailySkinsRouteImport } from './routes/api/daily-skins'
 import { Route as ApiCustomCompletionsRouteImport } from './routes/api/custom-completions'
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
@@ -40,6 +41,11 @@ const ApiStartupDataRoute = ApiStartupDataRouteImport.update({
 const ApiPublishedLevelsRoute = ApiPublishedLevelsRouteImport.update({
   id: '/api/published-levels',
   path: '/api/published-levels',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProfilesRoute = ApiProfilesRouteImport.update({
+  id: '/api/profiles',
+  path: '/api/profiles',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiDailySkinsRoute = ApiDailySkinsRouteImport.update({
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/custom-completions': typeof ApiCustomCompletionsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/custom-completions': typeof ApiCustomCompletionsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/custom-completions': typeof ApiCustomCompletionsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -133,6 +142,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/custom-completions'
     | '/api/daily-skins'
+    | '/api/profiles'
     | '/api/published-levels'
     | '/api/startup-data'
     | '/api/leaderboard/$level'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/custom-completions'
     | '/api/daily-skins'
+    | '/api/profiles'
     | '/api/published-levels'
     | '/api/startup-data'
     | '/api/leaderboard/$level'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/custom-completions'
     | '/api/daily-skins'
+    | '/api/profiles'
     | '/api/published-levels'
     | '/api/startup-data'
     | '/api/leaderboard/$level'
@@ -176,6 +188,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiCustomCompletionsRoute: typeof ApiCustomCompletionsRoute
   ApiDailySkinsRoute: typeof ApiDailySkinsRoute
+  ApiProfilesRoute: typeof ApiProfilesRoute
   ApiPublishedLevelsRoute: typeof ApiPublishedLevelsRoute
   ApiStartupDataRoute: typeof ApiStartupDataRoute
   ApiLeaderboardLevelRoute: typeof ApiLeaderboardLevelRoute
@@ -214,6 +227,13 @@ declare module '@tanstack/react-router' {
       path: '/api/published-levels'
       fullPath: '/api/published-levels'
       preLoaderRoute: typeof ApiPublishedLevelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/profiles': {
+      id: '/api/profiles'
+      path: '/api/profiles'
+      fullPath: '/api/profiles'
+      preLoaderRoute: typeof ApiProfilesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/daily-skins': {
@@ -280,6 +300,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiCustomCompletionsRoute: ApiCustomCompletionsRoute,
   ApiDailySkinsRoute: ApiDailySkinsRoute,
+  ApiProfilesRoute: ApiProfilesRoute,
   ApiPublishedLevelsRoute: ApiPublishedLevelsRoute,
   ApiStartupDataRoute: ApiStartupDataRoute,
   ApiLeaderboardLevelRoute: ApiLeaderboardLevelRoute,
