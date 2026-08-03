@@ -137,6 +137,8 @@ export function useAppSettings() {
     root.dataset.zebra = settings.zebraRows ? "on" : "off";
     root.dataset.sticky = settings.stickyHeaders ? "on" : "off";
     root.dataset.blur = settings.reducedBlur ? "off" : "on";
+    root.dataset.tone = theme.light ? "light" : "dark";
+
   }, [settings]);
 
 
