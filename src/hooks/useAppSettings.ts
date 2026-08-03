@@ -21,7 +21,13 @@ export interface AppSettings {
 }
 
 
-export const BACKGROUND_THEMES: { id: string; name: string; background: string; swatch: string }[] = [
+export const BACKGROUND_THEMES: {
+  id: string;
+  name: string;
+  background: string;
+  swatch: string;
+  light?: boolean;
+}[] = [
   { id: "midnight", name: "Midnight", background: "radial-gradient(1200px 600px at 50% -10%, #101425 0%, #0a0a0a 60%)", swatch: "#0a0a0a" },
   { id: "ocean", name: "Deep Ocean", background: "radial-gradient(1200px 600px at 50% -10%, #06283d 0%, #04121d 60%)", swatch: "#06283d" },
   { id: "carbon", name: "Carbon", background: "linear-gradient(180deg, #17181c 0%, #0d0e11 100%)", swatch: "#17181c" },
