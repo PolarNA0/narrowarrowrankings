@@ -6,8 +6,8 @@ const inflight: Record<string, Promise<unknown>> = {};
 // The upstream API rate-limits aggressively (429) when many leaderboards are
 // requested at once, so all upstream calls go through a small concurrency
 // queue with exponential backoff retries.
-const MAX_CONCURRENT = 3;
-const MIN_GAP_MS = 120;
+const MAX_CONCURRENT = 8;
+const MIN_GAP_MS = 50;
 let active = 0;
 let lastStart = 0;
 const queue: Array<() => void> = [];
