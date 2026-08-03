@@ -190,3 +190,45 @@
 [data-blur="off"] * {
   backdrop-filter: none !important;
 }
+
+/* Light background themes: flip the dark utility palette so text stays readable. */
+[data-tone="light"] {
+  color-scheme: light;
+}
+[data-tone="light"] body {
+  color: #1b1a17;
+}
+[data-tone="light"] .text-white,
+[data-tone="light"] .text-slate-100,
+[data-tone="light"] .text-slate-200,
+[data-tone="light"] .text-slate-300 {
+  color: #17161a;
+}
+[data-tone="light"] .text-slate-400 {
+  color: #3f3d45;
+}
+[data-tone="light"] .text-slate-500,
+[data-tone="light"] .text-slate-600 {
+  color: #5b5865;
+}
+[data-tone="light"] .bg-white\/5,
+[data-tone="light"] .bg-white\/\[0\.03\],
+[data-tone="light"] .bg-white\/\[0\.02\] {
+  background-color: rgb(255 255 255 / 0.55);
+}
+[data-tone="light"] .bg-white\/10 {
+  background-color: rgb(255 255 255 / 0.7);
+}
+[data-tone="light"] .bg-black\/30,
+[data-tone="light"] .bg-black\/40,
+[data-tone="light"] .bg-black\/20 {
+  background-color: rgb(255 255 255 / 0.6);
+}
+[data-tone="light"] .border-white\/5,
+[data-tone="light"] .border-white\/10,
+[data-tone="light"] .border-white\/20 {
+  border-color: rgb(23 22 26 / 0.14);
+}
+[data-tone="light"] .divide-white\/5 > * + * {
+  border-color: rgb(23 22 26 / 0.1);
+}
