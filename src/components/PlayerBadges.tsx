@@ -1,8 +1,24 @@
 import * as React from "react";
-import { Crown, Hammer, Shield, Star, Flame, BadgeCheck, Rocket, Medal } from "lucide-react";
+import {
+  Crown,
+  Hammer,
+  Shield,
+  Star,
+  Flame,
+  BadgeCheck,
+  Rocket,
+  Medal,
+  Award,
+  Heart,
+  Infinity as InfinityIcon,
+  Map as MapIcon,
+  Sparkles,
+  Timer,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProfileSummary } from "@/hooks/useProfileSummaries";
 import type { ComputedMedals } from "@/lib/medals";
+import { badgeToneClass, type CustomBadge } from "@/hooks/useCustomBadges";
 
 export interface PlayerBadge {
   id: string;
@@ -18,6 +34,7 @@ interface PlayerBadgesProps {
   medals?: ComputedMedals | null;
   officialCreators?: Set<string>;
   verified?: boolean;
+  customBadges?: CustomBadge[];
   size?: "sm" | "md";
   className?: string;
 }
@@ -28,10 +45,12 @@ export function computePlayerBadges({
   medals,
   officialCreators,
   verified,
+  customBadges,
 }: Omit<PlayerBadgesProps, "size" | "className">): PlayerBadge[] {
   const badges: PlayerBadge[] = [];
   const wrs = medals?.first ?? summary?.officialMedals?.first ?? 0;
   const customFirsts = summary?.customMedals?.first ?? 0;
+
 
   if (verified) {
     badges.push({
@@ -105,8 +124,86 @@ export function computePlayerBadges({
       className: "text-cyan-300 border-cyan-400/30 bg-cyan-400/10",
     });
   }
+  if ((summary?.packMedals?.first ?? 0) > 0) {
+    badges.push({
+      id: "pack-champion",
+      label: "Pack Champion",
+      detail: `${summary?.packMedals?.first} pack golds`,
+      icon: <Award className="w-3.5 h-3.5" />,
+      className: "text-yellow-300 border-yellow-400/30 bg-yellow-400/10",
+    });
+  }
+  const podiums =
+    (summary?.officialMedals?.first ?? 0) +
+    (summary?.officialMedals?.second ?? 0) +
+    (summary?.officialMedals?.third ?? 0);
+  if (podiums >= 10) {
+    badges.push({
+      id: "podium-machine",
+      label: "Podium Machine",
+      detail: `${podiums} official podium finishes`,
+      icon: <Medal className="w-3.5 h-3.5" />,
+      className: "text-teal-300 border-teal-400/30 bg-teal-400/10",
+    });
+  }
+  if ((summary?.mapsCompleted ?? 0) >= 64) {
+    badges.push({
+      id: "completionist",
+      label: "Completionist",
+      detail: `${summary?.mapsCompleted} maps completed`,
+      icon: <MapIcon className="w-3.5 h-3.5" />,
+      className: "text-lime-300 border-lime-400/30 bg-lime-400/10",
+    });
+  }
+  if ((summary?.totalRuns ?? 0) >= 5000) {
+    badges.push({
+      id: "grinder",
+      label: "Grinder",
+      detail: `${summary?.totalRuns.toLocaleString()} recorded runs`,
+      icon: <InfinityIcon className="w-3.5 h-3.5" />,
+      className: "text-slate-300 border-white/20 bg-white/5",
+    });
+  }
+  if ((summary?.trophies ?? 0) >= 1000) {
+    badges.push({
+      id: "trophy-hunter",
+      label: "Trophy Hunter",
+      detail: `${summary?.trophies.toLocaleString()} trophies`,
+      icon: <Sparkles className="w-3.5 h-3.5" />,
+      className: "text-violet-300 border-violet-400/30 bg-violet-400/10",
+    });
+  }
+  if ((summary?.totalLikes ?? 0) >= 100) {
+    badges.push({
+      id: "beloved-creator",
+      label: "Beloved Creator",
+      detail: `${summary?.totalLikes.toLocaleString()} likes on published levels`,
+      icon: <Heart className="w-3.5 h-3.5" />,
+      className: "text-pink-300 border-pink-400/30 bg-pink-400/10",
+    });
+  }
+  const joinedYear = summary?.joined ? new Date(summary.joined).getFullYear() : null;
+  if (joinedYear && joinedYear <= 2024) {
+    badges.push({
+      id: "early-bird",
+      label: "Early Bird",
+      detail: `Joined in ${joinedYear}`,
+      icon: <Timer className="w-3.5 h-3.5" />,
+      className: "text-orange-300 border-orange-400/30 bg-orange-400/10",
+    });
+  }
+  for (const badge of customBadges ?? []) {
+    badges.push({
+      id: `custom-${badge.id}`,
+      label: badge.label,
+      detail: badge.detail ?? "Awarded by an admin",
+      icon: <Award className="w-3.5 h-3.5" />,
+      className: badgeToneClass(badge.tone),
+    });
+  }
   return badges;
 }
+
 
 /** Compact badge strip rendered next to a player's name. */
 export function PlayerBadges({ size = "md", className, ...input }: PlayerBadgesProps) {

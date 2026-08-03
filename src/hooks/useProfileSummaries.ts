@@ -19,8 +19,8 @@ export interface ProfileSummary {
   dailyBestFinish: number | null;
 }
 
-const CHUNK = 20;
-const PARALLEL = 3;
+const CHUNK = 40;
+const PARALLEL = 6;
 const STORAGE_KEY = "naProfileSummaries";
 const STORAGE_TTL = 60 * 60 * 1000;
 

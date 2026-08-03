@@ -45,6 +45,8 @@ import { doc, onSnapshot, collection, getDocs, setDoc, db, OperationType, handle
 import { ClickToCopy } from "./components/ClickToCopy";
 import { NarrowScoreView } from "./components/NarrowScoreView";
 import { CustomCompletionsView } from "./components/CustomCompletionsView";
+import { RankPointsView } from "./components/RankPointsView";
+import { PlayerVotingView } from "./components/PlayerVotingView";
 import { RecordTracker } from "./components/RecordTracker";
 import { CommandPalette } from "./components/CommandPalette";
 import { ProfileHub } from "./components/ProfileHub";
@@ -314,7 +316,7 @@ export default function App() {
   const { byUsername: playerProfiles, reload: reloadProfiles, myProfile: myLinkedProfile, saveMyProfile } = usePlayerProfiles(adminUser?.id);
 
 
-  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker'>('leaderboard');
+  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -1176,15 +1178,40 @@ export default function App() {
               >
                 Tracker
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  setView('points');
+                  await fetchAllLevels();
+                }}
+                className={cn(
+                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
+                  view === 'points' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                )}
+              >
+                Rank Points
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setView('voting')}
+                className={cn(
+                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
+                  view === 'voting' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                )}
+              >
+                Voting
+              </Button>
             </nav>
 
             {/* Mobile Dropdown Navigation */}
             <div className="block sm:hidden w-[110px] xs:w-[140px] shrink-0">
               <Select 
-                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker'].includes(view) ? view : 'leaderboard'} 
+                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker', 'points', 'voting'].includes(view) ? view : 'leaderboard'} 
                 onValueChange={async (val: any) => {
                   setView(val);
-                  if (val === 'average' || val === 'wrs' || val === 'score' || val === 'tracker') {
+                  if (val === 'average' || val === 'wrs' || val === 'score' || val === 'tracker' || val === 'points') {
                     await fetchAllLevels();
                   }
                 }}
@@ -1216,6 +1243,12 @@ export default function App() {
                   </SelectItem>
                   <SelectItem value="tracker" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     Record Tracker
+                  </SelectItem>
+                  <SelectItem value="points" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Rank Points
+                  </SelectItem>
+                  <SelectItem value="voting" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Player Voting
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -1897,6 +1930,33 @@ export default function App() {
             }}
             onBack={() => setView('leaderboard')}
           />
+        ) : view === 'voting' ? (
+          <PlayerVotingView
+            usernames={allUsernames}
+            signedIn={Boolean(adminUser?.id)}
+            userId={adminUser?.id ?? null}
+            onSelectPlayer={handlePlayerClick}
+            onRequestSignIn={() => setShowProfileHub(true)}
+          />
+        ) : view === 'points' ? (
+          isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 space-y-4">
+              <RefreshCw className="w-12 h-12 text-[var(--app-accent)] animate-spin" />
+              <p className="text-slate-500 font-mono text-sm animate-pulse">Adding up rank points across every level...</p>
+            </div>
+          ) : (
+            <RankPointsView
+              levels={dynamicLevels}
+              data={processedAllLevelsData}
+              rankConfigs={allRankConfigs}
+              onPlayerClick={handlePlayerClick}
+              onLevelClick={(levelId) => {
+                setSelectedLevel(levelId);
+                setView('leaderboard');
+              }}
+              formatTime={(seconds) => formatTime(seconds)}
+            />
+          )
         ) : view === 'completions' ? (
           <CustomCompletionsView usernames={allUsernames} onSelectPlayer={handlePlayerClick} />
         ) : view === 'tracker' ? (

@@ -21,7 +21,13 @@ export interface AppSettings {
 }
 
 
-export const BACKGROUND_THEMES: { id: string; name: string; background: string; swatch: string }[] = [
+export const BACKGROUND_THEMES: {
+  id: string;
+  name: string;
+  background: string;
+  swatch: string;
+  light?: boolean;
+}[] = [
   { id: "midnight", name: "Midnight", background: "radial-gradient(1200px 600px at 50% -10%, #101425 0%, #0a0a0a 60%)", swatch: "#0a0a0a" },
   { id: "ocean", name: "Deep Ocean", background: "radial-gradient(1200px 600px at 50% -10%, #06283d 0%, #04121d 60%)", swatch: "#06283d" },
   { id: "carbon", name: "Carbon", background: "linear-gradient(180deg, #17181c 0%, #0d0e11 100%)", swatch: "#17181c" },
@@ -46,7 +52,16 @@ export const BACKGROUND_THEMES: { id: string; name: string; background: string; 
   { id: "neon", name: "Neon Grid", background: "radial-gradient(900px 500px at 50% 110%, #16006b 0%, #05010f 70%)", swatch: "#16006b" },
   { id: "arctic", name: "Arctic", background: "linear-gradient(180deg, #16283a 0%, #070d14 100%)", swatch: "#16283a" },
   { id: "toxic", name: "Toxic", background: "radial-gradient(900px 500px at 80% -10%, #2c3a05 0%, #0a0e02 65%)", swatch: "#2c3a05" },
+  { id: "citrus", name: "Citrus", background: "radial-gradient(1000px 600px at 30% -10%, #ffd93b 0%, #ff9f1c 55%, #ffedb0 100%)", swatch: "#ffd93b", light: true },
+  { id: "cream", name: "Cream", background: "linear-gradient(180deg, #fdf7ea 0%, #f1e4cd 100%)", swatch: "#fdf7ea", light: true },
+  { id: "tan", name: "Tan", background: "linear-gradient(180deg, #e8d4b0 0%, #c9a87c 100%)", swatch: "#d8bd94", light: true },
+  { id: "mint-light", name: "Fresh Mint", background: "linear-gradient(180deg, #dbf7ec 0%, #a6e3c8 100%)", swatch: "#bdf0dc", light: true },
+  { id: "peach", name: "Peach", background: "linear-gradient(180deg, #ffe3d3 0%, #ffb9a0 100%)", swatch: "#ffcbb6", light: true },
+  { id: "sky-light", name: "Clear Sky", background: "linear-gradient(180deg, #dcefff 0%, #a8d3f5 100%)", swatch: "#c2e0fa", light: true },
+  { id: "bubblegum", name: "Bubblegum", background: "linear-gradient(180deg, #ffdbef 0%, #ffb3d9 100%)", swatch: "#ffc7e4", light: true },
+  { id: "lavender", name: "Lavender", background: "linear-gradient(180deg, #ece2ff 0%, #c6b1f5 100%)", swatch: "#d9c9fa", light: true },
 ];
+
 
 export const ACCENTS: { id: string; name: string; value: string }[] = [
   { id: "sky", name: "Sky", value: "#38BDF8" },
@@ -122,6 +137,8 @@ export function useAppSettings() {
     root.dataset.zebra = settings.zebraRows ? "on" : "off";
     root.dataset.sticky = settings.stickyHeaders ? "on" : "off";
     root.dataset.blur = settings.reducedBlur ? "off" : "on";
+    root.dataset.tone = theme.light ? "light" : "dark";
+
   }, [settings]);
 
 
