@@ -1947,7 +1947,6 @@ export default function App() {
           ) : (
             <RankPointsView
               levels={dynamicLevels}
-              packs={dynamicPacks}
               data={processedAllLevelsData}
               rankConfigs={allRankConfigs}
               onPlayerClick={handlePlayerClick}
