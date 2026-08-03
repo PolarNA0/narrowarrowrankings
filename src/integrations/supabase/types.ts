@@ -83,6 +83,36 @@ export type Database = {
         }
         Relationships: []
       }
+      player_votes: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          target_username: string
+          updated_at: string
+          user_id: string
+          value: number
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          target_username: string
+          updated_at?: string
+          user_id: string
+          value: number
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          target_username?: string
+          updated_at?: string
+          user_id?: string
+          value?: number
+        }
+        Relationships: []
+      }
       profile_link_requests: {
         Row: {
           created_at: string
