@@ -1933,8 +1933,8 @@ export default function App() {
         ) : view === 'voting' ? (
           <PlayerVotingView
             usernames={allUsernames}
-            signedIn={Boolean(authUserId)}
-            userId={authUserId}
+            signedIn={Boolean(adminUser?.id)}
+            userId={adminUser?.id ?? null}
             onSelectPlayer={handlePlayerClick}
             onRequestSignIn={() => setShowProfileHub(true)}
           />
@@ -1949,7 +1949,7 @@ export default function App() {
               levels={dynamicLevels}
               packs={dynamicPacks}
               data={processedAllLevelsData}
-              rankConfigs={levelRankConfigs}
+              rankConfigs={allRankConfigs}
               onPlayerClick={handlePlayerClick}
               onLevelClick={(levelId) => {
                 setSelectedLevel(levelId);
