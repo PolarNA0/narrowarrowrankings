@@ -47,6 +47,8 @@ import { NarrowScoreView } from "./components/NarrowScoreView";
 import { CustomCompletionsView } from "./components/CustomCompletionsView";
 import { RankPointsView } from "./components/RankPointsView";
 import { PlayerVotingView } from "./components/PlayerVotingView";
+import { LevelRatingView } from "./components/LevelRatingView";
+import { PositionPointsView } from "./components/PositionPointsView";
 import { RecordTracker } from "./components/RecordTracker";
 import { CommandPalette } from "./components/CommandPalette";
 import { ProfileHub } from "./components/ProfileHub";
@@ -316,7 +318,7 @@ export default function App() {
   const { byUsername: playerProfiles, reload: reloadProfiles, myProfile: myLinkedProfile, saveMyProfile } = usePlayerProfiles(adminUser?.id);
 
 
-  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting'>('leaderboard');
+  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -1203,15 +1205,40 @@ export default function App() {
               >
                 Voting
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setView('rating')}
+                className={cn(
+                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
+                  view === 'rating' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                )}
+              >
+                Level Rating
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  setView('position');
+                  await fetchAllLevels();
+                }}
+                className={cn(
+                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
+                  view === 'position' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
+                )}
+              >
+                Position Points
+              </Button>
             </nav>
 
             {/* Mobile Dropdown Navigation */}
             <div className="block sm:hidden w-[110px] xs:w-[140px] shrink-0">
               <Select 
-                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker', 'points', 'voting'].includes(view) ? view : 'leaderboard'} 
+                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker', 'points', 'voting', 'rating', 'position'].includes(view) ? view : 'leaderboard'} 
                 onValueChange={async (val: any) => {
                   setView(val);
-                  if (val === 'average' || val === 'wrs' || val === 'score' || val === 'tracker' || val === 'points') {
+                  if (val === 'average' || val === 'wrs' || val === 'score' || val === 'tracker' || val === 'points' || val === 'position') {
                     await fetchAllLevels();
                   }
                 }}
@@ -1249,6 +1276,12 @@ export default function App() {
                   </SelectItem>
                   <SelectItem value="voting" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     Player Voting
+                  </SelectItem>
+                  <SelectItem value="rating" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Level Rating
+                  </SelectItem>
+                  <SelectItem value="position" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Position Points
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -1938,6 +1971,35 @@ export default function App() {
             onSelectPlayer={handlePlayerClick}
             onRequestSignIn={() => setShowProfileHub(true)}
           />
+        ) : view === 'rating' ? (
+          <LevelRatingView
+            levels={sortedLevels}
+            packs={dynamicPacks}
+            signedIn={Boolean(adminUser?.id)}
+            userId={adminUser?.id ?? null}
+            onRequestSignIn={() => setShowProfileHub(true)}
+            onSelectLevel={(levelId) => {
+              setSelectedLevel(levelId);
+              setView('leaderboard');
+            }}
+          />
+        ) : view === 'position' ? (
+          isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 space-y-4">
+              <RefreshCw className="w-12 h-12 text-[var(--app-accent)] animate-spin" />
+              <p className="text-slate-500 font-mono text-sm animate-pulse">Counting leaderboard positions...</p>
+            </div>
+          ) : (
+            <PositionPointsView
+              levels={dynamicLevels}
+              data={processedAllLevelsData}
+              onPlayerClick={handlePlayerClick}
+              onLevelClick={(levelId) => {
+                setSelectedLevel(levelId);
+                setView('leaderboard');
+              }}
+            />
+          )
         ) : view === 'points' ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
