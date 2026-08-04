@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { castVoteFn } from "@/lib/votes.functions";
 
 export type VoteCategory = "official" | "hard" | "custom";
 
