@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { castVoteFn } from "@/lib/votes.functions";
 
 export type VoteCategory = "official" | "hard" | "custom";
 
@@ -91,20 +92,14 @@ export function usePlayerVotes(userId?: string | null) {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("player_votes")
-        .upsert(
-          { user_id: userId, target_username: target, category, value } as never,
-          { onConflict: "user_id,target_username,category" },
-        )
-        .select("id, user_id, target_username, category, value")
-        .single();
-      if (error) throw new Error(error.message);
-      const saved = data as unknown as VoteRow;
+      const saved = (await castVoteFn({
+        data: { username: target, category, value },
+      })) as unknown as VoteRow;
       setRows((prev) => [...prev.filter((r) => r.id !== saved.id && r !== existing), saved]);
     },
     [rows, userId],
   );
+
 
   return { totals, myVotes, loading, reload: load, vote };
 }

@@ -37,6 +37,7 @@ import {
   handleFirestoreError
 } from "../lib/cloud-db";
 import { useAdminAuth } from "../hooks/useAdminAuth";
+import { AdminBadgeManager } from "./AdminBadgeManager";
 import { useRemovedRuns, restoreRun } from "../hooks/useRemovedRuns";
 
 
@@ -80,7 +81,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
   const { removedRuns, } = useRemovedRuns();
   const [selectedLevel, setSelectedLevel] = useState<string>(levels[0]?.id || "");
   const [selectedPack, setSelectedPack] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState<'maps' | 'general' | 'overall' | 'legacy' | 'removed'>('maps');
+  const [activeTab, setActiveTab] = useState<'maps' | 'general' | 'overall' | 'legacy' | 'removed' | 'badges'>('maps');
   const [rankConfig, setRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
   const [theoreticalMax, setTheoreticalMax] = useState<number | undefined>(undefined);
   const [humanLimit, setHumanLimit] = useState<number | undefined>(undefined);
@@ -610,7 +611,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
             <Button onClick={handleLogout} variant="ghost" className="text-slate-500 hover:text-white">
               <LogOut className="w-4 h-4 mr-2" /> Logout
             </Button>
-            {activeTab !== 'legacy' && activeTab !== 'removed' && (
+            {activeTab !== 'legacy' && activeTab !== 'removed' && activeTab !== 'badges' && (
               <Button 
                 onClick={activeTab === 'maps' ? handleSaveMaps : activeTab === 'general' ? handleSaveGeneral : handleSaveOverall} 
                 disabled={saving}
@@ -664,10 +665,20 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
           >
             Removed Runs ({removedRuns.length})
           </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setActiveTab('badges')}
+            className={cn("text-[10px] uppercase tracking-widest h-8 px-4", activeTab === 'badges' ? "bg-white/10 text-white" : "text-slate-400")}
+          >
+            Badges
+          </Button>
         </div>
 
 
-        {activeTab === 'maps' ? (
+        {activeTab === 'badges' ? (
+          <AdminBadgeManager usernames={allUsernames} />
+        ) : activeTab === 'maps' ? (
           <Card className="bg-white/5 border-white/10">
             <CardHeader className="border-b border-white/10 pb-4">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
