@@ -37,14 +37,8 @@ export function PlayerVotingView({ usernames, signedIn, userId, onSelectPlayer, 
         list.push(name);
       }
     }
-    for (const key of Object.keys(totals)) {
-      if (!seen.has(key)) {
-        seen.add(key);
-        list.push(key);
-      }
-    }
     return list;
-  }, [usernames, totals]);
+  }, [usernames]);
 
   const rows = React.useMemo(() => {
     const q = query.trim().toLowerCase();
