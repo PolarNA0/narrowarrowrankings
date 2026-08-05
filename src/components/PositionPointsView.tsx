@@ -39,7 +39,8 @@ export function PositionPointsView({ levels, data, onPlayerClick, onLevelClick }
       if (!entries || entries.length === 0) continue;
       const sorted = [...entries].sort((a, b) => a.completion_time - b.completion_time);
       sorted.forEach((entry, index) => {
-        const key = entry.username;
+        const key = entry.username?.trim();
+        if (!key) return;
         const row =
           map.get(key) ??
           ({ username: key, points: 0, maps: 0, best: Infinity, average: 0, positions: [] } as Row);
