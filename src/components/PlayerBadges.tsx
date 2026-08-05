@@ -97,6 +97,15 @@ export function computePlayerBadges({
       className: "text-orange-300 border-orange-400/30 bg-orange-400/10",
     });
   }
+  if (customFirsts >= 25) {
+    badges.push({
+      id: "custom-royalty",
+      label: "Custom Royalty",
+      detail: `${customFirsts} community-level golds`,
+      icon: <Crown className="w-3.5 h-3.5" />,
+      className: "text-yellow-300 border-yellow-400/30 bg-yellow-400/10",
+    });
+  }
   if (summary?.dailyBestFinish === 1) {
     badges.push({
       id: "daily-winner",
@@ -162,6 +171,33 @@ export function computePlayerBadges({
       detail: `${summary?.totalRuns.toLocaleString()} recorded runs`,
       icon: <InfinityIcon className="w-3.5 h-3.5" />,
       className: "text-slate-300 border-white/20 bg-white/5",
+    });
+  }
+  if ((summary?.totalRuns ?? 0) >= 1000) {
+    badges.push({
+      id: "dedicated",
+      label: "Dedicated",
+      detail: `${summary?.totalRuns.toLocaleString()} recorded runs`,
+      icon: <Timer className="w-3.5 h-3.5" />,
+      className: "text-blue-300 border-blue-400/30 bg-blue-400/10",
+    });
+  }
+  if ((summary?.customCompleted ?? 0) >= 100) {
+    badges.push({
+      id: "custom-explorer",
+      label: "Custom Explorer",
+      detail: `${summary?.customCompleted} custom levels completed`,
+      icon: <MapIcon className="w-3.5 h-3.5" />,
+      className: "text-green-300 border-green-400/30 bg-green-400/10",
+    });
+  }
+  if ((summary?.totalPlays ?? 0) >= 10000) {
+    badges.push({
+      id: "viral-creator",
+      label: "Viral Creator",
+      detail: `${summary?.totalPlays.toLocaleString()} plays on published levels`,
+      icon: <Rocket className="w-3.5 h-3.5" />,
+      className: "text-red-300 border-red-400/30 bg-red-400/10",
     });
   }
   if ((summary?.trophies ?? 0) >= 1000) {

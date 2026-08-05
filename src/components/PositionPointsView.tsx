@@ -39,7 +39,8 @@ export function PositionPointsView({ levels, data, onPlayerClick, onLevelClick }
       if (!entries || entries.length === 0) continue;
       const sorted = [...entries].sort((a, b) => a.completion_time - b.completion_time);
       sorted.forEach((entry, index) => {
-        const key = entry.username;
+        const key = entry.username?.trim();
+        if (!key) return;
         const row =
           map.get(key) ??
           ({ username: key, points: 0, maps: 0, best: Infinity, average: 0, positions: [] } as Row);
@@ -124,7 +125,7 @@ export function PositionPointsView({ levels, data, onPlayerClick, onLevelClick }
               <button
                 type="button"
                 onClick={() => setExpanded((prev) => (prev === row.username ? null : row.username))}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.03]"
+                className="w-full grid grid-cols-[2rem_minmax(0,1fr)_auto] md:grid-cols-[2rem_minmax(10rem,1fr)_auto_auto_auto_4rem] items-center gap-2 md:gap-3 px-4 py-3 text-left hover:bg-white/[0.03]"
               >
                 <span className="w-8 font-mono text-xs text-slate-500">#{index + 1}</span>
                 <span
@@ -135,17 +136,17 @@ export function PositionPointsView({ levels, data, onPlayerClick, onLevelClick }
                     onPlayerClick?.(row.username);
                   }}
                   onKeyDown={(e) => e.key === "Enter" && onPlayerClick?.(row.username)}
-                  className="font-bold text-white truncate flex-1 hover:text-[var(--app-accent)]"
+                  className="font-bold text-white truncate min-w-0 hover:text-[var(--app-accent)]"
                 >
                   {row.username}
                 </span>
-                <Badge variant="outline" className="font-mono text-[10px] border-white/10 text-slate-300 bg-white/5">
+                <Badge variant="outline" className="hidden md:inline-flex font-mono text-[10px] border-white/10 text-slate-300 bg-white/5">
                   {row.maps} maps
                 </Badge>
-                <Badge variant="outline" className="font-mono text-[10px] border-white/10 text-slate-300 bg-white/5">
+                <Badge variant="outline" className="hidden md:inline-flex font-mono text-[10px] border-white/10 text-slate-300 bg-white/5">
                   avg {row.average.toFixed(1)}
                 </Badge>
-                <Badge variant="outline" className="font-mono text-[10px] border-white/10 text-emerald-300 bg-emerald-400/10">
+                <Badge variant="outline" className="hidden md:inline-flex font-mono text-[10px] border-white/10 text-emerald-300 bg-emerald-400/10">
                   best #{row.best}
                 </Badge>
                 <span className="font-mono text-sm font-bold text-[var(--app-accent)] w-16 text-right">

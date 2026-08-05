@@ -49,6 +49,8 @@ import { RankPointsView } from "./components/RankPointsView";
 import { PlayerVotingView } from "./components/PlayerVotingView";
 import { LevelRatingView } from "./components/LevelRatingView";
 import { PositionPointsView } from "./components/PositionPointsView";
+import { LevelInsightsView } from "./components/LevelInsightsView";
+import { RivalriesView } from "./components/RivalriesView";
 import { RecordTracker } from "./components/RecordTracker";
 import { CommandPalette } from "./components/CommandPalette";
 import { ProfileHub } from "./components/ProfileHub";
@@ -318,7 +320,7 @@ export default function App() {
   const { byUsername: playerProfiles, reload: reloadProfiles, myProfile: myLinkedProfile, saveMyProfile } = usePlayerProfiles(adminUser?.id);
 
 
-  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position'>('leaderboard');
+  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -1230,15 +1232,31 @@ export default function App() {
               >
                 Position Points
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => { setView('insights'); await fetchAllLevels(); }}
+                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'insights' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
+              >
+                Insights
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => { setView('rivalries'); await fetchAllLevels(); }}
+                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'rivalries' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
+              >
+                Rivalries
+              </Button>
             </nav>
 
             {/* Mobile Dropdown Navigation */}
             <div className="block sm:hidden w-[110px] xs:w-[140px] shrink-0">
               <Select 
-                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker', 'points', 'voting', 'rating', 'position'].includes(view) ? view : 'leaderboard'} 
+                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker', 'points', 'voting', 'rating', 'position', 'insights', 'rivalries'].includes(view) ? view : 'leaderboard'} 
                 onValueChange={async (val: any) => {
                   setView(val);
-                  if (val === 'average' || val === 'wrs' || val === 'score' || val === 'tracker' || val === 'points' || val === 'position') {
+                  if (val === 'average' || val === 'wrs' || val === 'score' || val === 'tracker' || val === 'points' || val === 'position' || val === 'insights' || val === 'rivalries') {
                     await fetchAllLevels();
                   }
                 }}
@@ -1282,6 +1300,12 @@ export default function App() {
                   </SelectItem>
                   <SelectItem value="position" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     Position Points
+                  </SelectItem>
+                  <SelectItem value="insights" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Level Insights
+                  </SelectItem>
+                  <SelectItem value="rivalries" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Rivalries
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -1982,6 +2006,20 @@ export default function App() {
               setSelectedLevel(levelId);
               setView('leaderboard');
             }}
+          />
+        ) : view === 'insights' ? (
+          <LevelInsightsView
+            levels={dynamicLevels}
+            data={processedAllLevelsData}
+            onLevelClick={(levelId) => { setSelectedLevel(levelId); setView('leaderboard'); }}
+            formatTime={(seconds) => formatTime(seconds)}
+          />
+        ) : view === 'rivalries' ? (
+          <RivalriesView
+            levels={dynamicLevels}
+            data={processedAllLevelsData}
+            usernames={allUsernames}
+            onPlayerClick={handlePlayerClick}
           />
         ) : view === 'position' ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
