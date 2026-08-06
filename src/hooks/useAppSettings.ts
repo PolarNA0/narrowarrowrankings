@@ -60,7 +60,15 @@ export const BACKGROUND_THEMES: {
   { id: "sky-light", name: "Clear Sky", background: "linear-gradient(180deg, #dcefff 0%, #a8d3f5 100%)", swatch: "#c2e0fa", light: true },
   { id: "bubblegum", name: "Bubblegum", background: "linear-gradient(180deg, #ffdbef 0%, #ffb3d9 100%)", swatch: "#ffc7e4", light: true },
   { id: "lavender", name: "Lavender", background: "linear-gradient(180deg, #ece2ff 0%, #c6b1f5 100%)", swatch: "#d9c9fa", light: true },
+  { id: "obsidian", name: "Obsidian", background: "radial-gradient(1100px 600px at 50% -10%, #1c1c22 0%, #050506 65%)", swatch: "#1c1c22" },
+  { id: "solarflare", name: "Solar Flare", background: "radial-gradient(1000px 600px at 20% -10%, #5c1a00 0%, #1a0600 65%)", swatch: "#5c1a00" },
+  { id: "deepspace", name: "Deep Space", background: "radial-gradient(1200px 700px at 70% -20%, #0d1b4b 0%, #02030a 70%)", swatch: "#0d1b4b" },
+  { id: "jade", name: "Jade", background: "linear-gradient(160deg, #06231c 0%, #0a3a2c 50%, #030d0a 100%)", swatch: "#0a3a2c" },
+  { id: "plum", name: "Plum", background: "linear-gradient(180deg, #2a0c2b 0%, #120512 100%)", swatch: "#2a0c2b" },
+  { id: "seafoam", name: "Seafoam", background: "linear-gradient(180deg, #e4fbf4 0%, #b7ecdd 100%)", swatch: "#cdf4e9", light: true },
+  { id: "vanilla", name: "Vanilla", background: "linear-gradient(180deg, #fffaf0 0%, #f3e6c8 100%)", swatch: "#fbf1dc", light: true },
 ];
+
 
 
 export const ACCENTS: { id: string; name: string; value: string }[] = [
@@ -80,7 +88,13 @@ export const ACCENTS: { id: string; name: string; value: string }[] = [
   { id: "coral", name: "Coral", value: "#F87171" },
   { id: "grape", name: "Grape", value: "#C084FC" },
   { id: "sun", name: "Sunburst", value: "#FDE047" },
+  { id: "teal", name: "Teal", value: "#14B8A6" },
+  { id: "crimson", name: "Crimson", value: "#EF4444" },
+  { id: "seafoam", name: "Seafoam", value: "#5EEAD4" },
+  { id: "plum", name: "Plum", value: "#D946EF" },
+  { id: "steel", name: "Steel", value: "#94A3B8" },
 ];
+
 
 const STORAGE_KEY = "naRankingsSettings";
 

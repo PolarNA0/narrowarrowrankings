@@ -161,6 +161,19 @@ export function SettingsPanel({ open, onOpenChange, settings, update, reset }: S
                 step={0.05}
                 onValueChange={([value]) => update("fontScale", value)}
               />
+              <div className="flex items-center justify-between text-sm pt-1">
+                <span>Card opacity</span>
+                <span className="font-mono text-xs text-slate-500">
+                  {Math.round(settings.cardOpacity * 100)}%
+                </span>
+              </div>
+              <Slider
+                value={[settings.cardOpacity]}
+                min={0.4}
+                max={1}
+                step={0.05}
+                onValueChange={([value]) => update("cardOpacity", value)}
+              />
             </div>
           </section>
 

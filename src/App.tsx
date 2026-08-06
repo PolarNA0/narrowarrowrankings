@@ -51,6 +51,9 @@ import { LevelRatingView } from "./components/LevelRatingView";
 import { PositionPointsView } from "./components/PositionPointsView";
 import { LevelInsightsView } from "./components/LevelInsightsView";
 import { RivalriesView } from "./components/RivalriesView";
+import { HallOfFameView } from "./components/HallOfFameView";
+import { ImprovementTargetsView } from "./components/ImprovementTargetsView";
+import { MilestoneClubsView } from "./components/MilestoneClubsView";
 import { RecordTracker } from "./components/RecordTracker";
 import { CommandPalette } from "./components/CommandPalette";
 import { ProfileHub } from "./components/ProfileHub";
@@ -320,7 +323,7 @@ export default function App() {
   const { byUsername: playerProfiles, reload: reloadProfiles, myProfile: myLinkedProfile, saveMyProfile } = usePlayerProfiles(adminUser?.id);
 
 
-  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries'>('leaderboard');
+  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries' | 'fame' | 'targets' | 'clubs'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -1248,15 +1251,40 @@ export default function App() {
               >
                 Rivalries
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => { setView('fame'); await fetchAllLevels(); }}
+                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'fame' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
+              >
+                Hall of Fame
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => { setView('targets'); await fetchAllLevels(); }}
+                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'targets' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
+              >
+                Targets
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => { setView('clubs'); await fetchAllLevels(); }}
+                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'clubs' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
+              >
+                Clubs
+              </Button>
             </nav>
+
 
             {/* Mobile Dropdown Navigation */}
             <div className="block sm:hidden w-[110px] xs:w-[140px] shrink-0">
               <Select 
-                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker', 'points', 'voting', 'rating', 'position', 'insights', 'rivalries'].includes(view) ? view : 'leaderboard'} 
+                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker', 'points', 'voting', 'rating', 'position', 'insights', 'rivalries', 'fame', 'targets', 'clubs'].includes(view) ? view : 'leaderboard'} 
                 onValueChange={async (val: any) => {
                   setView(val);
-                  if (val === 'average' || val === 'wrs' || val === 'score' || val === 'tracker' || val === 'points' || val === 'position' || val === 'insights' || val === 'rivalries') {
+                  if (['average', 'wrs', 'score', 'tracker', 'points', 'position', 'insights', 'rivalries', 'fame', 'targets', 'clubs'].includes(val)) {
                     await fetchAllLevels();
                   }
                 }}
@@ -1306,6 +1334,15 @@ export default function App() {
                   </SelectItem>
                   <SelectItem value="rivalries" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     Rivalries
+                  </SelectItem>
+                  <SelectItem value="fame" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Hall of Fame
+                  </SelectItem>
+                  <SelectItem value="targets" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Improvement Targets
+                  </SelectItem>
+                  <SelectItem value="clubs" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Milestone Clubs
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -2021,6 +2058,26 @@ export default function App() {
             usernames={allUsernames}
             onPlayerClick={handlePlayerClick}
           />
+        ) : view === 'fame' ? (
+          <HallOfFameView
+            levels={dynamicLevels}
+            data={processedAllLevelsData}
+            onPlayerClick={handlePlayerClick}
+          />
+        ) : view === 'targets' ? (
+          <ImprovementTargetsView
+            levels={dynamicLevels}
+            data={processedAllLevelsData}
+            usernames={allUsernames}
+            onLevelClick={(levelId) => { setSelectedLevel(levelId); setView('leaderboard'); }}
+          />
+        ) : view === 'clubs' ? (
+          <MilestoneClubsView
+            levels={dynamicLevels}
+            data={processedAllLevelsData}
+            onPlayerClick={handlePlayerClick}
+          />
+
         ) : view === 'position' ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
