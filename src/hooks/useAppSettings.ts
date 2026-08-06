@@ -88,7 +88,13 @@ export const ACCENTS: { id: string; name: string; value: string }[] = [
   { id: "coral", name: "Coral", value: "#F87171" },
   { id: "grape", name: "Grape", value: "#C084FC" },
   { id: "sun", name: "Sunburst", value: "#FDE047" },
+  { id: "teal", name: "Teal", value: "#14B8A6" },
+  { id: "crimson", name: "Crimson", value: "#EF4444" },
+  { id: "seafoam", name: "Seafoam", value: "#5EEAD4" },
+  { id: "plum", name: "Plum", value: "#D946EF" },
+  { id: "steel", name: "Steel", value: "#94A3B8" },
 ];
+
 
 const STORAGE_KEY = "naRankingsSettings";
 
