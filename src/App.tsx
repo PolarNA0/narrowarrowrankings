@@ -1251,7 +1251,32 @@ export default function App() {
               >
                 Rivalries
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => { setView('fame'); await fetchAllLevels(); }}
+                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'fame' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
+              >
+                Hall of Fame
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => { setView('targets'); await fetchAllLevels(); }}
+                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'targets' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
+              >
+                Targets
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => { setView('clubs'); await fetchAllLevels(); }}
+                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'clubs' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
+              >
+                Clubs
+              </Button>
             </nav>
+
 
             {/* Mobile Dropdown Navigation */}
             <div className="block sm:hidden w-[110px] xs:w-[140px] shrink-0">
