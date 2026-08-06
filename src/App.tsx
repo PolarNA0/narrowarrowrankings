@@ -2058,6 +2058,26 @@ export default function App() {
             usernames={allUsernames}
             onPlayerClick={handlePlayerClick}
           />
+        ) : view === 'fame' ? (
+          <HallOfFameView
+            levels={dynamicLevels}
+            data={processedAllLevelsData}
+            onPlayerClick={handlePlayerClick}
+          />
+        ) : view === 'targets' ? (
+          <ImprovementTargetsView
+            levels={dynamicLevels}
+            data={processedAllLevelsData}
+            usernames={allUsernames}
+            onLevelClick={(levelId) => { setSelectedLevel(levelId); setView('leaderboard'); }}
+          />
+        ) : view === 'clubs' ? (
+          <MilestoneClubsView
+            levels={dynamicLevels}
+            data={processedAllLevelsData}
+            onPlayerClick={handlePlayerClick}
+          />
+
         ) : view === 'position' ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
