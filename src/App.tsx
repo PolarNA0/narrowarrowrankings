@@ -1281,10 +1281,10 @@ export default function App() {
             {/* Mobile Dropdown Navigation */}
             <div className="block sm:hidden w-[110px] xs:w-[140px] shrink-0">
               <Select 
-                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker', 'points', 'voting', 'rating', 'position', 'insights', 'rivalries'].includes(view) ? view : 'leaderboard'} 
+                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker', 'points', 'voting', 'rating', 'position', 'insights', 'rivalries', 'fame', 'targets', 'clubs'].includes(view) ? view : 'leaderboard'} 
                 onValueChange={async (val: any) => {
                   setView(val);
-                  if (val === 'average' || val === 'wrs' || val === 'score' || val === 'tracker' || val === 'points' || val === 'position' || val === 'insights' || val === 'rivalries') {
+                  if (['average', 'wrs', 'score', 'tracker', 'points', 'position', 'insights', 'rivalries', 'fame', 'targets', 'clubs'].includes(val)) {
                     await fetchAllLevels();
                   }
                 }}
