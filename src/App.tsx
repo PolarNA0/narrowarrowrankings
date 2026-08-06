@@ -1335,6 +1335,15 @@ export default function App() {
                   <SelectItem value="rivalries" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
                     Rivalries
                   </SelectItem>
+                  <SelectItem value="fame" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Hall of Fame
+                  </SelectItem>
+                  <SelectItem value="targets" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Improvement Targets
+                  </SelectItem>
+                  <SelectItem value="clubs" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
+                    Milestone Clubs
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
