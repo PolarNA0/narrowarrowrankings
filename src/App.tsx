@@ -316,6 +316,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [arrowFilter, setArrowFilter] = useState<"all" | "Narrow Arrow" | "Speedy Arrow" | "Energy Arrow">("all");
   const [showAdmin, setShowAdmin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showProfileHub, setShowProfileHub] = useState(false);
@@ -978,6 +979,13 @@ export default function App() {
       entry.username.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    if (arrowFilter !== "all") {
+      result = result.filter(entry =>
+        (entry.arrow_name || "").toLowerCase() === arrowFilter.toLowerCase()
+      );
+    }
+
+
     result.sort((a, b) => {
       let aValue: any;
       let bValue: any;
@@ -999,7 +1007,7 @@ export default function App() {
     });
 
     return result;
-  }, [processedData, searchQuery, sortConfig, activeRankConfig, hasLevelRanks]);
+  }, [processedData, searchQuery, arrowFilter, sortConfig, activeRankConfig, hasLevelRanks]);
 
   const handleSort = (key: keyof LeaderboardEntry | 'rank') => {
     setSortConfig(prev => ({
@@ -2216,6 +2224,33 @@ export default function App() {
                  <span>Legacy: Always On</span>
                </div>
                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+             </div>
+           </div>
+
+           <div className="space-y-2 md:col-span-2 lg:col-span-3">
+             <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">Arrow Filter</label>
+             <div className="flex flex-wrap gap-2">
+               {([
+                 { key: "all", label: "All Arrows" },
+                 { key: "Narrow Arrow", label: "Narrow" },
+                 { key: "Speedy Arrow", label: "Speedy" },
+                 { key: "Energy Arrow", label: "Energy" },
+               ] as const).map(option => (
+                 <button
+                   key={option.key}
+                   type="button"
+                   onClick={() => setArrowFilter(option.key)}
+                   className={cn(
+                     "h-12 px-4 rounded-xl border text-xs font-mono uppercase tracking-wider flex items-center gap-2 transition-colors",
+                     arrowFilter === option.key
+                       ? "border-[var(--app-accent)]/50 bg-[var(--app-accent)]/15 text-[var(--app-accent)]"
+                       : "border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+                   )}
+                 >
+                   {option.key !== "all" && <ArrowIcon name={option.key} className="w-4 h-4" />}
+                   {option.label}
+                 </button>
+               ))}
              </div>
            </div>
 
