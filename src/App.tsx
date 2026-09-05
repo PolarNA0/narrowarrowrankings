@@ -979,6 +979,13 @@ export default function App() {
       entry.username.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    if (arrowFilter !== "all") {
+      result = result.filter(entry =>
+        (entry.arrow_name || "").toLowerCase() === arrowFilter.toLowerCase()
+      );
+    }
+
+
     result.sort((a, b) => {
       let aValue: any;
       let bValue: any;
