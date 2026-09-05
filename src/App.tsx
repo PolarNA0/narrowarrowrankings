@@ -1007,7 +1007,7 @@ export default function App() {
     });
 
     return result;
-  }, [processedData, searchQuery, sortConfig, activeRankConfig, hasLevelRanks]);
+  }, [processedData, searchQuery, arrowFilter, sortConfig, activeRankConfig, hasLevelRanks]);
 
   const handleSort = (key: keyof LeaderboardEntry | 'rank') => {
     setSortConfig(prev => ({
