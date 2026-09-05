@@ -316,6 +316,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [arrowFilter, setArrowFilter] = useState<"all" | "Narrow Arrow" | "Speedy Arrow" | "Energy Arrow">("all");
   const [showAdmin, setShowAdmin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showProfileHub, setShowProfileHub] = useState(false);
