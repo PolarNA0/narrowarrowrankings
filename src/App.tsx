@@ -113,6 +113,7 @@ import { computeMedals } from "./lib/medals";
 import { useAppSettings } from "./hooks/useAppSettings";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { toast } from "sonner";
+import { ArrowRecordsView } from "@/components/ArrowRecordsView";
 
 export default function App() {
   const { isAdmin, user: adminUser } = useAdminAuth();
@@ -326,7 +327,7 @@ export default function App() {
 
   const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries' | 'fame' | 'targets' | 'clubs'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
-  const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history'>('wrs');
+  const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history' | 'arrows'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [player2ToCompare, setPlayer2ToCompare] = useState<string | null>(null);
@@ -511,7 +512,7 @@ export default function App() {
 
       // One warmed bulk request covers every official board in a single trip.
       try {
-        const bulk = await fetchAllLeaderboards();
+        const bulk = await fetchAllLeaderboards(true);
         for (const [id, entries] of Object.entries(bulk)) {
           if (entries?.length) newData[id] = entries;
         }
@@ -534,7 +535,7 @@ export default function App() {
         const results = await runWithConcurrency(
           pending.map((level) => async () => {
             try {
-              return { level, entries: await fetchLeaderboard(level.id, forceRefresh && attempt === 0) };
+              return { level, entries: await fetchLeaderboard(level.id, forceRefresh && attempt === 0, true) };
             } catch (error) {
               console.error(`Failed to fetch leaderboard for level ${level.id}:`, error);
               return { level, entries: null as LeaderboardEntry[] | null };
@@ -970,20 +971,27 @@ export default function App() {
   }, [selectedPack, allLevelsWithCustoms, selectedLevel]);
 
   const sortedAndFilteredData = useMemo(() => {
-    const mapped = processedData.map((entry, idx) => ({
-      ...entry,
-      originalRank: idx + 1
-    }));
+    // "All" shows one row per player (their best run); each arrow board shows
+    // every player who has a time with that arrow, even if it isn't their best.
+    const source =
+      arrowFilter === "all"
+        ? (() => {
+            const best = new Map<string, LeaderboardEntry>();
+            processedData.forEach(entry => {
+              const key = entry.username.toLowerCase();
+              const current = best.get(key);
+              if (!current || entry.completion_time < current.completion_time) best.set(key, entry);
+            });
+            return [...best.values()].sort((a, b) => a.completion_time - b.completion_time);
+          })()
+        : processedData.filter(
+            entry => (entry.arrow_name || "").toLowerCase() === arrowFilter.toLowerCase(),
+          );
 
-    let result = mapped.filter(entry => 
-      entry.username.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const result = source
+      .map((entry, idx) => ({ ...entry, originalRank: idx + 1 }))
+      .filter(entry => entry.username.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    if (arrowFilter !== "all") {
-      result = result.filter(entry =>
-        (entry.arrow_name || "").toLowerCase() === arrowFilter.toLowerCase()
-      );
-    }
 
 
     result.sort((a, b) => {
@@ -1701,10 +1709,28 @@ export default function App() {
                 >
                   History
                 </Button>
+                <Button 
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setWrsTab('arrows')}
+                  className={cn(
+                    "flex-1 h-8 text-xs font-medium rounded-md transition-all",
+                    wrsTab === 'arrows' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-lg" : "text-slate-400 hover:text-white"
+                  )}
+                >
+                  Arrow WRs
+                </Button>
               </div>
             </div>
 
-            {wrsTab === 'wrs' ? (
+            {wrsTab === 'arrows' ? (
+              <ArrowRecordsView
+                levels={sortedLevels.filter(l => l.packId !== 'custom')}
+                data={processedAllLevelsData}
+                onLevelClick={(levelId) => { setSelectedLevel(levelId); setView('leaderboard'); }}
+                onPlayerClick={handlePlayerClick}
+              />
+            ) : wrsTab === 'wrs' ? (
               <div className="space-y-10">
                 {dynamicPacks.map(pack => {
                   const packLevels = sortedLevels.filter(l => l.packId === pack.id);
