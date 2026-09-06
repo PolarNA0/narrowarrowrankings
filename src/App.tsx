@@ -971,20 +971,27 @@ export default function App() {
   }, [selectedPack, allLevelsWithCustoms, selectedLevel]);
 
   const sortedAndFilteredData = useMemo(() => {
-    const mapped = processedData.map((entry, idx) => ({
-      ...entry,
-      originalRank: idx + 1
-    }));
+    // "All" shows one row per player (their best run); each arrow board shows
+    // every player who has a time with that arrow, even if it isn't their best.
+    const source =
+      arrowFilter === "all"
+        ? (() => {
+            const best = new Map<string, LeaderboardEntry>();
+            processedData.forEach(entry => {
+              const key = entry.username.toLowerCase();
+              const current = best.get(key);
+              if (!current || entry.completion_time < current.completion_time) best.set(key, entry);
+            });
+            return [...best.values()].sort((a, b) => a.completion_time - b.completion_time);
+          })()
+        : processedData.filter(
+            entry => (entry.arrow_name || "").toLowerCase() === arrowFilter.toLowerCase(),
+          );
 
-    let result = mapped.filter(entry => 
-      entry.username.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const result = source
+      .map((entry, idx) => ({ ...entry, originalRank: idx + 1 }))
+      .filter(entry => entry.username.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    if (arrowFilter !== "all") {
-      result = result.filter(entry =>
-        (entry.arrow_name || "").toLowerCase() === arrowFilter.toLowerCase()
-      );
-    }
 
 
     result.sort((a, b) => {
