@@ -20,6 +20,7 @@ import { Route as ApiAllLeaderboardsRouteImport } from './routes/api/all-leaderb
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
 import { Route as ApiUserUsernameRouteImport } from './routes/api/user.$username'
 import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
+import { Route as ApiPublicCategoryWrCheckRouteImport } from './routes/api/public/category-wr-check'
 import { Route as ApiPacksSlugRouteImport } from './routes/api/packs.$slug'
 import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-details.$levelId'
 import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
@@ -79,6 +80,12 @@ const ApiRunsRunIdRoute = ApiRunsRunIdRouteImport.update({
   path: '/api/runs/$runId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicCategoryWrCheckRoute =
+  ApiPublicCategoryWrCheckRouteImport.update({
+    id: '/api/public/category-wr-check',
+    path: '/api/public/category-wr-check',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPacksSlugRoute = ApiPacksSlugRouteImport.update({
   id: '/api/packs/$slug',
   path: '/api/packs/$slug',
@@ -107,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
+  '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs/': typeof ApiPacksIndexRoute
@@ -123,6 +131,7 @@ export interface FileRoutesByTo {
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
+  '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs': typeof ApiPacksIndexRoute
@@ -140,6 +149,7 @@ export interface FileRoutesById {
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
+  '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs/': typeof ApiPacksIndexRoute
@@ -158,6 +168,7 @@ export interface FileRouteTypes {
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
+    | '/api/public/category-wr-check'
     | '/api/runs/$runId'
     | '/api/user/$username'
     | '/api/packs/'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
+    | '/api/public/category-wr-check'
     | '/api/runs/$runId'
     | '/api/user/$username'
     | '/api/packs'
@@ -190,6 +202,7 @@ export interface FileRouteTypes {
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
+    | '/api/public/category-wr-check'
     | '/api/runs/$runId'
     | '/api/user/$username'
     | '/api/packs/'
@@ -207,6 +220,7 @@ export interface RootRouteChildren {
   ApiLeaderboardLevelRoute: typeof ApiLeaderboardLevelRoute
   ApiLevelDetailsLevelIdRoute: typeof ApiLevelDetailsLevelIdRoute
   ApiPacksSlugRoute: typeof ApiPacksSlugRoute
+  ApiPublicCategoryWrCheckRoute: typeof ApiPublicCategoryWrCheckRoute
   ApiRunsRunIdRoute: typeof ApiRunsRunIdRoute
   ApiUserUsernameRoute: typeof ApiUserUsernameRoute
   ApiPacksIndexRoute: typeof ApiPacksIndexRoute
@@ -291,6 +305,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRunsRunIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/category-wr-check': {
+      id: '/api/public/category-wr-check'
+      path: '/api/public/category-wr-check'
+      fullPath: '/api/public/category-wr-check'
+      preLoaderRoute: typeof ApiPublicCategoryWrCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/packs/$slug': {
       id: '/api/packs/$slug'
       path: '/api/packs/$slug'
@@ -327,6 +348,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLeaderboardLevelRoute: ApiLeaderboardLevelRoute,
   ApiLevelDetailsLevelIdRoute: ApiLevelDetailsLevelIdRoute,
   ApiPacksSlugRoute: ApiPacksSlugRoute,
+  ApiPublicCategoryWrCheckRoute: ApiPublicCategoryWrCheckRoute,
   ApiRunsRunIdRoute: ApiRunsRunIdRoute,
   ApiUserUsernameRoute: ApiUserUsernameRoute,
   ApiPacksIndexRoute: ApiPacksIndexRoute,
