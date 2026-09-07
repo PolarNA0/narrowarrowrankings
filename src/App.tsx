@@ -340,8 +340,7 @@ export default function App() {
   const allLeaderboardFetchId = React.useRef(0);
   const [allRankConfigs, setAllRankConfigs] = useState<Record<string, LevelRankConfig>>({});
   const [globalRankConfig, setGlobalRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
-  const [activeRankConfig, setActiveRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
-  const [hasLevelRanks, setHasLevelRanks] = useState<boolean>(false);
+  const [activeLevelData, setActiveLevelData] = useState<LevelRankConfig | null>(null);
   const [theoreticalMax, setTheoreticalMax] = useState<number | null>(null);
   const [humanLimit, setHumanLimit] = useState<number | null>(null);
   const [overallRankConfig, setOverallRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_OVERALL_RANKS);
