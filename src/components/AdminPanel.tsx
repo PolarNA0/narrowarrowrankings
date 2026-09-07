@@ -51,7 +51,7 @@ import {
   HUMAN_LIMIT_DEFAULTS,
   LEVEL_PACKS
 } from "../constants";
-import { LevelRankConfig, RankInfo, LevelInfo, LevelPack, LegacyRun } from "../types";
+import { LevelRankConfig, RankInfo, LevelInfo, LevelPack, LegacyRun, ArrowScope } from "../types";
 import { ArrowIcon } from "./ArrowIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,6 +84,8 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
   const [selectedPack, setSelectedPack] = useState<string>("all");
   const [activeTab, setActiveTab] = useState<'maps' | 'general' | 'overall' | 'legacy' | 'removed' | 'badges' | 'discord'>('maps');
   const [rankConfig, setRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
+  const [arrowScope, setArrowScope] = useState<"base" | ArrowScope>("base");
+  const [arrowRanks, setArrowRanks] = useState<Partial<Record<ArrowScope, Record<string, number>>>>({});
   const [theoreticalMax, setTheoreticalMax] = useState<number | undefined>(undefined);
   const [humanLimit, setHumanLimit] = useState<number | undefined>(undefined);
   const [globalConfig, setGlobalConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
@@ -252,10 +254,12 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
           });
         }
         setRankConfig(emptyRanks);
+        setArrowRanks(data.arrowRanks || {});
         setTheoreticalMax(data.theoreticalMax ?? undefined);
         setHumanLimit(data.humanLimit ?? undefined);
       } else {
         setRankConfig(emptyRanks);
+        setArrowRanks({});
         setTheoreticalMax(undefined);
         setHumanLimit(undefined);
       }
@@ -460,6 +464,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
       // The App.tsx merge logic will prioritize global colors anyway
       await setDoc(docRef, {
         ranks: rankConfig,
+        arrowRanks,
         theoreticalMax: theoreticalMax || null,
         humanLimit: humanLimit || null,
         updatedAt: serverTimestamp(),
@@ -517,11 +522,19 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
 
   const updateRankTime = (rankId: string, value: string) => {
     const timeCutoff = value === "" ? 0 : parseFloat(value);
+    if (arrowScope !== "base") {
+      setArrowRanks(prev => ({
+        ...prev,
+        [arrowScope]: { ...(prev[arrowScope] || {}), [rankId]: isNaN(timeCutoff) ? 0 : timeCutoff },
+      }));
+      return;
+    }
     setRankConfig(prev => ({
       ...prev,
       [rankId]: { ...prev[rankId], timeCutoff }
     }));
   };
+
 
   const updateGlobalColor = (rankId: string, hex: string) => {
     // Allow empty or partial hex during editing
@@ -772,10 +785,39 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
                   </div>
                 </div>
               </div>
+              <div className="p-4 border-b border-white/5 flex flex-wrap items-center gap-2">
+                <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mr-2">Arrow</span>
+                {([
+                  { key: "base", label: "All / Default" },
+                  { key: "Narrow Arrow", label: "Narrow" },
+                  { key: "Speedy Arrow", label: "Speedy" },
+                  { key: "Energy Arrow", label: "Energy" },
+                ] as Array<{ key: "base" | ArrowScope; label: string }>).map(opt => (
+                  <Button
+                    key={opt.key}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setArrowScope(opt.key)}
+                    className={cn(
+                      "text-[10px] uppercase tracking-widest h-8 px-3",
+                      arrowScope === opt.key ? "bg-white/10 text-white" : "text-slate-400",
+                    )}
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
+                <span className="text-[10px] text-slate-500 ml-2">
+                  {arrowScope === "base"
+                    ? "Times used on the All board"
+                    : "Leave blank to fall back to the default times"}
+                </span>
+              </div>
               <div className="divide-y divide-white/5">
                 {(Array.isArray(RANK_ORDER) ? RANK_ORDER : []).map((rankId) => {
                   const rank = rankConfig[rankId] || DEFAULT_RANKS[rankId];
                   const gRank = globalConfig[rankId] || DEFAULT_RANKS[rankId];
+                  const arrowValue = arrowScope === "base" ? null : (arrowRanks[arrowScope]?.[rankId] ?? 0);
+                  const inputValue = arrowScope === "base" ? (rank.timeCutoff || "") : (arrowValue || "");
                   return (
                     <div key={rankId} className="p-4 hover:bg-white/[0.01] transition-colors">
                       <div className="flex items-center justify-between gap-4">
@@ -797,7 +839,8 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
                           <Input 
                             type="number"
                             step="0.001"
-                            value={rank.timeCutoff || ""} 
+                            value={inputValue} 
+                            placeholder={arrowScope === "base" ? "" : (rank.timeCutoff ? `${rank.timeCutoff}` : "")}
                             onChange={(e) => updateRankTime(rankId, e.target.value)}
                             className="bg-black/40 border-white/10 h-8 text-sm font-mono text-white"
                           />
@@ -808,6 +851,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
                   );
                 })}
               </div>
+
             </CardContent>
           </Card>
         ) : activeTab === 'general' ? (

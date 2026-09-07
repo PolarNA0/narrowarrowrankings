@@ -73,30 +73,38 @@ export const Route = createFileRoute("/api/public/category-wr-check")({
         const next: RecordState = { ...previous };
         const messages: string[] = [];
 
-        await Promise.all(
-          LEVELS.map(async (level) => {
-            let board;
-            try {
-              board = await fetchLevelBoard(level.id, { deep: true });
-            } catch {
-              return;
-            }
-            if (!board.length) return;
+        // Only the three arrow boards are needed; the overall WR is their minimum.
+        // Running six levels at a time keeps the upstream API from rate limiting.
+        const queue = [...LEVELS];
+        const worker = async () => {
+          for (;;) {
+            const level = queue.shift();
+            if (!level) return;
 
-            const overallWr = Math.min(...board.map((r) => r.completion_time));
+            const boards = await Promise.all(
+              ARROWS.map(async (arrow) => {
+                try {
+                  return await fetchLevelBoard(level.id, { arrowFilter: arrow });
+                } catch {
+                  return [];
+                }
+              }),
+            );
 
-            for (const arrow of ARROWS) {
-              const runs = board.filter(
-                (r) => (r.arrow_name || "").toLowerCase() === arrow.toLowerCase(),
-              );
-              if (!runs.length) continue;
+            const all = boards.flat();
+            if (!all.length) continue;
+            const overallWr = Math.min(...all.map((r) => r.completion_time));
+
+            ARROWS.forEach((arrow, index) => {
+              const runs = boards[index];
+              if (!runs.length) return;
               const best = runs.reduce((a, b) => (a.completion_time <= b.completion_time ? a : b));
               const key = `${level.id}|${ARROW_KEY[arrow]}`;
               const prior = previous[key];
               next[key] = { username: best.username, time: best.completion_time };
 
-              if (isFirstRun || !prior) continue;
-              if (best.completion_time >= prior.time - 0.0005) continue;
+              if (isFirstRun || !prior) return;
+              if (best.completion_time >= prior.time - 0.0005) return;
 
               const slot = ARROW_KEY[arrow];
               const template = config.templates?.[slot] || DEFAULT_TEMPLATES[slot];
@@ -112,9 +120,12 @@ export const Route = createFileRoute("/api/public/category-wr-check")({
                   .replaceAll("{catDiff}", (prior.time - best.completion_time).toFixed(3))
                   .replaceAll("{previous}", prior.username),
               );
-            }
-          }),
-        );
+            });
+          }
+        };
+
+        await Promise.all(Array.from({ length: 6 }, worker));
+
 
         await supabaseAdmin
           .from("app_docs")
