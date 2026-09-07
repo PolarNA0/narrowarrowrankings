@@ -5,7 +5,7 @@ import { fetchJson } from "./na-proxy";
 // global top 150.
 const MAX_LIMIT = 150;
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
-const TTL = 60 * 1000;
+const TTL = 150 * 1000;
 
 export interface BoardEntry {
   run_id: number;
