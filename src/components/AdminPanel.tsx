@@ -51,7 +51,7 @@ import {
   HUMAN_LIMIT_DEFAULTS,
   LEVEL_PACKS
 } from "../constants";
-import { LevelRankConfig, RankInfo, LevelInfo, LevelPack, LegacyRun } from "../types";
+import { LevelRankConfig, RankInfo, LevelInfo, LevelPack, LegacyRun, ArrowScope } from "../types";
 import { ArrowIcon } from "./ArrowIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
