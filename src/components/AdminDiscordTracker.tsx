@@ -110,6 +110,7 @@ export function AdminDiscordTracker() {
           </CardTitle>
           <CardDescription>
             Paste a Discord webhook URL — category world records (non-overall arrow records) are announced there.
+            Records are checked automatically every 5 minutes.
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-6 space-y-4">
