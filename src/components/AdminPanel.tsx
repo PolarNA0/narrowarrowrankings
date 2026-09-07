@@ -254,10 +254,12 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
           });
         }
         setRankConfig(emptyRanks);
+        setArrowRanks(data.arrowRanks || {});
         setTheoreticalMax(data.theoreticalMax ?? undefined);
         setHumanLimit(data.humanLimit ?? undefined);
       } else {
         setRankConfig(emptyRanks);
+        setArrowRanks({});
         setTheoreticalMax(undefined);
         setHumanLimit(undefined);
       }
