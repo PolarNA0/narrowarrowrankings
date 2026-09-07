@@ -517,11 +517,19 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
 
   const updateRankTime = (rankId: string, value: string) => {
     const timeCutoff = value === "" ? 0 : parseFloat(value);
+    if (arrowScope !== "base") {
+      setArrowRanks(prev => ({
+        ...prev,
+        [arrowScope]: { ...(prev[arrowScope] || {}), [rankId]: isNaN(timeCutoff) ? 0 : timeCutoff },
+      }));
+      return;
+    }
     setRankConfig(prev => ({
       ...prev,
       [rankId]: { ...prev[rankId], timeCutoff }
     }));
   };
+
 
   const updateGlobalColor = (rankId: string, hex: string) => {
     // Allow empty or partial hex during editing
