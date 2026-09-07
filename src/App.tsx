@@ -2294,7 +2294,13 @@ export default function App() {
                    {option.label}
                  </button>
                ))}
+               {usingArrowRanks && (
+                 <span className="h-12 px-3 rounded-xl border border-[var(--app-accent)]/40 bg-[var(--app-accent)]/10 text-[10px] uppercase tracking-widest text-[var(--app-accent)] flex items-center">
+                   Arrow rank times
+                 </span>
+               )}
              </div>
+
            </div>
 
          </div>
