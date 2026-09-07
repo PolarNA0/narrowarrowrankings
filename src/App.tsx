@@ -456,11 +456,10 @@ export default function App() {
     };
   }, []);
 
-  // Listen to the specific active level config when selectedLevel or globalRankConfig changes
+  // Listen to the specific active level config when selectedLevel changes
   useEffect(() => {
     if (!selectedLevel) {
-      setHasLevelRanks(false);
-      setActiveRankConfig(globalRankConfig);
+      setActiveLevelData(null);
       setTheoreticalMax(null);
       setHumanLimit(null);
       return;
@@ -469,22 +468,7 @@ export default function App() {
     const levelRef = doc(db, "levelConfigs", selectedLevel);
     const unsubscribe = onSnapshot(levelRef, (levelSnap) => {
       const levelData = levelSnap.exists() ? (levelSnap.data() as LevelRankConfig) : null;
-      const hasRanks = !!(levelData && levelData.ranks && Object.keys(levelData.ranks).length > 0);
-      setHasLevelRanks(hasRanks);
-
-      const levelRanks = levelData?.ranks || {};
-      
-      const merged: Record<string, RankInfo> = {};
-      const safeRankOrder = Array.isArray(RANK_ORDER) ? RANK_ORDER : [];
-      safeRankOrder.forEach(id => {
-        const gRank = globalRankConfig[id] || DEFAULT_RANKS[id];
-        const lRank = levelRanks[id];
-        merged[id] = {
-          ...gRank,
-          timeCutoff: hasRanks ? (lRank?.timeCutoff ?? 0) : 0
-        };
-      });
-      setActiveRankConfig(merged);
+      setActiveLevelData(levelData);
       setTheoreticalMax(levelData?.theoreticalMax ?? null);
       setHumanLimit(levelData?.humanLimit ?? null);
     }, (err) => {
@@ -494,7 +478,41 @@ export default function App() {
     return () => {
       unsubscribe();
     };
-  }, [selectedLevel, globalRankConfig]);
+  }, [selectedLevel]);
+
+  // Rank cutoffs follow the selected arrow board when per-arrow times exist.
+  const hasLevelRanks = React.useMemo(
+    () => !!(activeLevelData?.ranks && Object.keys(activeLevelData.ranks).length > 0),
+    [activeLevelData],
+  );
+
+  const usingArrowRanks = React.useMemo(
+    () =>
+      arrowFilter !== "all" &&
+      !!activeLevelData?.arrowRanks?.[arrowFilter] &&
+      Object.values(activeLevelData.arrowRanks[arrowFilter] || {}).some((v) => Number(v) > 0),
+    [activeLevelData, arrowFilter],
+  );
+
+  const activeRankConfig = React.useMemo(() => {
+    const levelRanks = activeLevelData?.ranks || {};
+    const arrowOverrides =
+      arrowFilter !== "all" ? activeLevelData?.arrowRanks?.[arrowFilter] || {} : {};
+    const merged: Record<string, RankInfo> = {};
+    const safeRankOrder = Array.isArray(RANK_ORDER) ? RANK_ORDER : [];
+    safeRankOrder.forEach(id => {
+      const gRank = globalRankConfig[id] || DEFAULT_RANKS[id];
+      const override = Number(arrowOverrides[id] ?? 0);
+      merged[id] = {
+        ...gRank,
+        timeCutoff: override > 0
+          ? override
+          : (hasLevelRanks ? (levelRanks[id]?.timeCutoff ?? 0) : 0),
+      };
+    });
+    return merged;
+  }, [activeLevelData, globalRankConfig, arrowFilter, hasLevelRanks]);
+
 
   const fetchAllLevels = async (forceRefresh = false) => {
     const levelsToFetch = dynamicLevels.length >= LEVELS.length ? dynamicLevels : LEVELS;
