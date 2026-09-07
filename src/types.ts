@@ -48,8 +48,12 @@ export interface RankInfo {
   timeCutoff: number; // Time in seconds that the player must be faster than
 }
 
+export type ArrowScope = "Narrow Arrow" | "Speedy Arrow" | "Energy Arrow";
+
 export interface LevelRankConfig {
   ranks: Record<string, RankInfo>;
+  /** Optional per-arrow cutoff overrides: arrowRanks["Narrow Arrow"]["Champion"] = 12.5 */
+  arrowRanks?: Partial<Record<ArrowScope, Record<string, number>>>;
   theoreticalMax?: number;
   humanLimit?: number;
   updatedAt: any;
