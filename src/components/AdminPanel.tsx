@@ -464,6 +464,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
       // The App.tsx merge logic will prioritize global colors anyway
       await setDoc(docRef, {
         ranks: rankConfig,
+        arrowRanks,
         theoreticalMax: theoreticalMax || null,
         humanLimit: humanLimit || null,
         updatedAt: serverTimestamp(),
