@@ -9,6 +9,7 @@ export const LEVEL_PACKS: LevelPack[] = [
   { id: "deadzone-pack", name: "Deadzone Pack" },
   { id: "symmetry-pack", name: "Symmetry Pack" },
   { id: "bounce-pack", name: "Bounce Pack" },
+  { id: "shape-pack", name: "Shape Pack" },
 ];
 
 export const LEVELS: LevelInfo[] = [
