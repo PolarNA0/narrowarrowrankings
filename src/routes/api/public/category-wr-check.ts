@@ -38,8 +38,6 @@ interface RecordState {
   [key: string]: { username: string; time: number };
 }
 
-let lastRun = 0;
-
 export const Route = createFileRoute("/api/public/category-wr-check")({
   server: {
     handlers: {
@@ -73,8 +71,6 @@ export const Route = createFileRoute("/api/public/category-wr-check")({
         if (!force && lastRunAt && Date.now() - lastRunAt < intervalMs - 30_000) {
           return Response.json({ skipped: true, reason: "interval", intervalMinutes: intervalMs / 60_000 });
         }
-        lastRun = Date.now();
-
         const { __lastRunAt: _ignored, ...previousRecords } = stateData;
         const previous = previousRecords as RecordState;
         const isFirstRun = Object.keys(previous).length === 0;

@@ -31,6 +31,7 @@ const DEFAULT_EMOJIS: Record<Slot, string> = { narrow: "🏹", speedy: "💨", e
 export function AdminDiscordTracker() {
   const [webhookUrl, setWebhookUrl] = React.useState("");
   const [enabled, setEnabled] = React.useState(true);
+  const [intervalMinutes, setIntervalMinutes] = React.useState(5);
   const [templates, setTemplates] = React.useState<Record<Slot, string>>(DEFAULT_TEMPLATES);
   const [emojis, setEmojis] = React.useState<Record<Slot, string>>(DEFAULT_EMOJIS);
   const [saving, setSaving] = React.useState(false);
@@ -44,6 +45,7 @@ export function AdminDiscordTracker() {
         if (!data) return;
         setWebhookUrl(data.webhookUrl || "");
         setEnabled(data.enabled !== false);
+        setIntervalMinutes(Number(data.intervalMinutes) || 5);
         setTemplates({ ...DEFAULT_TEMPLATES, ...(data.templates || {}) });
         setEmojis({ ...DEFAULT_EMOJIS, ...(data.emojis || {}) });
       } catch {
@@ -58,6 +60,7 @@ export function AdminDiscordTracker() {
       await setDoc(doc(db, "configs", "discordTracker"), {
         webhookUrl: webhookUrl.trim(),
         enabled,
+        intervalMinutes: Math.max(5, Number(intervalMinutes) || 5),
         templates,
         emojis,
       });
@@ -123,6 +126,19 @@ export function AdminDiscordTracker() {
           <div className="flex items-center gap-3">
             <Switch checked={enabled} onCheckedChange={setEnabled} />
             <span className="text-xs text-slate-400">Announcements enabled</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Input
+              type="number"
+              min={5}
+              step={5}
+              value={intervalMinutes}
+              onChange={(e) => setIntervalMinutes(Number(e.target.value))}
+              className="w-24 bg-black/40 border-white/10 text-xs"
+            />
+            <span className="text-xs text-slate-400">
+              Minutes between record checks (minimum 5). Save to apply.
+            </span>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button onClick={sendTest} variant="outline" className="border-white/10 hover:bg-white/5">
