@@ -695,10 +695,20 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
           >
             Discord
           </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setActiveTab('levels')}
+            className={cn("text-[10px] uppercase tracking-widest h-8 px-4", activeTab === 'levels' ? "bg-white/10 text-white" : "text-slate-400")}
+          >
+            Levels
+          </Button>
         </div>
 
 
-        {activeTab === 'discord' ? (
+        {activeTab === 'levels' ? (
+          <AdminLevelManager levelPacks={levelPacks} />
+        ) : activeTab === 'discord' ? (
           <AdminDiscordTracker />
         ) : activeTab === 'badges' ? (
           <AdminBadgeManager usernames={allUsernames} />
