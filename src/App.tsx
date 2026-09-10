@@ -177,7 +177,15 @@ export default function App() {
     });
   }, [legacyRuns, nameChanges]);
 
-  const allLevelsWithCustoms = dynamicLevels;
+  // Manually added levels (admin > Levels) merge in alongside the API packs.
+  const allLevelsWithCustoms = useMemo(() => {
+    if (!extraLevels.length) return dynamicLevels;
+    const merged = [...dynamicLevels];
+    extraLevels.forEach(l => {
+      if (!merged.some(existing => existing.id.toLowerCase() === l.id.toLowerCase())) merged.push(l);
+    });
+    return merged;
+  }, [dynamicLevels, extraLevels]);
 
   const dynamicPacksWithCustom = dynamicPacks;
 
