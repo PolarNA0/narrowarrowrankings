@@ -127,7 +127,16 @@ export default function App() {
 
   const [selectedCustomLevelId, setSelectedCustomLevelId] = useState<string | null>(null);
   const [fetchedLevelDetails, setFetchedLevelDetails] = useState<Record<string, { name: string; author?: string; packId?: string }>>({});
+  const [extraLevels, setExtraLevels] = useState<LevelInfo[]>([]);
   const [legacyRuns, setLegacyRuns] = useState<LegacyRun[]>([]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "configs", "extraLevels"), (snap) => {
+      const data = snap.data();
+      setExtraLevels(Array.isArray(data?.levels) ? (data.levels as LevelInfo[]) : []);
+    }, () => setExtraLevels([]));
+    return unsub;
+  }, []);
   const [nameChanges, setNameChanges] = useState<any[]>([]);
 
   useEffect(() => {
@@ -177,7 +186,15 @@ export default function App() {
     });
   }, [legacyRuns, nameChanges]);
 
-  const allLevelsWithCustoms = dynamicLevels;
+  // Manually added levels (admin > Levels) merge in alongside the API packs.
+  const allLevelsWithCustoms = useMemo(() => {
+    if (!extraLevels.length) return dynamicLevels;
+    const merged = [...dynamicLevels];
+    extraLevels.forEach(l => {
+      if (!merged.some(existing => existing.id.toLowerCase() === l.id.toLowerCase())) merged.push(l);
+    });
+    return merged;
+  }, [dynamicLevels, extraLevels]);
 
   const dynamicPacksWithCustom = dynamicPacks;
 
@@ -226,7 +243,14 @@ export default function App() {
 
         const allLevels: LevelInfo[] = [];
         const publishLevels = () => {
-          const sourceLevels = allLevels.length >= LEVELS.length ? allLevels : LEVELS;
+          // Union the hardcoded fallback with whatever the API returned so a
+          // failed pack request never hides levels.
+          const sourceLevels = [...allLevels];
+          LEVELS.forEach(l => {
+            if (!sourceLevels.some(existing => existing.id.toLowerCase() === l.id.toLowerCase())) {
+              sourceLevels.push(l);
+            }
+          });
           const sorted = [...sourceLevels].sort((a, b) => {
             const packDiff = (packPositions[a.packId] || 0) - (packPositions[b.packId] || 0);
             if (packDiff !== 0) return packDiff;

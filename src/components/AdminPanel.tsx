@@ -39,6 +39,7 @@ import {
 import { useAdminAuth } from "../hooks/useAdminAuth";
 import { AdminBadgeManager } from "./AdminBadgeManager";
 import { AdminDiscordTracker } from "./AdminDiscordTracker";
+import { AdminLevelManager } from "./AdminLevelManager";
 import { useRemovedRuns, restoreRun } from "../hooks/useRemovedRuns";
 
 
@@ -82,7 +83,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
   const { removedRuns, } = useRemovedRuns();
   const [selectedLevel, setSelectedLevel] = useState<string>(levels[0]?.id || "");
   const [selectedPack, setSelectedPack] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState<'maps' | 'general' | 'overall' | 'legacy' | 'removed' | 'badges' | 'discord'>('maps');
+  const [activeTab, setActiveTab] = useState<'maps' | 'general' | 'overall' | 'legacy' | 'removed' | 'badges' | 'discord' | 'levels'>('maps');
   const [rankConfig, setRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
   const [arrowScope, setArrowScope] = useState<"base" | ArrowScope>("base");
   const [arrowRanks, setArrowRanks] = useState<Partial<Record<ArrowScope, Record<string, number>>>>({});
@@ -625,7 +626,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
             <Button onClick={handleLogout} variant="ghost" className="text-slate-500 hover:text-white">
               <LogOut className="w-4 h-4 mr-2" /> Logout
             </Button>
-            {activeTab !== 'legacy' && activeTab !== 'removed' && activeTab !== 'badges' && activeTab !== 'discord' && (
+            {activeTab !== 'legacy' && activeTab !== 'removed' && activeTab !== 'badges' && activeTab !== 'discord' && activeTab !== 'levels' && (
               <Button 
                 onClick={activeTab === 'maps' ? handleSaveMaps : activeTab === 'general' ? handleSaveGeneral : handleSaveOverall} 
                 disabled={saving}
@@ -695,10 +696,20 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
           >
             Discord
           </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setActiveTab('levels')}
+            className={cn("text-[10px] uppercase tracking-widest h-8 px-4", activeTab === 'levels' ? "bg-white/10 text-white" : "text-slate-400")}
+          >
+            Levels
+          </Button>
         </div>
 
 
-        {activeTab === 'discord' ? (
+        {activeTab === 'levels' ? (
+          <AdminLevelManager levelPacks={levelPacks} />
+        ) : activeTab === 'discord' ? (
           <AdminDiscordTracker />
         ) : activeTab === 'badges' ? (
           <AdminBadgeManager usernames={allUsernames} />

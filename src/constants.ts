@@ -9,6 +9,7 @@ export const LEVEL_PACKS: LevelPack[] = [
   { id: "deadzone-pack", name: "Deadzone Pack" },
   { id: "symmetry-pack", name: "Symmetry Pack" },
   { id: "bounce-pack", name: "Bounce Pack" },
+  { id: "shape-pack", name: "Shape Pack" },
 ];
 
 export const LEVELS: LevelInfo[] = [
@@ -76,6 +77,14 @@ export const LEVELS: LevelInfo[] = [
   { id: "1777118888648", name: "Ping Pong", gameOrder: 5, packId: "bounce-pack" },
   { id: "CC37B0C4", name: "Neon Drift", gameOrder: 6, packId: "bounce-pack" },
   { id: "719E5928", name: "Bounce Course", gameOrder: 7, packId: "bounce-pack" },
+  { id: "1777050074638", name: "Tight Triangles", gameOrder: 0, packId: "shape-pack" },
+  { id: "9C126CB7", name: "The Kite", gameOrder: 1, packId: "shape-pack" },
+  { id: "1777113878576", name: "Rounded Circuit", gameOrder: 2, packId: "shape-pack" },
+  { id: "AF2F9F2F", name: "Bouncy Triangles", gameOrder: 3, packId: "shape-pack" },
+  { id: "E66F7D98", name: "Drifting Stars", gameOrder: 4, packId: "shape-pack" },
+  { id: "9F45E380", name: "Boosted Octs", gameOrder: 5, packId: "shape-pack" },
+  { id: "4CFC2854", name: "Hexaglide", gameOrder: 6, packId: "shape-pack" },
+  { id: "AA6E5B74", name: "Eyes Of The Ellipse", gameOrder: 7, packId: "shape-pack" },
 ];
 
 export const DEFAULT_RANKS: Record<string, RankInfo> = {

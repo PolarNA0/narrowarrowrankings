@@ -29,6 +29,7 @@ const DEFAULT_EMOJI: Record<"narrow" | "speedy" | "energy", string> = {
 interface TrackerConfig {
   webhookUrl?: string;
   enabled?: boolean;
+  intervalMinutes?: number;
   templates?: Partial<Record<"narrow" | "speedy" | "energy", string>>;
   emojis?: Partial<Record<"narrow" | "speedy" | "energy", string>>;
 }
@@ -37,17 +38,11 @@ interface RecordState {
   [key: string]: { username: string; time: number };
 }
 
-let lastRun = 0;
-
 export const Route = createFileRoute("/api/public/category-wr-check")({
   server: {
     handlers: {
       GET: async ({ request }) => {
         const force = new URL(request.url).searchParams.get("force") === "1";
-        if (!force && Date.now() - lastRun < 90_000) {
-          return Response.json({ skipped: true, reason: "cooldown" });
-        }
-        lastRun = Date.now();
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
@@ -67,7 +62,17 @@ export const Route = createFileRoute("/api/public/category-wr-check")({
         ]);
 
         const config = (configRow?.data ?? {}) as TrackerConfig;
-        const previous = (stateRow?.data ?? {}) as RecordState;
+        const stateData = (stateRow?.data ?? {}) as RecordState & { __lastRunAt?: string };
+
+        // Cron polls every 5 minutes; the admin-set interval decides how often
+        // a poll actually does work.
+        const intervalMs = Math.max(5, Number(config.intervalMinutes) || 5) * 60_000;
+        const lastRunAt = stateData.__lastRunAt ? Date.parse(String(stateData.__lastRunAt)) : 0;
+        if (!force && lastRunAt && Date.now() - lastRunAt < intervalMs - 30_000) {
+          return Response.json({ skipped: true, reason: "interval", intervalMinutes: intervalMs / 60_000 });
+        }
+        const { __lastRunAt: _ignored, ...previousRecords } = stateData;
+        const previous = previousRecords as RecordState;
         const isFirstRun = Object.keys(previous).length === 0;
 
         const next: RecordState = { ...previous };
@@ -130,7 +135,11 @@ export const Route = createFileRoute("/api/public/category-wr-check")({
         await supabaseAdmin
           .from("app_docs")
           .upsert(
-            { collection: "configs", doc_id: "categoryRecordState", data: next as never },
+            {
+              collection: "configs",
+              doc_id: "categoryRecordState",
+              data: { ...next, __lastRunAt: new Date().toISOString() } as never,
+            },
             { onConflict: "collection,doc_id" },
           );
 
