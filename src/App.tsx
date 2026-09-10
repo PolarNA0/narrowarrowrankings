@@ -127,7 +127,16 @@ export default function App() {
 
   const [selectedCustomLevelId, setSelectedCustomLevelId] = useState<string | null>(null);
   const [fetchedLevelDetails, setFetchedLevelDetails] = useState<Record<string, { name: string; author?: string; packId?: string }>>({});
+  const [extraLevels, setExtraLevels] = useState<LevelInfo[]>([]);
   const [legacyRuns, setLegacyRuns] = useState<LegacyRun[]>([]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "configs", "extraLevels"), (snap) => {
+      const data = snap.data();
+      setExtraLevels(Array.isArray(data?.levels) ? (data.levels as LevelInfo[]) : []);
+    }, () => setExtraLevels([]));
+    return unsub;
+  }, []);
   const [nameChanges, setNameChanges] = useState<any[]>([]);
 
   useEffect(() => {
