@@ -243,7 +243,14 @@ export default function App() {
 
         const allLevels: LevelInfo[] = [];
         const publishLevels = () => {
-          const sourceLevels = allLevels.length >= LEVELS.length ? allLevels : LEVELS;
+          // Union the hardcoded fallback with whatever the API returned so a
+          // failed pack request never hides levels.
+          const sourceLevels = [...allLevels];
+          LEVELS.forEach(l => {
+            if (!sourceLevels.some(existing => existing.id.toLowerCase() === l.id.toLowerCase())) {
+              sourceLevels.push(l);
+            }
+          });
           const sorted = [...sourceLevels].sort((a, b) => {
             const packDiff = (packPositions[a.packId] || 0) - (packPositions[b.packId] || 0);
             if (packDiff !== 0) return packDiff;
