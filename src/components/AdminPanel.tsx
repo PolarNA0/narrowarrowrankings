@@ -593,18 +593,37 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
             </div>
           )}
           {user ? (
-            <div className="space-y-4">
-              <p className="text-xs text-slate-400">Logged in as: <span className="text-white font-mono">{user.email}</span></p>
-              <p className="text-[11px] text-slate-500 max-w-xs mx-auto">This account isn't on the admin list. Sign out and use an admin Google account.</p>
-              <Button onClick={handleLogout} variant="outline" className="border-white/10 hover:bg-white/5">
+            <div className="space-y-3 w-full max-w-xs">
+              <p className="text-xs text-slate-400">Signed in as <span className="text-white font-mono">{user.email}</span></p>
+              <Input
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 12))}
+                inputMode="numeric"
+                type="password"
+                placeholder="Admin PIN"
+                className="bg-black/30 border-white/10 text-center tracking-[0.4em] font-mono"
+                onKeyDown={(e) => { if (e.key === "Enter") void submitPin(); }}
+              />
+              <Button
+                onClick={() => void submitPin()}
+                disabled={checkingPin || pinInput.length < 4}
+                className="w-full bg-yellow-400 text-black hover:bg-yellow-300 font-bold"
+              >
+                <LogIn className="w-4 h-4 mr-2" /> {checkingPin ? "Checking..." : "Unlock admin"}
+              </Button>
+              <Button onClick={handleLogout} variant="outline" className="w-full border-white/10 hover:bg-white/5">
                 <LogOut className="w-4 h-4 mr-2" /> Sign Out
               </Button>
             </div>
           ) : (
-            <Button onClick={handleLogin} className="bg-yellow-400 text-black hover:bg-yellow-300 font-bold">
-              <LogIn className="w-4 h-4 mr-2" /> Admin Login
-            </Button>
+            <div className="space-y-3 w-full max-w-xs">
+              <p className="text-[11px] text-slate-500">Sign in with any account, then enter the admin PIN.</p>
+              <Button onClick={handleLogin} className="w-full bg-yellow-400 text-black hover:bg-yellow-300 font-bold">
+                <LogIn className="w-4 h-4 mr-2" /> Sign in
+              </Button>
+            </div>
           )}
+
 
         </div>
       </ErrorBoundary>
