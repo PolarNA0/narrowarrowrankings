@@ -79,7 +79,16 @@ interface AdminPanelProps {
 }
 
 export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAll = false }: AdminPanelProps) {
-  const { user, isAdmin, loading, error: authError, login: handleLogin, logout: handleLogout } = useAdminAuth();
+  const { user, isAdmin, loading, error: authError, login: handleLogin, logout: handleLogout, loginWithPin } = useAdminAuth();
+  const [pinInput, setPinInput] = useState("");
+  const [checkingPin, setCheckingPin] = useState(false);
+  const submitPin = async () => {
+    setCheckingPin(true);
+    await loginWithPin(pinInput);
+    setCheckingPin(false);
+    setPinInput("");
+  };
+
   const { removedRuns, } = useRemovedRuns();
   const [selectedLevel, setSelectedLevel] = useState<string>(levels[0]?.id || "");
   const [selectedPack, setSelectedPack] = useState<string>("all");
