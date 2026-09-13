@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
-import { claimAdmin } from "@/lib/admin.functions";
+import { claimAdmin, claimAdminWithPin } from "@/lib/admin.functions";
 
 export const ADMIN_EMAILS = ["sirsamyou@gmail.com", "polarusx@gmail.com"];
 
@@ -15,6 +15,8 @@ export interface AdminAuthState {
   loginWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  loginWithPin: (pin: string) => Promise<boolean>;
+
 }
 
 export function useAdminAuth(): AdminAuthState {
