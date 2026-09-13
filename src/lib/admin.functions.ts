@@ -22,3 +22,26 @@ export const claimAdmin = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { isAdmin: true as const };
   });
+
+/** Shared admin PIN — anyone signed in who knows it is granted admin. */
+const ADMIN_PIN = "040408";
+
+export const claimAdminWithPin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { pin: string }) => ({ pin: String(input?.pin ?? "").trim() }))
+  .handler(async ({ data, context }) => {
+    if (data.pin !== ADMIN_PIN) {
+      return { isAdmin: false as const, error: "Incorrect PIN" };
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
+      .from("user_roles")
+      .upsert(
+        { user_id: context.userId, role: "admin" },
+        { onConflict: "user_id,role", ignoreDuplicates: true },
+      );
+    if (error) throw new Error(error.message);
+    return { isAdmin: true as const };
+  });
+
