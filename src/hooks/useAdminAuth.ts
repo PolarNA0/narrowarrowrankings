@@ -89,10 +89,27 @@ export function useAdminAuth(): AdminAuthState {
     if (signUpError) setError(signUpError.message);
   }, []);
 
+  const loginWithPin = useCallback(async (pin: string) => {
+    setError(null);
+    try {
+      const result = await claimAdminWithPin({ data: { pin } });
+      if (!result.isAdmin) {
+        setError("Incorrect PIN");
+        return false;
+      }
+      setIsAdmin(true);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "PIN check failed");
+      return false;
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
     setIsAdmin(false);
   }, []);
 
-  return { user, isAdmin, loading, error, login, loginWithEmail, signUpWithEmail, logout };
+  return { user, isAdmin, loading, error, login, loginWithEmail, signUpWithEmail, logout, loginWithPin };
+
 }
