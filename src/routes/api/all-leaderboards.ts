@@ -15,9 +15,13 @@ export const Route = createFileRoute("/api/all-leaderboards")({
         const deep = new URL(request.url).searchParams.get("deep") === "1";
         const key = deep ? "deep" : "flat";
         const cached = memo[key];
-        if (cached && Date.now() - cached.at < CACHE_TTL) {
+        const complete =
+          cached && (cached.payload as { loaded: number; total: number }).loaded ===
+            (cached.payload as { total: number }).total;
+        const ttl = complete ? CACHE_TTL : PARTIAL_TTL;
+        if (cached && Date.now() - cached.at < ttl) {
           return Response.json(cached.payload, {
-            headers: { "cache-control": "public, max-age=60, stale-while-revalidate=900" },
+            headers: { "cache-control": "public, max-age=120, stale-while-revalidate=900" },
           });
         }
 
@@ -34,11 +38,14 @@ export const Route = createFileRoute("/api/all-leaderboards")({
         );
 
         const payload = { boards, loaded: Object.keys(boards).length, total: LEVELS.length };
-        if (Object.keys(boards).length === LEVELS.length) memo[key] = { at: Date.now(), payload };
+        // Partial results are cached briefly too, so a slow upstream doesn't
+        // make every visitor refetch all 64 boards from scratch.
+        memo[key] = { at: Date.now(), payload };
 
         return Response.json(payload, {
-          headers: { "cache-control": "public, max-age=60, stale-while-revalidate=900" },
+          headers: { "cache-control": "public, max-age=120, stale-while-revalidate=900" },
         });
+
       },
     },
   },
