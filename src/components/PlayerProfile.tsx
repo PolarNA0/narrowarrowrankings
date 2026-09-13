@@ -242,6 +242,43 @@ export function PlayerProfile({
     };
   }, [stats, overallRankConfig]);
 
+  // Category world records (per-arrow WRs) and per-arrow Champion ranks.
+  const arrowAchievements = useMemo(() => {
+    const ARROWS: ArrowScope[] = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
+    const me = stats.username.toLowerCase();
+    let cwr = 0;
+    let champions = 0;
+    const max = levels.length * ARROWS.length;
+
+    levels.forEach((level) => {
+      const board = levelStandings?.[level.id];
+      if (!board || board.length === 0) return;
+      const levelConfig = rankConfigs?.[level.id];
+      const defaults = getLevelDefaultRanks(level.id, globalRankConfig || DEFAULT_RANKS);
+      const levelChampion =
+        (typeof levelConfig?.ranks?.["Champion"]?.timeCutoff === "number" && levelConfig.ranks["Champion"].timeCutoff > 0
+          ? levelConfig.ranks["Champion"].timeCutoff
+          : defaults?.["Champion"]?.timeCutoff) ?? 0;
+
+      ARROWS.forEach((arrow) => {
+        const runs = board.filter((r) => r.arrow_name === arrow);
+        if (runs.length === 0) return;
+        const best = runs.reduce((a, b) => (a.completion_time <= b.completion_time ? a : b));
+        if (best.username?.toLowerCase() === me) cwr += 1;
+
+        const mine = runs.filter((r) => r.username?.toLowerCase() === me);
+        if (mine.length === 0) return;
+        const myBest = Math.min(...mine.map((r) => r.completion_time));
+        const cutoff = levelConfig?.arrowRanks?.[arrow]?.["Champion"] ?? levelChampion;
+        if (cutoff > 0 && myBest <= cutoff) champions += 1;
+      });
+    });
+
+    return { cwr, champions, max };
+  }, [levels, levelStandings, rankConfigs, globalRankConfig, stats.username]);
+
+
+
   const packBreakdowns = useMemo(() => {
     const packsMap: Record<string, { id: string; name: string; levels: LevelInfo[]; completed: number; totalTime: number; overallRankId?: string }> = {};
     
