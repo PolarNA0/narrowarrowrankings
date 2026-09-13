@@ -32,8 +32,20 @@ export async function fetchLevelBoard(
     return asList(await fetchJson(`${base}&arrowFilter=${encodeURIComponent(options.arrowFilter)}`, TTL));
   }
 
-  const overall = asList(await fetchJson(base, TTL));
-  if (!options.deep) return overall;
+  if (!options.deep) return asList(await fetchJson(base, TTL));
+
+  // Fetch the overall board and every arrow board at once — doing the overall
+  // request first made deep loads twice as slow for no extra data.
+  const [overall, ...arrowBoards] = await Promise.all([
+    fetchJson(base, TTL)
+      .then(asList)
+      .catch(() => [] as BoardEntry[]),
+    ...ARROWS.map((arrow) =>
+      fetchJson(`${base}&arrowFilter=${encodeURIComponent(arrow)}`, TTL)
+        .then(asList)
+        .catch(() => [] as BoardEntry[]),
+    ),
+  ]);
 
   const merged = new Map<string, BoardEntry>();
   const add = (entries: BoardEntry[]) => {
@@ -43,17 +55,8 @@ export async function fetchLevelBoard(
     }
   };
   add(overall);
-
-  const arrowBoards = await Promise.all(
-    ARROWS.map(async (arrow) => {
-      try {
-        return asList(await fetchJson(`${base}&arrowFilter=${encodeURIComponent(arrow)}`, TTL));
-      } catch {
-        return [];
-      }
-    }),
-  );
   arrowBoards.forEach(add);
 
   return [...merged.values()].sort((a, b) => a.completion_time - b.completion_time);
 }
+

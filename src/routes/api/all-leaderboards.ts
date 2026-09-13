@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { fetchLevelBoard, type BoardEntry } from "@/lib/leaderboard-source";
 import { LEVELS } from "@/constants";
 
-const CACHE_TTL = 60 * 1000;
+const CACHE_TTL = 3 * 60 * 1000;
+const PARTIAL_TTL = 20 * 1000;
+
 const memo: Record<string, { at: number; payload: unknown }> = {};
 
 /** One request that returns every official leaderboard, warmed server-side. */
