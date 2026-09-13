@@ -24,7 +24,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { motion } from "motion/react";
-import { PlayerStats, LevelInfo, RankInfo, LevelRankConfig, LevelPack } from "../types";
+import { PlayerStats, LevelInfo, RankInfo, LevelRankConfig, LevelPack, ArrowScope } from "../types";
 import { RANK_ORDER, DEFAULT_RANKS } from "../constants";
 import { getLevelDefaultRanks } from "../lib/rankDefaults";
 import { Button } from "@/components/ui/button";
