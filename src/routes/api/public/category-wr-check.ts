@@ -110,6 +110,10 @@ export const Route = createFileRoute("/api/public/category-wr-check")({
 
               if (isFirstRun || !prior) return;
               if (best.completion_time >= prior.time - 0.0005) return;
+              // This arrow also holds the overall world record, so the run is a
+              // normal WR, not a category record — the WR feed covers it.
+              if (best.completion_time <= overallWr + 0.0005) return;
+
 
               const slot = ARROW_KEY[arrow];
               const template = config.templates?.[slot] || DEFAULT_TEMPLATES[slot];

@@ -24,7 +24,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { motion } from "motion/react";
-import { PlayerStats, LevelInfo, RankInfo, LevelRankConfig, LevelPack } from "../types";
+import { PlayerStats, LevelInfo, RankInfo, LevelRankConfig, LevelPack, ArrowScope } from "../types";
 import { RANK_ORDER, DEFAULT_RANKS } from "../constants";
 import { getLevelDefaultRanks } from "../lib/rankDefaults";
 import { Button } from "@/components/ui/button";
@@ -242,6 +242,43 @@ export function PlayerProfile({
     };
   }, [stats, overallRankConfig]);
 
+  // Category world records (per-arrow WRs) and per-arrow Champion ranks.
+  const arrowAchievements = useMemo(() => {
+    const ARROWS: ArrowScope[] = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
+    const me = stats.username.toLowerCase();
+    let cwr = 0;
+    let champions = 0;
+    const max = levels.length * ARROWS.length;
+
+    levels.forEach((level) => {
+      const board = levelStandings?.[level.id];
+      if (!board || board.length === 0) return;
+      const levelConfig = rankConfigs?.[level.id];
+      const defaults = getLevelDefaultRanks(level.id, globalRankConfig || DEFAULT_RANKS);
+      const levelChampion =
+        (typeof levelConfig?.ranks?.["Champion"]?.timeCutoff === "number" && levelConfig.ranks["Champion"].timeCutoff > 0
+          ? levelConfig.ranks["Champion"].timeCutoff
+          : defaults?.["Champion"]?.timeCutoff) ?? 0;
+
+      ARROWS.forEach((arrow) => {
+        const runs = board.filter((r) => r.arrow_name === arrow);
+        if (runs.length === 0) return;
+        const best = runs.reduce((a, b) => (a.completion_time <= b.completion_time ? a : b));
+        if (best.username?.toLowerCase() === me) cwr += 1;
+
+        const mine = runs.filter((r) => r.username?.toLowerCase() === me);
+        if (mine.length === 0) return;
+        const myBest = Math.min(...mine.map((r) => r.completion_time));
+        const cutoff = levelConfig?.arrowRanks?.[arrow]?.["Champion"] ?? levelChampion;
+        if (cutoff > 0 && myBest <= cutoff) champions += 1;
+      });
+    });
+
+    return { cwr, champions, max };
+  }, [levels, levelStandings, rankConfigs, globalRankConfig, stats.username]);
+
+
+
   const packBreakdowns = useMemo(() => {
     const packsMap: Record<string, { id: string; name: string; levels: LevelInfo[]; completed: number; totalTime: number; overallRankId?: string }> = {};
     
@@ -441,7 +478,7 @@ export function PlayerProfile({
 
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       {[
         { label: "Levels Completed", value: aggregateStats?.totalCompleted || 0, icon: Target, color: "text-[var(--app-accent)]" },
         { label: "Average Time", value: aggregateStats ? formatTime(aggregateStats.avgTime, 'seconds') : "N/A", icon: Clock, color: "text-[#2DD4BF]" },
@@ -449,6 +486,9 @@ export function PlayerProfile({
         { label: "Overall Rank", value: aggregateStats?.overallRankId ? (overallRankConfig[aggregateStats.overallRankId]?.name || aggregateStats.overallRankId) : "---", icon: Star, color: "text-yellow-400", isRank: true },
         { label: "Completion Rate", value: `${((aggregateStats?.totalCompleted || 0) / (levels.length || 1) * 100).toFixed(1)}%`, icon: Medal, color: "text-green-400" },
         { label: "World Records", value: computedMedals?.first ?? 0, icon: Trophy, color: "text-yellow-400" },
+        { label: "Category WRs", value: `${arrowAchievements.cwr} / ${arrowAchievements.max}`, icon: Award, color: "text-fuchsia-400" },
+        { label: "Champion Ranks", value: `${arrowAchievements.champions} / ${arrowAchievements.max}`, icon: Crown, color: "text-amber-300" },
+
       ].map((stat, i) => (
           <Card key={i} className="bg-white/5 border-white/10 group hover:border-[var(--app-accent)]/30 transition-all duration-300">
             <CardContent className="p-4 flex items-center justify-between">

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
-import { claimAdmin } from "@/lib/admin.functions";
+import { claimAdmin, claimAdminWithPin } from "@/lib/admin.functions";
 
 export const ADMIN_EMAILS = ["sirsamyou@gmail.com", "polarusx@gmail.com"];
 
@@ -15,6 +15,8 @@ export interface AdminAuthState {
   loginWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  loginWithPin: (pin: string) => Promise<boolean>;
+
 }
 
 export function useAdminAuth(): AdminAuthState {
@@ -87,10 +89,27 @@ export function useAdminAuth(): AdminAuthState {
     if (signUpError) setError(signUpError.message);
   }, []);
 
+  const loginWithPin = useCallback(async (pin: string) => {
+    setError(null);
+    try {
+      const result = await claimAdminWithPin({ data: { pin } });
+      if (!result.isAdmin) {
+        setError("Incorrect PIN");
+        return false;
+      }
+      setIsAdmin(true);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "PIN check failed");
+      return false;
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
     setIsAdmin(false);
   }, []);
 
-  return { user, isAdmin, loading, error, login, loginWithEmail, signUpWithEmail, logout };
+  return { user, isAdmin, loading, error, login, loginWithEmail, signUpWithEmail, logout, loginWithPin };
+
 }
