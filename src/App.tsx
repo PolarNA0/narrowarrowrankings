@@ -777,6 +777,9 @@ export default function App() {
   }, [allLevelsData, mappedLegacyRuns, removedKeys]);
 
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const selectedPlayerStats = useMemo(() => (selectedPlayer ? getPlayerStats(selectedPlayer) : null), [selectedPlayer, processedAllLevelsData, allLevelsWithCustoms, allRankConfigs, globalRankConfig]);
+
   const allUsernames = useMemo(() => {
     const usernames = new Set<string>();
     Object.values(processedAllLevelsData).forEach((levelData: LeaderboardEntry[]) => {
@@ -1464,14 +1467,15 @@ export default function App() {
             isFetchingAll={isFetchingAll} 
           />
         ) : view === 'profile' && selectedPlayer ? (
-          isFetchingAll ? (
+          isFetchingAll && !selectedPlayerStats ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
               <RefreshCw className="w-12 h-12 text-[var(--app-accent)] animate-spin" />
               <p className="text-slate-500 font-mono text-sm animate-pulse">Analyzing player performance across all levels...</p>
             </div>
-          ) : getPlayerStats(selectedPlayer) ? (
+          ) : selectedPlayerStats ? (
             <PlayerProfile 
-              stats={getPlayerStats(selectedPlayer)!} 
+              stats={selectedPlayerStats} 
+              rawLevelData={allLevelsData}
               levels={sortedLevels}
               packs={dynamicPacks}
               rankConfigs={allRankConfigs}

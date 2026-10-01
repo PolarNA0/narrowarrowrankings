@@ -55,12 +55,15 @@ interface PlayerProfileProps {
   worldRecords?: { levelId: string; levelName: string; wr: any }[];
   computedMedals?: { first: number; second: number; third: number; top10: number; wrLevelIds: string[] };
   levelStandings?: Record<string, LeaderboardEntry[]>;
+  rawLevelData?: Record<string, LeaderboardEntry[]>;
   legacyRuns?: LegacyRun[];
   profile?: PlayerProfileRow | null;
   canEditProfile?: boolean;
   onSaveProfile?: (patch: Partial<PlayerProfileRow>) => Promise<void>;
   onRequestSignIn?: () => void;
 }
+
+const userDataCache = new Map<string, { at: number; data: unknown }>();
 
 export function PlayerProfile({ 
   stats, 
@@ -76,6 +79,7 @@ export function PlayerProfile({
   worldRecords,
   computedMedals,
   levelStandings,
+  rawLevelData,
   legacyRuns,
   profile,
   canEditProfile,
@@ -115,9 +119,16 @@ export function PlayerProfile({
   useEffect(() => {
     if (!stats.username) return;
     let isMounted = true;
+    setProfileTab('performance');
+    const key = stats.username.toLowerCase();
+    const hit = userDataCache.get(key);
+    if (hit && Date.now() - hit.at < 5 * 60 * 1000) {
+      setExtraData(hit.data);
+      setLoadingExtra(false);
+      return;
+    }
     setLoadingExtra(true);
     setExtraData(null);
-    setProfileTab('performance');
 
     fetch(`/api/user/${encodeURIComponent(stats.username)}`)
       .then(res => {
@@ -125,6 +136,7 @@ export function PlayerProfile({
         return res.json();
       })
       .then(data => {
+        userDataCache.set(key, { at: Date.now(), data });
         if (isMounted) {
           setExtraData(data);
         }
@@ -251,8 +263,15 @@ export function PlayerProfile({
     const max = levels.length * ARROWS.length;
 
     levels.forEach((level) => {
-      const board = levelStandings?.[level.id];
-      if (!board || board.length === 0) return;
+      // Every run on its own arrow: raw API runs (all arrows) + every legacy run.
+      const merged = levelStandings?.[level.id] ?? [];
+      const raw = rawLevelData?.[level.id] ?? [];
+      const wrArrow = merged[0]?.arrow_name;
+      const legacy = (legacyRuns ?? [])
+        .filter((r) => r.levelId === level.id)
+        .map((r) => ({ username: r.username, completion_time: r.completionTime, arrow_name: r.arrow_name || r.arrowId || wrArrow || "Narrow Arrow" }));
+      const board = [...raw, ...merged, ...legacy];
+      if (board.length === 0) return;
       const levelConfig = rankConfigs?.[level.id];
       const defaults = getLevelDefaultRanks(level.id, globalRankConfig || DEFAULT_RANKS);
       const levelChampion =
@@ -261,10 +280,11 @@ export function PlayerProfile({
           : defaults?.["Champion"]?.timeCutoff) ?? 0;
 
       ARROWS.forEach((arrow) => {
-        const runs = board.filter((r) => r.arrow_name === arrow);
+        // The overall WR also counts as the category WR for its arrow.
+        const runs = board.filter((r) => r.arrow_name === arrow && r.completion_time > 0);
         if (runs.length === 0) return;
-        const best = runs.reduce((a, b) => (a.completion_time <= b.completion_time ? a : b));
-        if (best.username?.toLowerCase() === me) cwr += 1;
+        const bestTime = Math.min(...runs.map((r) => r.completion_time));
+        if (runs.some((r) => r.completion_time <= bestTime + 0.0005 && r.username?.toLowerCase() === me)) cwr += 1;
 
         const mine = runs.filter((r) => r.username?.toLowerCase() === me);
         if (mine.length === 0) return;
@@ -275,7 +295,7 @@ export function PlayerProfile({
     });
 
     return { cwr, champions, max };
-  }, [levels, levelStandings, rankConfigs, globalRankConfig, stats.username]);
+  }, [levels, levelStandings, rawLevelData, legacyRuns, rankConfigs, globalRankConfig, stats.username]);
 
 
 

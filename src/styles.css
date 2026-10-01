@@ -232,3 +232,22 @@
 [data-tone="light"] .divide-white\/5 > * + * {
   border-color: rgb(23 22 26 / 0.1);
 }
+
+/* Global polish */
+html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body { font-feature-settings: "ss01", "cv11"; }
+.font-mono, td, .tabular { font-variant-numeric: tabular-nums; }
+::selection { background: color-mix(in oklab, var(--app-accent, #a78bfa) 35%, transparent); }
+* { scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--app-accent, #888) 40%, transparent) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--app-accent, #888) 40%, transparent); border-radius: 999px; }
+::-webkit-scrollbar-track { background: transparent; }
+[data-slot="card"] {
+  backdrop-filter: blur(10px);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 10px 30px -18px rgb(0 0 0 / 0.6);
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+[data-slot="card"]:hover { box-shadow: 0 1px 0 rgb(255 255 255 / 0.06) inset, 0 16px 40px -20px color-mix(in oklab, var(--app-accent, #000) 45%, transparent); }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--app-accent, currentColor); outline-offset: 2px; }
+tbody tr { transition: background-color .15s ease; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
