@@ -9,55 +9,30 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as ApiAllLeaderboardsRouteImport } from './routes/api/all-leaderboards'
-import { Route as ApiDailySkinsRouteImport } from './routes/api/daily-skins'
-import { Route as ApiOfficialCreatorsRouteImport } from './routes/api/official-creators'
-import { Route as ApiProfilesRouteImport } from './routes/api/profiles'
-import { Route as ApiPublishedLevelsRouteImport } from './routes/api/published-levels'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
-import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
-import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-details.$levelId'
+import { Route as ApiPublishedLevelsRouteImport } from './routes/api/published-levels'
+import { Route as ApiProfilesRouteImport } from './routes/api/profiles'
+import { Route as ApiOfficialCreatorsRouteImport } from './routes/api/official-creators'
+import { Route as ApiDailySkinsRouteImport } from './routes/api/daily-skins'
+import { Route as ApiAllLeaderboardsRouteImport } from './routes/api/all-leaderboards'
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
-import { Route as ApiPacksSlugRouteImport } from './routes/api/packs.$slug'
-import { Route as ApiPublicCategoryWrCheckRouteImport } from './routes/api/public/category-wr-check'
-import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
 import { Route as ApiUserUsernameRouteImport } from './routes/api/user.$username'
+import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
+import { Route as ApiPublicCategoryWrCheckRouteImport } from './routes/api/public/category-wr-check'
+import { Route as ApiPacksSlugRouteImport } from './routes/api/packs.$slug'
+import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-details.$levelId'
+import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAllLeaderboardsRoute = ApiAllLeaderboardsRouteImport.update({
-  id: '/api/all-leaderboards',
-  path: '/api/all-leaderboards',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDailySkinsRoute = ApiDailySkinsRouteImport.update({
-  id: '/api/daily-skins',
-  path: '/api/daily-skins',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiOfficialCreatorsRoute = ApiOfficialCreatorsRouteImport.update({
-  id: '/api/official-creators',
-  path: '/api/official-creators',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProfilesRoute = ApiProfilesRouteImport.update({
-  id: '/api/profiles',
-  path: '/api/profiles',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublishedLevelsRoute = ApiPublishedLevelsRouteImport.update({
-  id: '/api/published-levels',
-  path: '/api/published-levels',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiStartupDataRoute = ApiStartupDataRouteImport.update({
@@ -65,14 +40,29 @@ const ApiStartupDataRoute = ApiStartupDataRouteImport.update({
   path: '/api/startup-data',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiLeaderboardLevelRoute = ApiLeaderboardLevelRouteImport.update({
-  id: '/api/leaderboard/$level',
-  path: '/api/leaderboard/$level',
+const ApiPublishedLevelsRoute = ApiPublishedLevelsRouteImport.update({
+  id: '/api/published-levels',
+  path: '/api/published-levels',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiLevelDetailsLevelIdRoute = ApiLevelDetailsLevelIdRouteImport.update({
-  id: '/api/level-details/$levelId',
-  path: '/api/level-details/$levelId',
+const ApiProfilesRoute = ApiProfilesRouteImport.update({
+  id: '/api/profiles',
+  path: '/api/profiles',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOfficialCreatorsRoute = ApiOfficialCreatorsRouteImport.update({
+  id: '/api/official-creators',
+  path: '/api/official-creators',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDailySkinsRoute = ApiDailySkinsRouteImport.update({
+  id: '/api/daily-skins',
+  path: '/api/daily-skins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAllLeaderboardsRoute = ApiAllLeaderboardsRouteImport.update({
+  id: '/api/all-leaderboards',
+  path: '/api/all-leaderboards',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPacksIndexRoute = ApiPacksIndexRouteImport.update({
@@ -80,9 +70,14 @@ const ApiPacksIndexRoute = ApiPacksIndexRouteImport.update({
   path: '/api/packs/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPacksSlugRoute = ApiPacksSlugRouteImport.update({
-  id: '/api/packs/$slug',
-  path: '/api/packs/$slug',
+const ApiUserUsernameRoute = ApiUserUsernameRouteImport.update({
+  id: '/api/user/$username',
+  path: '/api/user/$username',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRunsRunIdRoute = ApiRunsRunIdRouteImport.update({
+  id: '/api/runs/$runId',
+  path: '/api/runs/$runId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicCategoryWrCheckRoute =
@@ -91,14 +86,19 @@ const ApiPublicCategoryWrCheckRoute =
     path: '/api/public/category-wr-check',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiRunsRunIdRoute = ApiRunsRunIdRouteImport.update({
-  id: '/api/runs/$runId',
-  path: '/api/runs/$runId',
+const ApiPacksSlugRoute = ApiPacksSlugRouteImport.update({
+  id: '/api/packs/$slug',
+  path: '/api/packs/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiUserUsernameRoute = ApiUserUsernameRouteImport.update({
-  id: '/api/user/$username',
-  path: '/api/user/$username',
+const ApiLevelDetailsLevelIdRoute = ApiLevelDetailsLevelIdRouteImport.update({
+  id: '/api/level-details/$levelId',
+  path: '/api/level-details/$levelId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiLeaderboardLevelRoute = ApiLeaderboardLevelRouteImport.update({
+  id: '/api/leaderboard/$level',
+  path: '/api/leaderboard/$level',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -228,13 +228,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
@@ -242,39 +235,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/all-leaderboards': {
-      id: '/api/all-leaderboards'
-      path: '/api/all-leaderboards'
-      fullPath: '/api/all-leaderboards'
-      preLoaderRoute: typeof ApiAllLeaderboardsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/daily-skins': {
-      id: '/api/daily-skins'
-      path: '/api/daily-skins'
-      fullPath: '/api/daily-skins'
-      preLoaderRoute: typeof ApiDailySkinsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/official-creators': {
-      id: '/api/official-creators'
-      path: '/api/official-creators'
-      fullPath: '/api/official-creators'
-      preLoaderRoute: typeof ApiOfficialCreatorsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/profiles': {
-      id: '/api/profiles'
-      path: '/api/profiles'
-      fullPath: '/api/profiles'
-      preLoaderRoute: typeof ApiProfilesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/published-levels': {
-      id: '/api/published-levels'
-      path: '/api/published-levels'
-      fullPath: '/api/published-levels'
-      preLoaderRoute: typeof ApiPublishedLevelsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/startup-data': {
@@ -284,18 +249,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStartupDataRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/leaderboard/$level': {
-      id: '/api/leaderboard/$level'
-      path: '/api/leaderboard/$level'
-      fullPath: '/api/leaderboard/$level'
-      preLoaderRoute: typeof ApiLeaderboardLevelRouteImport
+    '/api/published-levels': {
+      id: '/api/published-levels'
+      path: '/api/published-levels'
+      fullPath: '/api/published-levels'
+      preLoaderRoute: typeof ApiPublishedLevelsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/level-details/$levelId': {
-      id: '/api/level-details/$levelId'
-      path: '/api/level-details/$levelId'
-      fullPath: '/api/level-details/$levelId'
-      preLoaderRoute: typeof ApiLevelDetailsLevelIdRouteImport
+    '/api/profiles': {
+      id: '/api/profiles'
+      path: '/api/profiles'
+      fullPath: '/api/profiles'
+      preLoaderRoute: typeof ApiProfilesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/official-creators': {
+      id: '/api/official-creators'
+      path: '/api/official-creators'
+      fullPath: '/api/official-creators'
+      preLoaderRoute: typeof ApiOfficialCreatorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/daily-skins': {
+      id: '/api/daily-skins'
+      path: '/api/daily-skins'
+      fullPath: '/api/daily-skins'
+      preLoaderRoute: typeof ApiDailySkinsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/all-leaderboards': {
+      id: '/api/all-leaderboards'
+      path: '/api/all-leaderboards'
+      fullPath: '/api/all-leaderboards'
+      preLoaderRoute: typeof ApiAllLeaderboardsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/packs/': {
@@ -305,18 +291,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPacksIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/packs/$slug': {
-      id: '/api/packs/$slug'
-      path: '/api/packs/$slug'
-      fullPath: '/api/packs/$slug'
-      preLoaderRoute: typeof ApiPacksSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/category-wr-check': {
-      id: '/api/public/category-wr-check'
-      path: '/api/public/category-wr-check'
-      fullPath: '/api/public/category-wr-check'
-      preLoaderRoute: typeof ApiPublicCategoryWrCheckRouteImport
+    '/api/user/$username': {
+      id: '/api/user/$username'
+      path: '/api/user/$username'
+      fullPath: '/api/user/$username'
+      preLoaderRoute: typeof ApiUserUsernameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/runs/$runId': {
@@ -326,11 +305,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRunsRunIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/user/$username': {
-      id: '/api/user/$username'
-      path: '/api/user/$username'
-      fullPath: '/api/user/$username'
-      preLoaderRoute: typeof ApiUserUsernameRouteImport
+    '/api/public/category-wr-check': {
+      id: '/api/public/category-wr-check'
+      path: '/api/public/category-wr-check'
+      fullPath: '/api/public/category-wr-check'
+      preLoaderRoute: typeof ApiPublicCategoryWrCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/packs/$slug': {
+      id: '/api/packs/$slug'
+      path: '/api/packs/$slug'
+      fullPath: '/api/packs/$slug'
+      preLoaderRoute: typeof ApiPacksSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/level-details/$levelId': {
+      id: '/api/level-details/$levelId'
+      path: '/api/level-details/$levelId'
+      fullPath: '/api/level-details/$levelId'
+      preLoaderRoute: typeof ApiLevelDetailsLevelIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/leaderboard/$level': {
+      id: '/api/leaderboard/$level'
+      path: '/api/leaderboard/$level'
+      fullPath: '/api/leaderboard/$level'
+      preLoaderRoute: typeof ApiLeaderboardLevelRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
