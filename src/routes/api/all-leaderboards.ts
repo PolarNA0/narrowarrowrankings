@@ -24,6 +24,29 @@ export const Route = createFileRoute("/api/all-leaderboards")({
             headers: { "cache-control": "public, max-age=120, stale-while-revalidate=900" },
           });
         }
+        // Serve stale data instantly and refresh in the background.
+        if (cached && complete && !refreshing[key]) {
+          refreshing[key] = build(deep, key).finally(() => delete refreshing[key]);
+          return Response.json(cached.payload, {
+            headers: { "cache-control": "public, max-age=60, stale-while-revalidate=900" },
+          });
+        }
+        const payload = await (refreshing[key] ?? build(deep, key));
+        return Response.json(payload, {
+          headers: { "cache-control": "public, max-age=120, stale-while-revalidate=900" },
+        });
+      },
+    },
+  },
+});
+
+const refreshing: Record<string, Promise<unknown> | undefined> = {};
+
+async function build(deep: boolean, key: string) {
+  {
+    {
+      {
+
 
         const boards: Record<string, BoardEntry[]> = {};
 
