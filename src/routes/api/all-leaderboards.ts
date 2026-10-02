@@ -43,34 +43,17 @@ export const Route = createFileRoute("/api/all-leaderboards")({
 const refreshing: Record<string, Promise<unknown> | undefined> = {};
 
 async function build(deep: boolean, key: string) {
-  {
-    {
-      {
-
-
-        const boards: Record<string, BoardEntry[]> = {};
-
-        await Promise.all(
-          LEVELS.map(async (level) => {
-            try {
-              boards[level.id] = await fetchLevelBoard(level.id, { deep });
-            } catch {
-              /* skip; the client retries individual levels */
-            }
-          }),
-        );
-
-        const payload = { boards, loaded: Object.keys(boards).length, total: LEVELS.length };
-        // Partial results are cached briefly too, so a slow upstream doesn't
-        // make every visitor refetch all 64 boards from scratch.
-        memo[key] = { at: Date.now(), payload };
-
-        return Response.json(payload, {
-          headers: { "cache-control": "public, max-age=120, stale-while-revalidate=900" },
-        });
-
-      },
-    },
-  },
-});
-
+  const boards: Record<string, BoardEntry[]> = {};
+  await Promise.all(
+    LEVELS.map(async (level) => {
+      try {
+        boards[level.id] = await fetchLevelBoard(level.id, { deep });
+      } catch {
+        /* skip; the client retries individual levels */
+      }
+    }),
+  );
+  const payload = { boards, loaded: Object.keys(boards).length, total: LEVELS.length };
+  memo[key] = { at: Date.now(), payload };
+  return payload;
+}
