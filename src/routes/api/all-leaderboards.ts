@@ -43,16 +43,26 @@ export const Route = createFileRoute("/api/all-leaderboards")({
 const refreshing: Record<string, Promise<unknown> | undefined> = {};
 
 async function build(deep: boolean, key: string) {
+  const previous = (memo[key]?.payload as { boards?: Record<string, BoardEntry[]> } | undefined)?.boards ?? {};
   const boards: Record<string, BoardEntry[]> = {};
-  await Promise.all(
-    LEVELS.map(async (level) => {
-      try {
-        boards[level.id] = await fetchLevelBoard(level.id, { deep });
-      } catch {
-        /* skip; the client retries individual levels */
-      }
-    }),
-  );
+  const attempt = async (levelId: string) => {
+    try {
+      const entries = await fetchLevelBoard(levelId, { deep });
+      if (entries.length > 0) boards[levelId] = entries;
+    } catch {
+      /* retried below */
+    }
+  };
+  await Promise.all(LEVELS.map((level) => attempt(level.id)));
+  // Throttled boards come back empty — retry them once, then keep the last good copy.
+  const missing = LEVELS.filter((l) => !boards[l.id]);
+  if (missing.length) {
+    await new Promise((r) => setTimeout(r, 800));
+    await Promise.all(missing.map((l) => attempt(l.id)));
+  }
+  for (const level of LEVELS) {
+    if (!boards[level.id] && previous[level.id]?.length) boards[level.id] = previous[level.id];
+  }
   const payload = { boards, loaded: Object.keys(boards).length, total: LEVELS.length };
   memo[key] = { at: Date.now(), payload };
   return payload;

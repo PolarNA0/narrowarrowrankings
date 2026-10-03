@@ -838,6 +838,28 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [legacyRuns, allUsernames, nameChanges]);
 
+  // Overall rank cutoffs = sum of every level's rank cutoff (each level has times now).
+  const effectiveOverallRankConfig = useMemo(() => {
+    const result: Record<string, RankInfo> = {};
+    const order = Array.isArray(RANK_ORDER) ? RANK_ORDER : [];
+    let usable = true;
+    order.forEach((rankId) => {
+      let sum = 0;
+      let counted = 0;
+      dynamicLevels.forEach((level) => {
+        const cutoff = Number(allRankConfigs[level.id]?.ranks?.[rankId]?.timeCutoff ?? 0);
+        if (cutoff > 0) {
+          sum += cutoff;
+          counted += 1;
+        }
+      });
+      if (counted < dynamicLevels.length * 0.9) usable = false;
+      const base = overallRankConfig[rankId] || DEFAULT_OVERALL_RANKS[rankId];
+      result[rankId] = { ...base, timeCutoff: sum };
+    });
+    return usable ? result : overallRankConfig;
+  }, [allRankConfigs, dynamicLevels, overallRankConfig]);
+
   const averageLeaderboard = useMemo(() => {
     if (Object.keys(processedAllLevelsData).length === 0) return [];
 
@@ -884,7 +906,7 @@ export default function App() {
     return result.map(p => {
       const getScaledOverallRank = (totalTime: number) => {
         const safeOrder = RANK_ORDER || [];
-        const safeConfig = overallRankConfig || DEFAULT_OVERALL_RANKS || {};
+        const safeConfig = effectiveOverallRankConfig || DEFAULT_OVERALL_RANKS || {};
         for (const rankId of safeOrder) {
           const rank = safeConfig[rankId];
           if (rank) {
@@ -902,7 +924,7 @@ export default function App() {
         overallRankId: getScaledOverallRank(p.totalTime)
       };
     });
-  }, [processedAllLevelsData, allUsernames, allMapsPlayedFilter, overallRankConfig, dynamicLevels, selectedAveragePack]);
+  }, [processedAllLevelsData, allUsernames, allMapsPlayedFilter, effectiveOverallRankConfig, dynamicLevels, selectedAveragePack]);
 
   const selectedPlayerMedals = useMemo(() => {
     if (!selectedPlayer) return undefined;
@@ -1480,7 +1502,7 @@ export default function App() {
               packs={dynamicPacks}
               rankConfigs={allRankConfigs}
               globalRankConfig={globalRankConfig}
-              overallRankConfig={overallRankConfig}
+              overallRankConfig={effectiveOverallRankConfig}
               packOverallConfigs={allPackOverallConfigs}
               onBack={() => setView('leaderboard')}
               onCompare={(u) => {
@@ -1684,7 +1706,7 @@ export default function App() {
                             <TableCell className="text-center font-mono text-[#6366F1] whitespace-nowrap">{formatTime(p.totalTime, 'minutes')}</TableCell>
                             <TableCell className="text-center">
                               {(() => {
-                                const rankInfo = overallRankConfig[p.overallRankId] || DEFAULT_OVERALL_RANKS[p.overallRankId];
+                                const rankInfo = effectiveOverallRankConfig[p.overallRankId] || DEFAULT_OVERALL_RANKS[p.overallRankId];
                                 return (
                                   <Badge variant="outline" className={cn("text-[10px] font-bold uppercase whitespace-nowrap", rankInfo.color, rankInfo.bgColor, rankInfo.borderColor)}>
                                     {rankInfo.name}
