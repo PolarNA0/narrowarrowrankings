@@ -906,7 +906,7 @@ export default function App() {
     return result.map(p => {
       const getScaledOverallRank = (totalTime: number) => {
         const safeOrder = RANK_ORDER || [];
-        const safeConfig = overallRankConfig || DEFAULT_OVERALL_RANKS || {};
+        const safeConfig = effectiveOverallRankConfig || DEFAULT_OVERALL_RANKS || {};
         for (const rankId of safeOrder) {
           const rank = safeConfig[rankId];
           if (rank) {
@@ -924,7 +924,7 @@ export default function App() {
         overallRankId: getScaledOverallRank(p.totalTime)
       };
     });
-  }, [processedAllLevelsData, allUsernames, allMapsPlayedFilter, overallRankConfig, dynamicLevels, selectedAveragePack]);
+  }, [processedAllLevelsData, allUsernames, allMapsPlayedFilter, effectiveOverallRankConfig, dynamicLevels, selectedAveragePack]);
 
   const selectedPlayerMedals = useMemo(() => {
     if (!selectedPlayer) return undefined;
@@ -1502,7 +1502,7 @@ export default function App() {
               packs={dynamicPacks}
               rankConfigs={allRankConfigs}
               globalRankConfig={globalRankConfig}
-              overallRankConfig={overallRankConfig}
+              overallRankConfig={effectiveOverallRankConfig}
               packOverallConfigs={allPackOverallConfigs}
               onBack={() => setView('leaderboard')}
               onCompare={(u) => {
@@ -1706,7 +1706,7 @@ export default function App() {
                             <TableCell className="text-center font-mono text-[#6366F1] whitespace-nowrap">{formatTime(p.totalTime, 'minutes')}</TableCell>
                             <TableCell className="text-center">
                               {(() => {
-                                const rankInfo = overallRankConfig[p.overallRankId] || DEFAULT_OVERALL_RANKS[p.overallRankId];
+                                const rankInfo = effectiveOverallRankConfig[p.overallRankId] || DEFAULT_OVERALL_RANKS[p.overallRankId];
                                 return (
                                   <Badge variant="outline" className={cn("text-[10px] font-bold uppercase whitespace-nowrap", rankInfo.color, rankInfo.bgColor, rankInfo.borderColor)}>
                                     {rankInfo.name}
