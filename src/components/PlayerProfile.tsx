@@ -235,7 +235,8 @@ export function PlayerProfile({
     const safeOverallConfig = overallRankConfig || {};
     const isOverallConfigured = Object.values(safeOverallConfig).some(r => r.timeCutoff > 0);
     
-    if (isOverallConfigured) {
+    // Overall rank is the sum of every level's rank time, so it needs every level completed.
+    if (isOverallConfigured && levelEntries.length >= levels.length) {
       for (const rankId of safeRankOrder) {
         const rInfo = safeOverallConfig[rankId];
         if (rInfo && rInfo.timeCutoff > 0 && totalTime <= rInfo.timeCutoff) {
