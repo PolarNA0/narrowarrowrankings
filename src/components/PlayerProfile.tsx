@@ -281,7 +281,8 @@ export function PlayerProfile({
 
       ARROWS.forEach((arrow) => {
         // The overall WR also counts as the category WR for its arrow.
-        const runs = board.filter((r) => r.arrow_name === arrow && r.completion_time > 0);
+        // Upstream mixes "Narrow Arrow" and "narrow arrow" — compare case-insensitively.
+        const runs = board.filter((r) => (r.arrow_name || "").toLowerCase() === arrow.toLowerCase() && r.completion_time > 0);
         if (runs.length === 0) return;
         const bestTime = Math.min(...runs.map((r) => r.completion_time));
         if (runs.some((r) => r.completion_time <= bestTime + 0.0005 && r.username?.toLowerCase() === me)) cwr += 1;
