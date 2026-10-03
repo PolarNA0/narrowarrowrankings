@@ -838,6 +838,28 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [legacyRuns, allUsernames, nameChanges]);
 
+  // Overall rank cutoffs = sum of every level's rank cutoff (each level has times now).
+  const effectiveOverallRankConfig = useMemo(() => {
+    const result: Record<string, RankInfo> = {};
+    const order = Array.isArray(RANK_ORDER) ? RANK_ORDER : [];
+    let usable = true;
+    order.forEach((rankId) => {
+      let sum = 0;
+      let counted = 0;
+      dynamicLevels.forEach((level) => {
+        const cutoff = Number(allRankConfigs[level.id]?.ranks?.[rankId]?.timeCutoff ?? 0);
+        if (cutoff > 0) {
+          sum += cutoff;
+          counted += 1;
+        }
+      });
+      if (counted < dynamicLevels.length * 0.9) usable = false;
+      const base = overallRankConfig[rankId] || DEFAULT_OVERALL_RANKS[rankId];
+      result[rankId] = { ...base, timeCutoff: sum };
+    });
+    return usable ? result : overallRankConfig;
+  }, [allRankConfigs, dynamicLevels, overallRankConfig]);
+
   const averageLeaderboard = useMemo(() => {
     if (Object.keys(processedAllLevelsData).length === 0) return [];
 
