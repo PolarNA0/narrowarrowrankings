@@ -53,12 +53,12 @@ async function build(deep: boolean, key: string) {
       /* retried below */
     }
   };
-  await Promise.all(LEVELS.map((level) => attempt(level.id)));
-  // Throttled boards come back empty — retry them once, then keep the last good copy.
+  const deadline = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // Never block the page longer than ~15s; late boards fill in on the next request.
+  await Promise.race([Promise.all(LEVELS.map((level) => attempt(level.id))), deadline(15000)]);
   const missing = LEVELS.filter((l) => !boards[l.id]);
-  if (missing.length) {
-    await new Promise((r) => setTimeout(r, 800));
-    await Promise.all(missing.map((l) => attempt(l.id)));
+  if (missing.length && missing.length < LEVELS.length) {
+    await Promise.race([Promise.all(missing.map((l) => attempt(l.id))), deadline(6000)]);
   }
   for (const level of LEVELS) {
     if (!boards[level.id] && previous[level.id]?.length) boards[level.id] = previous[level.id];
