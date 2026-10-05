@@ -2578,7 +2578,20 @@ export default function App() {
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, scale: 0.95 }}
                               transition={{ duration: 0.2, delay: Math.min(index * 0.03, 0.5) }}
-                              className="border-white/5 hover:bg-white/[0.03] transition-colors group"
+                              className="border-white/5 hover:brightness-125 transition-all group"
+                              style={(() => {
+                                if (!hasLevelRanks) return undefined;
+                                const rankId = assignRank(entry, activeRankConfig, RANK_ORDER);
+                                const info = activeRankConfig[rankId] || DEFAULT_RANKS[rankId];
+                                const hex = (DEFAULT_RANKS[rankId]?.color || info?.color || "").match(/#[0-9a-fA-F]{6}/)?.[0];
+                                if (!hex) return undefined;
+                                const strong = rankId === "Champion" || rankId === "Elite";
+                                return {
+                                  background: `linear-gradient(90deg, ${hex}${strong ? "55" : "33"} 0%, ${hex}${strong ? "22" : "12"} 45%, transparent 100%)`,
+                                  boxShadow: `inset 4px 0 0 ${hex}`,
+                                };
+                              })()}
+                              title={hasLevelRanks ? assignRank(entry, activeRankConfig, RANK_ORDER) : undefined}
                             >
                               <TableCell className="text-center font-mono text-slate-500 group-hover:text-white transition-colors">
                                 {actualRank}
@@ -2588,23 +2601,6 @@ export default function App() {
                                 onClick={() => handlePlayerClick(entry.username)}
                               >
                                 <div className="flex items-center gap-2 sm:gap-3">
-                                  {hasLevelRanks && (() => {
-                                    const rankId = assignRank(entry, activeRankConfig, RANK_ORDER);
-                                    const rankInfo = activeRankConfig[rankId] || DEFAULT_RANKS[rankId];
-                                    return (
-                                      <Badge 
-                                        variant="outline" 
-                                        className={cn(
-                                          "font-bold text-[9px] sm:text-[10px] uppercase tracking-tighter px-1.5 sm:px-2 py-0.5 shrink-0",
-                                          rankInfo.bgColor,
-                                          rankInfo.color,
-                                          rankInfo.borderColor
-                                        )}
-                                      >
-                                        {rankInfo.name}
-                                      </Badge>
-                                    );
-                                  })()}
                                   <ArrowIcon name={entry.arrow_name} className={cn(
                                     "w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0",
                                     entry.arrow_name.toLowerCase().includes("energy") ? "text-[#22c55e]" :
