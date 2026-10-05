@@ -63,11 +63,14 @@ async function fetchWithRetry(url: string): Promise<unknown> {
     if (response.ok) return response.json();
     lastStatus = response.status;
     if (response.status !== 429 && response.status < 500) break;
-    const retryAfter = Number(response.headers.get("retry-after"));
-    const delay = Number.isFinite(retryAfter) && retryAfter > 0
-      ? retryAfter * 1000
-      : 300 * 2 ** attempt + Math.random() * 200;
-    await sleep(Math.min(delay, 3000));
+    const reset = Number(response.headers.get("ratelimit-reset") ?? response.headers.get("retry-after"));
+    if (response.status === 429 && Number.isFinite(reset) && reset > 0) {
+      pauseAll(reset * 1000);
+      if (reset > 20) break; // don't hold requests for a whole window; serve stale instead
+      await sleep(reset * 1000);
+    } else {
+      await sleep(300 * 2 ** attempt + Math.random() * 200);
+    }
   }
   throw Object.assign(new Error(`Upstream request failed with status ${lastStatus}`), {
     status: lastStatus,
