@@ -90,16 +90,16 @@ export const LEVELS: LevelInfo[] = [
 export const DEFAULT_RANKS: Record<string, RankInfo> = {
   "Champion": {
     name: "Champion",
-    color: "text-[#D300CF]",
-    bgColor: "bg-[#D300CF]/10",
-    borderColor: "border-[#D300CF]/50",
+    color: "text-[#FF1F8E]",
+    bgColor: "bg-[#FF1F8E]/10",
+    borderColor: "border-[#FF1F8E]/50",
     timeCutoff: 10.0,
   },
   "Elite": {
     name: "Elite",
-    color: "text-[#A804D6]",
-    bgColor: "bg-[#A804D6]/10",
-    borderColor: "border-[#A804D6]/50",
+    color: "text-[#9D4EDD]",
+    bgColor: "bg-[#9D4EDD]/10",
+    borderColor: "border-[#9D4EDD]/50",
     timeCutoff: 15.0,
   },
   "Legend": {
