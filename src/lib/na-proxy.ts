@@ -40,18 +40,26 @@ function sleep(ms: number) {
 }
 
 async function fetchWithRetry(url: string): Promise<unknown> {
-  const MAX_ATTEMPTS = 7;
+  const MAX_ATTEMPTS = 4;
   let lastStatus = 0;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const response = await fetch(url);
+    let response: Response;
+    try {
+      // Hung upstream sockets used to stall whole bulk loads for 90s+.
+      response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    } catch {
+      lastStatus = 504;
+      await sleep(300 * 2 ** attempt);
+      continue;
+    }
     if (response.ok) return response.json();
     lastStatus = response.status;
     if (response.status !== 429 && response.status < 500) break;
     const retryAfter = Number(response.headers.get("retry-after"));
     const delay = Number.isFinite(retryAfter) && retryAfter > 0
       ? retryAfter * 1000
-      : 400 * 2 ** attempt + Math.random() * 250;
-    await sleep(Math.min(delay, 6000));
+      : 300 * 2 ** attempt + Math.random() * 200;
+    await sleep(Math.min(delay, 3000));
   }
   throw Object.assign(new Error(`Upstream request failed with status ${lastStatus}`), {
     status: lastStatus,
