@@ -1,69 +1,65 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { fetchLevelBoard, type BoardEntry } from "@/lib/leaderboard-source";
+import { readSnapshot, writeSnapshot, type BoardSnapshot } from "@/lib/board-snapshot.server";
 import { LEVELS } from "@/constants";
 
-const CACHE_TTL = 3 * 60 * 1000;
-const PARTIAL_TTL = 20 * 1000;
+// The game API allows ~120 requests/minute, and a full deep load needs 216,
+// so boards are served from a saved snapshot and refreshed in the background.
+const FRESH_MS = 4 * 60 * 1000;
 
-const memo: Record<string, { at: number; payload: unknown }> = {};
+let memo: BoardSnapshot | null = null;
+let refreshing: Promise<BoardSnapshot> | null = null;
 
-/** One request that returns every official leaderboard, warmed server-side. */
+const headers = { "cache-control": "public, max-age=60, stale-while-revalidate=900" };
+
 export const Route = createFileRoute("/api/all-leaderboards")({
   server: {
     handlers: {
-      GET: async ({ request }) => {
-        const deep = new URL(request.url).searchParams.get("deep") === "1";
-        const key = deep ? "deep" : "flat";
-        const cached = memo[key];
-        const complete =
-          cached && (cached.payload as { loaded: number; total: number }).loaded ===
-            (cached.payload as { total: number }).total;
-        const ttl = complete ? CACHE_TTL : PARTIAL_TTL;
-        if (cached && Date.now() - cached.at < ttl) {
-          return Response.json(cached.payload, {
-            headers: { "cache-control": "public, max-age=120, stale-while-revalidate=900" },
+      GET: async () => {
+        if (!memo) memo = await readSnapshot();
+        const stale = !memo || Date.now() - memo.at > FRESH_MS || memo.loaded < memo.total;
+        if (stale && !refreshing) {
+          refreshing = build().finally(() => {
+            refreshing = null;
           });
         }
-        // Serve stale data instantly and refresh in the background.
-        if (cached && complete && !refreshing[key]) {
-          refreshing[key] = build(deep, key).finally(() => delete refreshing[key]);
-          return Response.json(cached.payload, {
-            headers: { "cache-control": "public, max-age=60, stale-while-revalidate=900" },
-          });
-        }
-        const payload = await (refreshing[key] ?? build(deep, key));
-        return Response.json(payload, {
-          headers: { "cache-control": "public, max-age=120, stale-while-revalidate=900" },
+        if (memo && memo.loaded > 0) return Response.json(memo, { headers });
+        // Nothing saved yet — wait (bounded) for the first build.
+        const first = await Promise.race([
+          refreshing!,
+          new Promise<null>((r) => setTimeout(() => r(null), 25000)),
+        ]);
+        return Response.json(first ?? { boards: {}, loaded: 0, total: LEVELS.length, at: 0 }, {
+          headers: { "cache-control": "no-store" },
         });
       },
     },
   },
 });
 
-const refreshing: Record<string, Promise<unknown> | undefined> = {};
-
-async function build(deep: boolean, key: string) {
-  const previous = (memo[key]?.payload as { boards?: Record<string, BoardEntry[]> } | undefined)?.boards ?? {};
+async function build(): Promise<BoardSnapshot> {
+  const previous = memo?.boards ?? {};
   const boards: Record<string, BoardEntry[]> = {};
-  const attempt = async (levelId: string) => {
-    try {
-      const entries = await fetchLevelBoard(levelId, { deep });
-      if (entries.length > 0) boards[levelId] = entries;
-    } catch {
-      /* retried below */
-    }
-  };
-  const deadline = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  // Never block the page longer than ~15s; late boards fill in on the next request.
-  await Promise.race([Promise.all(LEVELS.map((level) => attempt(level.id))), deadline(15000)]);
-  const missing = LEVELS.filter((l) => !boards[l.id]);
-  if (missing.length && missing.length < LEVELS.length) {
-    await Promise.race([Promise.all(missing.map((l) => attempt(l.id))), deadline(6000)]);
-  }
+  await Promise.all(
+    LEVELS.map(async (level) => {
+      try {
+        const entries = await fetchLevelBoard(level.id, { deep: true });
+        if (entries.length > 0) boards[level.id] = entries;
+      } catch {
+        /* keep previous copy */
+      }
+    }),
+  );
   for (const level of LEVELS) {
     if (!boards[level.id] && previous[level.id]?.length) boards[level.id] = previous[level.id];
   }
-  const payload = { boards, loaded: Object.keys(boards).length, total: LEVELS.length };
-  memo[key] = { at: Date.now(), payload };
-  return payload;
+  const snap: BoardSnapshot = {
+    boards,
+    loaded: Object.keys(boards).length,
+    total: LEVELS.length,
+    at: Date.now(),
+  };
+  memo = snap;
+  await writeSnapshot(snap);
+  return snap;
 }
