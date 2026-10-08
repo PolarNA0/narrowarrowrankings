@@ -262,6 +262,9 @@ export function PlayerProfile({
     let cwr = 0;
     let champions = 0;
     const max = levels.length * ARROWS.length;
+    let arrowTotal = 0;
+    let arrowCount = 0;
+    const details: { levelId: string; levelName: string; arrow: string; mine: number | null; best: number | null; holder: string; held: boolean }[] = [];
 
     levels.forEach((level) => {
       // Every run on its own arrow: raw API runs (all arrows) + every legacy run.
@@ -281,22 +284,24 @@ export function PlayerProfile({
           : defaults?.["Champion"]?.timeCutoff) ?? 0;
 
       ARROWS.forEach((arrow) => {
-        // The overall WR also counts as the category WR for its arrow.
-        // Upstream mixes "Narrow Arrow" and "narrow arrow" — compare case-insensitively.
         const runs = board.filter((r) => (r.arrow_name || "").toLowerCase() === arrow.toLowerCase() && r.completion_time > 0);
-        if (runs.length === 0) return;
-        const bestTime = Math.min(...runs.map((r) => r.completion_time));
-        if (runs.some((r) => r.completion_time <= bestTime + 0.0005 && r.username?.toLowerCase() === me)) cwr += 1;
-
+        const best = runs.length ? runs.reduce((a, b) => (b.completion_time < a.completion_time ? b : a)) : null;
         const mine = runs.filter((r) => r.username?.toLowerCase() === me);
-        if (mine.length === 0) return;
-        const myBest = Math.min(...mine.map((r) => r.completion_time));
-        const cutoff = levelConfig?.arrowRanks?.[arrow]?.["Champion"] ?? levelChampion;
-        if (cutoff > 0 && myBest <= cutoff) champions += 1;
+        const myBest = mine.length ? Math.min(...mine.map((r) => r.completion_time)) : null;
+        const held = best != null && myBest != null && myBest <= best.completion_time + 0.0005;
+        if (held) cwr += 1;
+        if (myBest != null) {
+          arrowTotal += myBest;
+          arrowCount += 1;
+          const cutoff = levelConfig?.arrowRanks?.[arrow]?.["Champion"] ?? levelChampion;
+          if (cutoff > 0 && myBest <= cutoff) champions += 1;
+        }
+        details.push({ levelId: level.id, levelName: level.name, arrow, mine: myBest, best: best?.completion_time ?? null, holder: best?.username ?? "", held });
       });
     });
 
-    return { cwr, champions, max };
+    details.sort((a, b) => Number(b.held) - Number(a.held));
+    return { cwr, champions, max, arrowTotal, arrowCount, details };
   }, [levels, levelStandings, rawLevelData, legacyRuns, rankConfigs, globalRankConfig, stats.username]);
 
 
@@ -510,6 +515,8 @@ export function PlayerProfile({
         { label: "World Records", value: computedMedals?.first ?? 0, icon: Trophy, color: "text-yellow-400" },
         { label: "Category WRs", value: `${arrowAchievements.cwr} / ${arrowAchievements.max}`, icon: Award, color: "text-fuchsia-400" },
         { label: "Champion Ranks", value: `${arrowAchievements.champions} / ${arrowAchievements.max}`, icon: Crown, color: "text-amber-300" },
+        { label: `All-Arrow Total (${arrowAchievements.arrowCount}/${arrowAchievements.max})`, value: arrowAchievements.arrowCount ? formatTime(arrowAchievements.arrowTotal, 'minutes') : "N/A", icon: Clock, color: "text-sky-400" },
+
 
       ].map((stat, i) => (
           <Card key={i} className="bg-white/5 border-white/10 group hover:border-[var(--app-accent)]/30 transition-all duration-300">
@@ -541,6 +548,39 @@ export function PlayerProfile({
           </Card>
         ))}
       </div>
+
+      <details className="rounded-xl border border-white/10 bg-white/5 group/cwr">
+        <summary className="cursor-pointer select-none p-4 text-xs font-extrabold uppercase tracking-widest text-slate-300 flex items-center justify-between">
+          <span>Category WRs — {arrowAchievements.cwr} held / {arrowAchievements.max - arrowAchievements.cwr} missing</span>
+          <span className="text-slate-500 group-open/cwr:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div className="max-h-[480px] overflow-auto border-t border-white/10">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-background/95 text-slate-500 uppercase text-[10px]">
+              <tr>
+                <th className="text-left p-2">Level</th>
+                <th className="text-left p-2">Arrow</th>
+                <th className="text-right p-2">Your time</th>
+                <th className="text-right p-2">CWR</th>
+                <th className="text-right p-2">Gap</th>
+              </tr>
+            </thead>
+            <tbody>
+              {arrowAchievements.details.map((d) => (
+                <tr key={`${d.levelId}-${d.arrow}`} className={cn("border-t border-white/5", d.held ? "bg-fuchsia-500/10" : "")}>
+                  <td className="p-2 text-white">{d.held ? "✓ " : ""}{d.levelName}</td>
+                  <td className="p-2 text-slate-400">{d.arrow.replace(" Arrow", "")}</td>
+                  <td className="p-2 text-right font-mono text-white">{d.mine != null ? formatTime(d.mine) : "---"}</td>
+                  <td className="p-2 text-right font-mono text-slate-400">{d.best != null ? `${formatTime(d.best)}${d.held ? "" : ` (${d.holder})`}` : "---"}</td>
+                  <td className="p-2 text-right font-mono text-slate-500">{d.held ? "WR" : d.mine != null && d.best != null ? `+${(d.mine - d.best).toFixed(3)}` : "---"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+
 
       {loadingExtra && (
         <div className="space-y-4 animate-pulse">
