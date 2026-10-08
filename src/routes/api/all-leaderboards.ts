@@ -3,63 +3,74 @@ import { fetchLevelBoard, type BoardEntry } from "@/lib/leaderboard-source";
 import { readSnapshot, writeSnapshot, type BoardSnapshot } from "@/lib/board-snapshot.server";
 import { LEVELS } from "@/constants";
 
-// The game API allows ~120 requests/minute, and a full deep load needs 216,
-// so boards are served from a saved snapshot and refreshed in the background.
-const FRESH_MS = 4 * 60 * 1000;
+// The game API allows ~120 requests/minute and a full deep load needs 216.
+// Background work is killed once a Worker responds, so each request refreshes
+// a small batch of the stalest levels inline, then serves the saved snapshot.
+const LEVEL_FRESH_MS = 5 * 60 * 1000;
+const BATCH = 6; // 18 upstream requests per refresh
+const MIN_REFRESH_GAP = 15 * 1000;
 
-let memo: BoardSnapshot | null = null;
-let refreshing: Promise<BoardSnapshot> | null = null;
+type Snap = BoardSnapshot & { levelAt?: Record<string, number> };
 
-const headers = { "cache-control": "public, max-age=60, stale-while-revalidate=900" };
+let memo: Snap | null = null;
+let refreshing: Promise<void> | null = null;
+let lastRefresh = 0;
+
+const headers = { "cache-control": "public, max-age=30, stale-while-revalidate=300" };
 
 export const Route = createFileRoute("/api/all-leaderboards")({
   server: {
     handlers: {
       GET: async () => {
-        if (!memo) memo = await readSnapshot();
-        const stale = !memo || Date.now() - memo.at > FRESH_MS || memo.loaded < memo.total;
-        if (stale && !refreshing) {
-          refreshing = build().finally(() => {
+        if (!memo) memo = (await readSnapshot()) as Snap | null;
+        const now = Date.now();
+        if (!refreshing && now - lastRefresh > MIN_REFRESH_GAP) {
+          lastRefresh = now;
+          refreshing = refreshBatch().finally(() => {
             refreshing = null;
           });
         }
-        if (memo && memo.loaded > 0) return Response.json(memo, { headers });
-        // Nothing saved yet — wait (bounded) for the first build.
-        const first = await Promise.race([
-          refreshing!,
-          new Promise<null>((r) => setTimeout(() => r(null), 25000)),
-        ]);
-        return Response.json(first ?? { boards: {}, loaded: 0, total: LEVELS.length, at: 0 }, {
-          headers: { "cache-control": "no-store" },
-        });
+        // Await the bounded batch so it actually completes on the Worker.
+        if (refreshing) {
+          await Promise.race([refreshing, new Promise((r) => setTimeout(r, 20000))]);
+        }
+        const snap = memo ?? { boards: {}, loaded: 0, total: LEVELS.length, at: 0 };
+        return Response.json(snap, { headers: snap.loaded > 0 ? headers : { "cache-control": "no-store" } });
       },
     },
   },
 });
 
-async function build(): Promise<BoardSnapshot> {
-  const previous = memo?.boards ?? {};
-  const boards: Record<string, BoardEntry[]> = {};
+async function refreshBatch() {
+  const base: Snap = memo ?? { boards: {}, loaded: 0, total: LEVELS.length, at: 0, levelAt: {} };
+  const levelAt = { ...(base.levelAt ?? {}) };
+  const now = Date.now();
+  const due = LEVELS.filter((l) => now - (levelAt[l.id] ?? 0) > LEVEL_FRESH_MS)
+    .sort((a, b) => (levelAt[a.id] ?? 0) - (levelAt[b.id] ?? 0))
+    .slice(0, base.loaded === 0 ? LEVELS.length : BATCH);
+  if (due.length === 0) return;
+
+  const boards: Record<string, BoardEntry[]> = { ...base.boards };
   await Promise.all(
-    LEVELS.map(async (level) => {
+    due.map(async (level) => {
       try {
         const entries = await fetchLevelBoard(level.id, { deep: true });
-        if (entries.length > 0) boards[level.id] = entries;
+        if (entries.length > 0) {
+          boards[level.id] = entries;
+          levelAt[level.id] = Date.now();
+        }
       } catch {
         /* keep previous copy */
       }
     }),
   );
-  for (const level of LEVELS) {
-    if (!boards[level.id] && previous[level.id]?.length) boards[level.id] = previous[level.id];
-  }
-  const snap: BoardSnapshot = {
+  const snap: Snap = {
     boards,
+    levelAt,
     loaded: Object.keys(boards).length,
     total: LEVELS.length,
     at: Date.now(),
   };
   memo = snap;
   await writeSnapshot(snap);
-  return snap;
 }
