@@ -830,9 +830,21 @@ export function PlayerProfile({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold text-slate-200 truncate">{row.level.name}</span>
-                  <span className="font-mono text-sm font-bold tabular-nums text-white shrink-0">
-                    {row.levelStats ? formatTime(row.levelStats.bestTime, 'seconds') : '---'}
-                  </span>
+                  {row.levelStats ? (
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      <ArrowIcon name={row.levelStats.arrowName} className={cn(
+                        "w-4 h-4",
+                        row.levelStats.arrowName.toLowerCase().includes("energy") ? "text-[#22c55e]" :
+                        row.levelStats.arrowName.toLowerCase().includes("speedy") ? "text-[#3b82f6]" :
+                        "text-[var(--app-accent)]"
+                      )} />
+                      <span className="font-mono text-sm font-bold tabular-nums text-white">
+                        {formatTime(row.levelStats.bestTime, 'seconds')}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="font-mono text-sm font-bold tabular-nums text-white shrink-0">---</span>
+                  )}
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-2 text-[10px] font-mono">
                   <span className="text-slate-500 truncate">{packs.find(p => p.id === row.level.packId)?.name || capitalizeName(row.level.packId)}</span>
