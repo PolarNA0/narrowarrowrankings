@@ -2015,7 +2015,8 @@ export default function App() {
          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
            <div className="space-y-2">
              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">Select Pack</label>
-             <Select value={selectedPack} onValueChange={setSelectedPack}>
+              <SelectionSearch label="Search packs" options={[{ id: "all", name: "All packs" }, ...dynamicPacksWithCustom]} onSelect={setSelectedPack} />
+              <Select value={selectedPack} onValueChange={setSelectedPack}>
                <SelectTrigger className="bg-white/5 border-white/10 h-12 focus:ring-[var(--app-accent)]/50 hover:bg-white/10 transition-all text-white">
                  <SelectValue placeholder="All">
                    {selectedPack === "all" ? "All" : (dynamicPacksWithCustom.find(p => p.id === selectedPack)?.name || capitalizeName(selectedPack))}
@@ -2038,7 +2039,15 @@ export default function App() {
              <div className="flex items-center justify-between ml-1">
                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Select Level</label>
              </div>
-             <Select value={selectedLevel} onValueChange={setSelectedLevel}>
+              <SelectionSearch
+                label="Search levels"
+                options={sortedLevels.map(level => ({ ...level, detail: dynamicPacksWithCustom.find(pack => pack.id === level.packId)?.name }))}
+                onSelect={(id) => {
+                  const level = sortedLevels.find(item => item.id === id);
+                  if (level) { setSelectedPack(level.packId); setSelectedLevel(level.id); }
+                }}
+              />
+              <Select value={selectedLevel} onValueChange={setSelectedLevel}>
                <SelectTrigger className="bg-white/5 border-white/10 h-12 focus:ring-[var(--app-accent)]/50 hover:bg-white/10 transition-all text-white">
                  <SelectValue>
                    {allLevelsWithCustoms.find(l => l.id === selectedLevel)?.name || fetchedLevelDetails[selectedLevel]?.name || selectedLevel}
