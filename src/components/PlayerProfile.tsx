@@ -65,6 +65,8 @@ interface PlayerProfileProps {
 
 const userDataCache = new Map<string, { at: number; data: unknown }>();
 
+const CWR_ARROWS: ArrowScope[] = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
+
 export function PlayerProfile({ 
   stats, 
   levels, 
@@ -257,7 +259,7 @@ export function PlayerProfile({
 
   // Category world records (per-arrow WRs) and per-arrow Champion ranks.
   const arrowAchievements = useMemo(() => {
-    const ARROWS: ArrowScope[] = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
+    const ARROWS = CWR_ARROWS;
     const me = stats.username.toLowerCase();
     let cwr = 0;
     let champions = 0;
@@ -427,25 +429,21 @@ export function PlayerProfile({
         const rankInfo = levelStats ? (merged[levelStats.rankId] || DEFAULT_RANKS[levelStats.rankId] || DEFAULT_RANKS["Beginner"]) : null;
         const hex = rankInfo ? (DEFAULT_RANKS[levelStats?.rankId as string]?.color || rankInfo.color || "").match(/#[0-9a-fA-F]{6}/)?.[0] : undefined;
 
-        let cwr: { mine: number | null; held: boolean } | null = null;
-        if (levelStats) {
-          const board = [
-            ...(rawLevelData?.[level.id] ?? []),
-            ...(levelStandings?.[level.id] ?? []),
-            ...(legacyRuns ?? [])
-              .filter((r) => r.levelId === level.id)
-              .map((r) => ({ username: r.username, completion_time: r.completionTime, arrow_name: r.arrow_name || r.arrowId || levelStats.arrowName || "Narrow Arrow" })),
-          ];
-          const arrow = levelStats.arrowName;
-          const runs = board.filter((r) => (r.arrow_name || "").toLowerCase() === (arrow || "").toLowerCase() && r.completion_time > 0);
-          const best = runs.length ? Math.min(...runs.map((r) => r.completion_time)) : null;
-          const held = best != null && levelStats.bestTime <= best + 0.0005;
-          cwr = { mine: best, held };
-        }
+        // Per-arrow entries: one row per arrow (Narrow/Speedy/Energy) for this map.
+        const arrows = CWR_ARROWS.map((arrow) => {
+          const detail = arrowAchievements.details.find((d) => d.levelId === level.id && d.arrow === arrow);
+          return {
+            arrow,
+            mine: detail?.mine ?? null,
+            best: detail?.best ?? null,
+            holder: detail?.holder ?? "",
+            held: detail?.held ?? false,
+          };
+        });
 
-        return { level, levelStats, rankInfo, hex, cwr };
+        return { level, levelStats, rankInfo, hex, arrows };
       });
-  }, [levels, stats, packs, rankConfigs, globalRankConfig, rawLevelData, levelStandings, legacyRuns]);
+  }, [levels, stats, packs, rankConfigs, globalRankConfig, rawLevelData, levelStandings, legacyRuns, arrowAchievements]);
 
   // Show sub-tabs once there is something to switch between.
   const hasSubtabs = !!extraData || !!aggregateStats || cwrRows.some((r) => r.levelStats);
@@ -830,37 +828,31 @@ export function PlayerProfile({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold text-slate-200 truncate">{row.level.name}</span>
-                  {row.levelStats ? (
-                    <span className="flex items-center gap-1.5 shrink-0">
-                      <ArrowIcon name={row.levelStats.arrowName} className={cn(
-                        "w-4 h-4",
-                        row.levelStats.arrowName.toLowerCase().includes("energy") ? "text-[#22c55e]" :
-                        row.levelStats.arrowName.toLowerCase().includes("speedy") ? "text-[#3b82f6]" :
-                        "text-[var(--app-accent)]"
-                      )} />
-                      <span className="font-mono text-sm font-bold tabular-nums text-white">
-                        {formatTime(row.levelStats.bestTime, 'seconds')}
+                  <span className="text-[10px] font-mono text-slate-500 shrink-0 truncate">{packs.find(p => p.id === row.level.packId)?.name || capitalizeName(row.level.packId)}</span>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {row.arrows.map((a) => (
+                    <div key={a.arrow} className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <ArrowIcon name={a.arrow} className={cn(
+                          "w-3.5 h-3.5",
+                          a.arrow.toLowerCase().includes("energy") ? "text-[#22c55e]" :
+                          a.arrow.toLowerCase().includes("speedy") ? "text-[#3b82f6]" :
+                          "text-[var(--app-accent)]"
+                        )} />
+                        <span className="text-[10px] font-mono text-slate-400 truncate">
+                          {a.arrow.replace(/\s*Arrow$/i, "")}
+                        </span>
                       </span>
-                    </span>
-                  ) : (
-                    <span className="font-mono text-sm font-bold tabular-nums text-white shrink-0">---</span>
-                  )}
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        <span className={cn("font-mono text-xs font-bold tabular-nums", a.mine != null ? "text-white" : "text-slate-600")}>
+                          {a.mine != null ? formatTime(a.mine, 'seconds') : '---'}
+                        </span>
+                        {a.held && <span className="text-fuchsia-400 font-bold text-[10px]" title="Category WR held">✓</span>}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <div className="mt-1 flex items-center justify-between gap-2 text-[10px] font-mono">
-                  <span className="text-slate-500 truncate">{packs.find(p => p.id === row.level.packId)?.name || capitalizeName(row.level.packId)}</span>
-                  {row.rankInfo && row.levelStats ? (
-                    <Badge variant="outline" className={cn("font-bold text-[9px] uppercase tracking-tighter px-1.5 py-0", row.rankInfo.bgColor, row.rankInfo.color, row.rankInfo.borderColor)}>
-                      {row.rankInfo.name}
-                    </Badge>
-                  ) : (
-                    <span className="text-slate-600">Not played</span>
-                  )}
-                </div>
-                {row.cwr && row.cwr.mine != null && (
-                  <div className="mt-1 text-[10px] font-mono text-slate-400 flex items-center gap-1">
-                    CWR {formatTime(row.cwr.mine)} {row.cwr.held ? <span className="text-fuchsia-400 font-bold">✓ held</span> : ''}
-                  </div>
-                )}
               </button>
             </div>
           ))}
