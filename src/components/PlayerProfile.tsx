@@ -89,7 +89,7 @@ export function PlayerProfile({
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
   const [extraData, setExtraData] = useState<any>(null);
   const [loadingExtra, setLoadingExtra] = useState(false);
-  const [profileTab, setProfileTab] = useState<'performance' | 'creator'>('performance');
+  const [profileTab, setProfileTab] = useState<'stats' | 'performance' | 'cwr' | 'creator'>('stats');
   const [creatorLevels, setCreatorLevels] = useState<any[]>([]);
   const [loadingCreatorLevels, setLoadingCreatorLevels] = useState(false);
   const [creatorLevelsFilter, setCreatorLevelsFilter] = useState<'popular' | 'new'>('popular');
@@ -400,6 +400,56 @@ export function PlayerProfile({
     return sortedLevels;
   }, [levels, stats.levels, packs, levelSort, worldRecords]);
 
+  // One row per level (all maps, completed or not) with the player's PB, its rank and colour.
+  const cwrRows = useMemo(() => {
+    return [...levels]
+      .sort((a, b) => {
+        const idxA = packs.findIndex(p => p.id === a.packId);
+        const idxB = packs.findIndex(p => p.id === b.packId);
+        if (idxA !== idxB) return idxA - idxB;
+        return a.gameOrder - b.gameOrder;
+      })
+      .map((level) => {
+        const levelStats = stats.levels[level.id];
+
+        const config = rankConfigs[level.id];
+        const levelRanks = config?.ranks || getLevelDefaultRanks(level.id, globalRankConfig);
+        const merged: Record<string, RankInfo> = {};
+        (Array.isArray(RANK_ORDER) ? RANK_ORDER : []).forEach(id => {
+          const gRank = globalRankConfig[id] || DEFAULT_RANKS[id];
+          const lRank = levelRanks[id];
+          let timeCutoff: number;
+          if (typeof lRank === 'number') timeCutoff = lRank;
+          else if (lRank && typeof lRank.timeCutoff === 'number') timeCutoff = lRank.timeCutoff;
+          else timeCutoff = gRank.timeCutoff;
+          merged[id] = { ...gRank, timeCutoff };
+        });
+        const rankInfo = levelStats ? (merged[levelStats.rankId] || DEFAULT_RANKS[levelStats.rankId] || DEFAULT_RANKS["Beginner"]) : null;
+        const hex = rankInfo ? (DEFAULT_RANKS[levelStats?.rankId as string]?.color || rankInfo.color || "").match(/#[0-9a-fA-F]{6}/)?.[0] : undefined;
+
+        let cwr: { mine: number | null; held: boolean } | null = null;
+        if (levelStats) {
+          const board = [
+            ...(rawLevelData?.[level.id] ?? []),
+            ...(levelStandings?.[level.id] ?? []),
+            ...(legacyRuns ?? [])
+              .filter((r) => r.levelId === level.id)
+              .map((r) => ({ username: r.username, completion_time: r.completionTime, arrow_name: r.arrow_name || r.arrowId || levelStats.arrowName || "Narrow Arrow" })),
+          ];
+          const arrow = levelStats.arrowName;
+          const runs = board.filter((r) => (r.arrow_name || "").toLowerCase() === (arrow || "").toLowerCase() && r.completion_time > 0);
+          const best = runs.length ? Math.min(...runs.map((r) => r.completion_time)) : null;
+          const held = best != null && levelStats.bestTime <= best + 0.0005;
+          cwr = { mine: best, held };
+        }
+
+        return { level, levelStats, rankInfo, hex, cwr };
+      });
+  }, [levels, stats, packs, rankConfigs, globalRankConfig, rawLevelData, levelStandings, legacyRuns]);
+
+  // Show sub-tabs once there is something to switch between.
+  const hasSubtabs = !!extraData || !!aggregateStats || cwrRows.some((r) => r.levelStats);
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -494,7 +544,41 @@ export function PlayerProfile({
 
 
 
+      {/* Profile sub-tabs */}
+      {hasSubtabs && (
+        <div className="flex flex-wrap border-b border-white/10 gap-1 mt-8">
+          {([
+            { id: 'stats', label: 'Stats' },
+            { id: 'performance', label: 'PBs' },
+            { id: 'cwr', label: 'CWRs' },
+            ...(extraData?.creator && extraData.creator.levels_published > 0
+              ? [{ id: 'creator', label: `Published Levels (${extraData.creator.levels_published})` }]
+              : []),
+          ] as { id: typeof profileTab; label: string }[]).map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setProfileTab(tab.id)}
+              className={cn(
+                "px-4 py-2.5 text-xs uppercase tracking-wider font-extrabold border-b-2 transition-all duration-300",
+                profileTab === tab.id
+                  ? "border-[var(--app-accent)] text-white bg-white/5"
+                  : "border-transparent text-slate-400 hover:text-white"
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {profileTab === 'stats' && (
+        <>
+
       {/* Stats Grid */}
+      <h3 className="text-sm font-extrabold uppercase tracking-widest text-[var(--app-accent)] border-b border-white/10 pb-2 flex items-center gap-2">
+        <span className="w-1.5 h-3 bg-[var(--app-accent)] rounded"></span>
+        Overview
+      </h3>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       {[
         { label: "Levels Completed", value: aggregateStats?.totalCompleted || 0, icon: Target, color: "text-[var(--app-accent)]" },
@@ -728,35 +812,48 @@ export function PlayerProfile({
         </div>
       )}
 
-      {/* Tab Selectors if they are a creator */}
-      {extraData?.creator && extraData.creator.levels_published > 0 && (
-        <div className="flex border-b border-white/10 gap-2 mt-8">
-          <button
-            onClick={() => setProfileTab('performance')}
-            className={cn(
-              "px-4 py-2.5 text-xs uppercase tracking-wider font-extrabold border-b-2 transition-all duration-300",
-              profileTab === 'performance' 
-                ? "border-[var(--app-accent)] text-white bg-white/5" 
-                : "border-transparent text-slate-400 hover:text-white"
-            )}
-          >
-            Map Performance
-          </button>
-          <button
-            onClick={() => setProfileTab('creator')}
-            className={cn(
-              "px-4 py-2.5 text-xs uppercase tracking-wider font-extrabold border-b-2 transition-all duration-300 flex items-center gap-2",
-              profileTab === 'creator' 
-                ? "border-teal-400 text-teal-300 bg-teal-500/5" 
-                : "border-transparent text-slate-400 hover:text-white"
-            )}
-          >
-            <Star className="w-3.5 h-3.5" /> Published Levels ({extraData.creator.levels_published})
-          </button>
-        </div>
+        </>
       )}
 
-      {profileTab === 'performance' ? (
+      {profileTab === 'cwr' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          {cwrRows.map((row) => (
+            <div
+              key={row.level.id}
+              className="rounded-lg border border-white/5 overflow-hidden bg-black/20"
+            >
+              <button
+                type="button"
+                onClick={() => onLevelClick(row.level.id)}
+                className="w-full text-left p-3 hover:bg-white/[0.03] transition-colors"
+                style={row.hex ? { backgroundColor: `${row.hex}${row.levelStats ? "33" : "14"}` } : undefined}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-200 truncate">{row.level.name}</span>
+                  <span className="font-mono text-sm font-bold tabular-nums text-white shrink-0">
+                    {row.levelStats ? formatTime(row.levelStats.bestTime, 'seconds') : '---'}
+                  </span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2 text-[10px] font-mono">
+                  <span className="text-slate-500 truncate">{packs.find(p => p.id === row.level.packId)?.name || capitalizeName(row.level.packId)}</span>
+                  {row.rankInfo && row.levelStats ? (
+                    <Badge variant="outline" className={cn("font-bold text-[9px] uppercase tracking-tighter px-1.5 py-0", row.rankInfo.bgColor, row.rankInfo.color, row.rankInfo.borderColor)}>
+                      {row.rankInfo.name}
+                    </Badge>
+                  ) : (
+                    <span className="text-slate-600">Not played</span>
+                  )}
+                </div>
+                {row.cwr && row.cwr.mine != null && (
+                  <div className="mt-1 text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                    CWR {formatTime(row.cwr.mine)} {row.cwr.held ? <span className="text-fuchsia-400 font-bold">✓ held</span> : ''}
+                  </div>
+                )}
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : profileTab === 'performance' ? (
         <>
           {/* Map Pack Breakdown section */}
           <div className="space-y-4">

@@ -2354,7 +2354,7 @@ export default function App() {
                                 if (!hex) return undefined;
                                 const strong = rankId === "Champion" || rankId === "Elite";
                                 return {
-                                  background: `linear-gradient(90deg, ${hex}${strong ? "55" : "33"} 0%, ${hex}${strong ? "22" : "12"} 45%, transparent 100%)`,
+                                  background: `${hex}${strong ? "55" : "33"}`,
                                   boxShadow: `inset 4px 0 0 ${hex}`,
                                 };
                               })()}
