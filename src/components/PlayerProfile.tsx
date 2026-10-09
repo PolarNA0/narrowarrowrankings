@@ -27,6 +27,7 @@ import { motion } from "motion/react";
 import { PlayerStats, LevelInfo, RankInfo, LevelRankConfig, LevelPack, ArrowScope } from "../types";
 import { RANK_ORDER, DEFAULT_RANKS } from "../constants";
 import { getLevelDefaultRanks } from "../lib/rankDefaults";
+import { assignRank } from "../lib/ranking";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -430,14 +431,29 @@ export function PlayerProfile({
         const hex = rankInfo ? (DEFAULT_RANKS[levelStats?.rankId as string]?.color || rankInfo.color || "").match(/#[0-9a-fA-F]{6}/)?.[0] : undefined;
 
         // Per-arrow entries: one row per arrow (Narrow/Speedy/Energy) for this map.
+        // Each arrow has its own cutoffs, so a time's rank (and colour) is resolved
+        // against that arrow's config, falling back to the level's base cutoffs.
         const arrows = CWR_ARROWS.map((arrow) => {
           const detail = arrowAchievements.details.find((d) => d.levelId === level.id && d.arrow === arrow);
+          const overrides = config?.arrowRanks?.[arrow];
+          const arrowRanks: Record<string, RankInfo> = {};
+          (Array.isArray(RANK_ORDER) ? RANK_ORDER : []).forEach(id => {
+            const override = Number(overrides?.[id] ?? 0);
+            arrowRanks[id] = { ...merged[id], timeCutoff: override > 0 ? override : merged[id].timeCutoff };
+          });
+          const mine = detail?.mine ?? null;
+          let arrowRank: RankInfo | null = null;
+          if (mine != null) {
+            const rankId = assignRank({ completion_time: mine } as LeaderboardEntry, arrowRanks, RANK_ORDER);
+            arrowRank = arrowRanks[rankId] || DEFAULT_RANKS[rankId] || null;
+          }
           return {
             arrow,
-            mine: detail?.mine ?? null,
+            mine,
             best: detail?.best ?? null,
             holder: detail?.holder ?? "",
             held: detail?.held ?? false,
+            rank: arrowRank,
           };
         });
 
@@ -845,7 +861,23 @@ export function PlayerProfile({
                         </span>
                       </span>
                       <span className="flex items-center gap-1.5 shrink-0">
-                        <span className={cn("font-mono text-xs font-bold tabular-nums", a.mine != null ? "text-white" : "text-slate-600")}>
+                        {a.rank && (
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "font-bold text-[8px] uppercase tracking-tighter px-1.5 py-0",
+                              a.rank.bgColor,
+                              a.rank.color,
+                              a.rank.borderColor,
+                            )}
+                          >
+                            {a.rank.name}
+                          </Badge>
+                        )}
+                        <span className={cn(
+                          "font-mono text-xs font-bold tabular-nums",
+                          a.rank ? a.rank.color : a.mine != null ? "text-white" : "text-slate-600",
+                        )}>
                           {a.mine != null ? formatTime(a.mine, 'seconds') : '---'}
                         </span>
                         {a.held && <span className="text-fuchsia-400 font-bold text-[10px]" title="Category WR held">✓</span>}
