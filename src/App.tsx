@@ -114,6 +114,9 @@ import { useAppSettings } from "./hooks/useAppSettings";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { toast } from "sonner";
 import { ArrowRecordsView } from "@/components/ArrowRecordsView";
+import { GroupedNavigation, SectionNavigation, type NavigableView } from "@/components/GroupedNavigation";
+import { SelectionSearch } from "@/components/SelectionSearch";
+import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
 
 export default function App() {
   const { isAdmin, user: adminUser } = useAdminAuth();
@@ -362,6 +365,16 @@ export default function App() {
   const [isFetchingAll, setIsFetchingAll] = useState(false);
   const [leaderboardLoadStatus, setLeaderboardLoadStatus] = useState({ loaded: 0, total: LEVELS.length, failed: 0 });
   const allLeaderboardFetchId = React.useRef(0);
+  const lastBulkRefresh = React.useRef(0);
+  const singleLeaderboardFetchId = React.useRef(0);
+
+  const acceptLeaderboardUpdates = (boards: Record<string, LeaderboardEntry[]>) => {
+    setAllLevelsData(current => mergeLeaderboardUpdates(current, boards));
+  };
+
+  useEffect(() => {
+    if (Object.keys(allLevelsData).length) persistLeaderboards(allLevelsData);
+  }, [allLevelsData]);
   const [allRankConfigs, setAllRankConfigs] = useState<Record<string, LevelRankConfig>>({});
   const [globalRankConfig, setGlobalRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
   const [activeLevelData, setActiveLevelData] = useState<LevelRankConfig | null>(null);
@@ -386,12 +399,15 @@ export default function App() {
   };
 
   const fetchData = async (levelId: string, forceRefresh = false) => {
+    const requestId = ++singleLeaderboardFetchId.current;
     setLoading(true);
     setError(null);
     try {
       // deep = merge every arrow board so players beyond the top 150 appear.
       const result = await fetchLeaderboard(levelId, forceRefresh, true);
 
+      acceptLeaderboardUpdates({ [levelId]: result });
+      if (requestId !== singleLeaderboardFetchId.current) return;
       setData(result);
       
       // Also fetch details from the API if we don't already have them, or on forceRefresh
@@ -416,9 +432,9 @@ export default function App() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An unknown error occurred");
+      if (requestId === singleLeaderboardFetchId.current) setError(err instanceof Error ? err.message : "An unknown error occurred");
     } finally {
-      setLoading(false);
+      if (requestId === singleLeaderboardFetchId.current) setLoading(false);
     }
   };
 
@@ -540,7 +556,7 @@ export default function App() {
   const fetchAllLevels = async (forceRefresh = false) => {
     const levelsToFetch = dynamicLevels.length >= LEVELS.length ? dynamicLevels : LEVELS;
     const existingLoaded = levelsToFetch.filter(l => allLevelsData[l.id]?.length > 0).length;
-    if (!forceRefresh && existingLoaded === levelsToFetch.length) {
+    if (!forceRefresh && existingLoaded === levelsToFetch.length && Date.now() - lastBulkRefresh.current < 60_000) {
       setLeaderboardLoadStatus({ loaded: existingLoaded, total: levelsToFetch.length, failed: 0 });
       return;
     }
@@ -554,12 +570,11 @@ export default function App() {
       // One warmed bulk request covers every official board in a single trip.
       try {
         const bulk = await fetchAllLeaderboards(true);
-        for (const [id, entries] of Object.entries(bulk)) {
-          if (entries?.length) newData[id] = entries;
-        }
+        Object.assign(newData, mergeLeaderboardUpdates(newData, bulk));
+        lastBulkRefresh.current = Date.now();
         if (requestId === allLeaderboardFetchId.current) {
-          setAllLevelsData({ ...newData });
-          persistLeaderboards(newData);
+          acceptLeaderboardUpdates(newData);
+
         }
       } catch (error) {
         console.error("bulk leaderboard fetch failed, falling back", error);
@@ -593,7 +608,7 @@ export default function App() {
 
         pending = pending.filter(level => !newData[level.id] || newData[level.id].length === 0);
         if (requestId === allLeaderboardFetchId.current) {
-          setAllLevelsData({ ...newData });
+          acceptLeaderboardUpdates(newData);
           setLeaderboardLoadStatus({
             loaded: levelsToFetch.length - pending.length,
             total: levelsToFetch.length,
@@ -603,8 +618,8 @@ export default function App() {
       }
 
       if (requestId !== allLeaderboardFetchId.current) return;
-      setAllLevelsData({ ...newData });
-      persistLeaderboards(newData);
+      acceptLeaderboardUpdates(newData);
+
       setLeaderboardLoadStatus({
         loaded: levelsToFetch.filter(l => newData[l.id]?.length > 0).length,
         total: levelsToFetch.length,
@@ -633,7 +648,7 @@ export default function App() {
     
     allLevelsWithCustoms.forEach(level => {
       const levelData = processedAllLevelsData[level.id] || [];
-      const entry = levelData.find(e => e.username === username);
+      const entry = levelData.find(e => e.username.toLowerCase() === username.toLowerCase());
       
       if (entry) {
         const config = allRankConfigs[level.id];
@@ -1123,6 +1138,11 @@ export default function App() {
   };
 
 
+  const navigateView = (next: NavigableView) => {
+    setView(next);
+    if (!["leaderboard", "customs", "random", "completions", "voting", "rating"].includes(next)) void fetchAllLevels();
+  };
+
   return (
     <div className="na-shell min-h-screen text-slate-200 font-sans selection:bg-[var(--app-accent)]/30">
       <SettingsPanel
@@ -1165,270 +1185,7 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-1.5 md:gap-4 shrink-0">
-            {/* Desktop Navigation */}
-            <nav className="hidden sm:flex items-center bg-black/20 rounded-lg p-0.5 md:p-1 border border-white/5">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setView('leaderboard')}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", 
-                  view === 'leaderboard' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                Levels
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={async () => {
-                  setView('average');
-                  await fetchAllLevels();
-                }}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", 
-                  view === 'average' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                Average
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={async () => {
-                  setView('wrs');
-                  await fetchAllLevels();
-                }}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", 
-                  view === 'wrs' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                WRs
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setView('random')}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", 
-                  view === 'random' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                Randomizer
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setView('customs')}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", 
-                  view === 'customs' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                Customs
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => {
-                  setView('score');
-                  await fetchAllLevels();
-                }}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
-                  view === 'score' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                NarrowScore
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setView('completions')}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
-                  view === 'completions' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                Completions
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => {
-                  setView('tracker');
-                  await fetchAllLevels();
-                }}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
-                  view === 'tracker' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                Tracker
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => {
-                  setView('points');
-                  await fetchAllLevels();
-                }}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
-                  view === 'points' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                Rank Points
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setView('voting')}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
-                  view === 'voting' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                Voting
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setView('rating')}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
-                  view === 'rating' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                Level Rating
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => {
-                  setView('position');
-                  await fetchAllLevels();
-                }}
-                className={cn(
-                  "text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0",
-                  view === 'position' ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-[0_0_15px_rgba(56,189,248,0.3)]" : "text-slate-400 hover:text-white"
-                )}
-              >
-                Position Points
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => { setView('insights'); await fetchAllLevels(); }}
-                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'insights' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
-              >
-                Insights
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => { setView('rivalries'); await fetchAllLevels(); }}
-                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'rivalries' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
-              >
-                Rivalries
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => { setView('fame'); await fetchAllLevels(); }}
-                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'fame' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
-              >
-                Hall of Fame
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => { setView('targets'); await fetchAllLevels(); }}
-                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'targets' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
-              >
-                Targets
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => { setView('clubs'); await fetchAllLevels(); }}
-                className={cn("text-[8px] md:text-[10px] uppercase tracking-widest h-6 md:h-8 px-1.5 md:px-3 shrink-0", view === 'clubs' ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400 hover:text-white")}
-              >
-                Clubs
-              </Button>
-            </nav>
-
-
-            {/* Mobile Dropdown Navigation */}
-            <div className="block sm:hidden w-[110px] xs:w-[140px] shrink-0">
-              <Select 
-                value={['leaderboard', 'average', 'wrs', 'random', 'customs', 'score', 'completions', 'tracker', 'points', 'voting', 'rating', 'position', 'insights', 'rivalries', 'fame', 'targets', 'clubs'].includes(view) ? view : 'leaderboard'} 
-                onValueChange={async (val: any) => {
-                  setView(val);
-                  if (['average', 'wrs', 'score', 'tracker', 'points', 'position', 'insights', 'rivalries', 'fame', 'targets', 'clubs'].includes(val)) {
-                    await fetchAllLevels();
-                  }
-                }}
-              >
-                <SelectTrigger className="bg-black/40 border-white/10 h-8 text-[9px] uppercase font-bold tracking-wider text-white px-2 focus:ring-[var(--app-accent)]/50">
-                  <SelectValue placeholder="Navigate" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#121212] border-white/10 text-slate-200">
-                  <SelectItem value="leaderboard" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Levels
-                  </SelectItem>
-                  <SelectItem value="average" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Average
-                  </SelectItem>
-                  <SelectItem value="wrs" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    World Records
-                  </SelectItem>
-                  <SelectItem value="random" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Randomizer
-                  </SelectItem>
-                  <SelectItem value="customs" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Custom Levels
-                  </SelectItem>
-                  <SelectItem value="score" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    NarrowScore
-                  </SelectItem>
-                  <SelectItem value="completions" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Custom Completions
-                  </SelectItem>
-                  <SelectItem value="tracker" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Record Tracker
-                  </SelectItem>
-                  <SelectItem value="points" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Rank Points
-                  </SelectItem>
-                  <SelectItem value="voting" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Player Voting
-                  </SelectItem>
-                  <SelectItem value="rating" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Level Rating
-                  </SelectItem>
-                  <SelectItem value="position" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Position Points
-                  </SelectItem>
-                  <SelectItem value="insights" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Level Insights
-                  </SelectItem>
-                  <SelectItem value="rivalries" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Rivalries
-                  </SelectItem>
-                  <SelectItem value="fame" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Hall of Fame
-                  </SelectItem>
-                  <SelectItem value="targets" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Improvement Targets
-                  </SelectItem>
-                  <SelectItem value="clubs" className="focus:bg-[var(--app-accent)] focus:text-slate-950 py-2.5 cursor-pointer text-[10px] uppercase font-mono font-bold">
-                    Milestone Clubs
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <GroupedNavigation view={view} onNavigate={navigateView} />
             
             <Button
               variant="ghost"
@@ -1481,6 +1238,7 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
+        {!showAdmin && <SectionNavigation view={view} onNavigate={navigateView} />}
          {showAdmin ? (
           <AdminPanel 
             levels={dynamicLevels} 

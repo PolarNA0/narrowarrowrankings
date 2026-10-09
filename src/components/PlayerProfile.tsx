@@ -253,7 +253,7 @@ export function PlayerProfile({
       overallRankId,
       totalCompleted: levelEntries.length
     };
-  }, [stats, overallRankConfig]);
+  }, [stats, overallRankConfig, levels.length]);
 
   // Category world records (per-arrow WRs) and per-arrow Champion ranks.
   const arrowAchievements = useMemo(() => {
@@ -413,16 +413,6 @@ export function PlayerProfile({
             <ChevronLeft className="w-5 h-5" />
           </Button>
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-[var(--app-accent)]/20 rounded-2xl flex items-center justify-center border border-[var(--app-accent)]/30 shadow-[0_0_30px_rgba(56,189,248,0.15)] overflow-hidden">
-              <img 
-                src="https://play.narrowarrow.xyz/assets/assets/images/account.svg" 
-                alt="Account" 
-                className="w-10 h-10 object-contain"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-3xl font-bold text-white tracking-tight">{stats.username}</h2>
