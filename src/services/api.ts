@@ -1,4 +1,5 @@
 import { LeaderboardEntry } from "../types";
+import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
 
 const BASE_URL = "/api/leaderboard";
 const CACHE_TTL = 5 * 60 * 1000;
@@ -51,7 +52,10 @@ export async function fetchAllLeaderboards(
   const boards = payload.boards ?? {};
   const now = Date.now();
   for (const [id, entries] of Object.entries(boards)) {
-    if (entries?.length) leaderboardCache[id] = { data: entries, timestamp: now };
+    if (entries?.length) {
+      const merged = mergeLeaderboardUpdates({ [id]: leaderboardCache[id]?.data ?? [] }, { [id]: entries });
+      leaderboardCache[id] = { data: merged[id], timestamp: now };
+    }
   }
   return boards;
 }

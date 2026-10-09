@@ -1,0 +1,5 @@
+- [x] Add searchable level and pack controls alongside dropdowns.
+- [x] Synchronize refreshed boards with player totals without stale snapshots undoing improvements.
+- [x] Group overlapping navigation tabs while preserving each view.
+- [x] Remove the unused dark shape beside the profile name.
+- [x] Verify searches, Polar’s profile, totals, and navigation in the preview.
