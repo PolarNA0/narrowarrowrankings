@@ -4,7 +4,6 @@ import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
 const BASE_URL = "/api/leaderboard";
 const CACHE_TTL = 5 * 60 * 1000;
 const PERSIST_KEY = "naLeaderboardCache";
-const PERSIST_TTL = 30 * 60 * 1000;
 
 interface CacheEntry {
   data: LeaderboardEntry[];
@@ -22,8 +21,11 @@ export function hydratePersistedLeaderboards(): Record<string, LeaderboardEntry[
   try {
     const raw = window.localStorage.getItem(PERSIST_KEY);
     if (!raw) return {};
-    const parsed = JSON.parse(raw) as { timestamp: number; boards: Record<string, LeaderboardEntry[]> };
-    if (!parsed?.boards || Date.now() - parsed.timestamp > PERSIST_TTL) return {};
+    const parsed = JSON.parse(raw) as {
+      timestamp: number;
+      boards: Record<string, LeaderboardEntry[]>;
+    };
+    if (!parsed?.boards) return {};
     for (const [id, entries] of Object.entries(parsed.boards)) {
       leaderboardCache[id] = { data: entries, timestamp: parsed.timestamp };
     }
@@ -42,6 +44,11 @@ export function persistLeaderboards(boards: Record<string, LeaderboardEntry[]>) 
   }
 }
 
+/** Newest cache timestamp for a level, so the UI can show how fresh the data is. */
+export function leaderboardCachedAt(levelId: string): number | null {
+  return leaderboardCache[levelId]?.timestamp ?? null;
+}
+
 /** Fetch every official leaderboard in a single warmed request. */
 export async function fetchAllLeaderboards(
   deep = false,
@@ -53,7 +60,10 @@ export async function fetchAllLeaderboards(
   const now = Date.now();
   for (const [id, entries] of Object.entries(boards)) {
     if (entries?.length) {
-      const merged = mergeLeaderboardUpdates({ [id]: leaderboardCache[id]?.data ?? [] }, { [id]: entries });
+      const merged = mergeLeaderboardUpdates(
+        { [id]: leaderboardCache[id]?.data ?? [] },
+        { [id]: entries },
+      );
       leaderboardCache[id] = { data: merged[id], timestamp: now };
     }
   }

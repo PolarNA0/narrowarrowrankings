@@ -97,6 +97,7 @@ import {
   fetchAllLeaderboards,
   persistLeaderboards,
   hydratePersistedLeaderboards,
+  leaderboardCachedAt,
 } from "./services/api";
 
 import { assignRank } from "./lib/ranking";
@@ -344,8 +345,8 @@ export default function App() {
       isMounted = false;
     };
   }, []);
-  const [data, setData] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [arrowFilter, setArrowFilter] = useState<"all" | "Narrow Arrow" | "Speedy Arrow" | "Energy Arrow">("all");
@@ -404,15 +405,21 @@ export default function App() {
 
   const fetchData = async (levelId: string, forceRefresh = false) => {
     const requestId = ++singleLeaderboardFetchId.current;
-    setLoading(true);
     setError(null);
+    // Keep a cached board on screen and refresh it in the background; only blank
+    // the table when there is nothing cached to show yet.
+    if ((allLevelsData[levelId]?.length ?? 0) > 0) {
+      setRefreshing(true);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     try {
       // deep = merge every arrow board so players beyond the top 150 appear.
       const result = await fetchLeaderboard(levelId, forceRefresh, true);
 
       acceptLeaderboardUpdates({ [levelId]: result });
       if (requestId !== singleLeaderboardFetchId.current) return;
-      setData(result);
       
       // Also fetch details from the API if we don't already have them, or on forceRefresh
       if (forceRefresh || !fetchedLevelDetails[levelId]) {
@@ -438,7 +445,10 @@ export default function App() {
     } catch (err) {
       if (requestId === singleLeaderboardFetchId.current) setError(err instanceof Error ? err.message : "An unknown error occurred");
     } finally {
-      if (requestId === singleLeaderboardFetchId.current) setLoading(false);
+      if (requestId === singleLeaderboardFetchId.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
@@ -783,12 +793,27 @@ export default function App() {
       ? entries
       : entries.filter(e => !removedKeys.has(removedRunKey(levelId, e.username, e.completion_time)));
 
+  // The selected level's board always comes from the shared cache, so a saved
+  // snapshot paints instantly while a background refresh runs.
   const processedData = useMemo(() => {
     return stripRemoved(
-      applyLegacyRunsToLeaderboard(selectedLevel, data, mappedLegacyRuns),
+      applyLegacyRunsToLeaderboard(selectedLevel, allLevelsData[selectedLevel] ?? [], mappedLegacyRuns),
       selectedLevel,
     );
-  }, [selectedLevel, data, mappedLegacyRuns, removedKeys]);
+  }, [selectedLevel, allLevelsData, mappedLegacyRuns, removedKeys]);
+
+  // Age of the cached board, e.g. "5m ago". Null when the data is fresh enough to
+  // count as live, so the badge only flags genuinely stale snapshots.
+  const cachedAgeLabel = (() => {
+    const ts = leaderboardCachedAt(selectedLevel);
+    if (!ts) return null;
+    const seconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (seconds < 60) return null;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    return `${hours}h ago`;
+  })();
 
   const processedAllLevelsData = useMemo(() => {
     const result: Record<string, LeaderboardEntry[]> = {};
@@ -1237,10 +1262,11 @@ export default function App() {
             <Button 
               variant="ghost" 
               size="icon" 
+              title={refreshing ? "Refreshing in background…" : "Refresh leaderboard"}
               onClick={() => fetchData(selectedLevel, true)}
               className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
             >
-              <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+              <RefreshCw className={cn("w-4 h-4", (loading || refreshing) && "animate-spin")} />
             </Button>
 
           </div>
@@ -1295,7 +1321,7 @@ export default function App() {
             </div>
           )
         ) : view === 'compare' && selectedPlayer ? (
-          isFetchingAll ? (
+          isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
               <RefreshCw className="w-12 h-12 text-[var(--app-accent)] animate-spin" />
               <p className="text-slate-500 font-mono text-sm animate-pulse">Preparing comparison data...</p>
@@ -2231,7 +2257,7 @@ export default function App() {
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">{stat.label}</p>
-                  <div className="text-xl md:text-2xl font-mono font-bold text-white">{loading ? <Skeleton className="h-8 w-16 bg-white/10" /> : stat.value}</div>
+                  <div className="text-xl md:text-2xl font-mono font-bold text-white">{loading && processedData.length === 0 ? <Skeleton className="h-8 w-16 bg-white/10" /> : stat.value}</div>
                 </div>
                 <div className={cn("w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform", stat.color)}>
                   {stat.imgSrc ? (
@@ -2278,8 +2304,19 @@ export default function App() {
                     formatTime={(s) => formatTime(s, 'seconds')}
                   />
                 )}
-                <Badge variant="outline" className="bg-[var(--app-accent)]/10 text-[var(--app-accent)] border-[var(--app-accent)]/20 font-mono text-[10px]">
-                  LIVE DATA
+                <Badge
+                  variant="outline"
+                  title={cachedAgeLabel ? `Showing cached data from ${cachedAgeLabel}` : undefined}
+                  className={cn(
+                    "font-mono text-[10px]",
+                    refreshing
+                      ? "bg-amber-400/10 text-amber-300 border-amber-400/20"
+                      : cachedAgeLabel
+                        ? "bg-slate-400/10 text-slate-300 border-slate-400/20"
+                        : "bg-[var(--app-accent)]/10 text-[var(--app-accent)] border-[var(--app-accent)]/20",
+                  )}
+                >
+                  {refreshing ? "UPDATING…" : cachedAgeLabel ? `CACHED · ${cachedAgeLabel}` : "LIVE DATA"}
                 </Badge>
               </div>
             </div>
@@ -2348,7 +2385,7 @@ export default function App() {
                   </TableHeader>
                   <TableBody>
                     <AnimatePresence mode="popLayout">
-                      {loading ? (
+                      {loading && sortedAndFilteredData.length === 0 ? (
                         Array.from({ length: 10 }).map((_, i) => (
                           <TableRow key={`skeleton-${i}`} className="border-white/5">
                             <TableCell><Skeleton className="h-4 w-4 bg-white/5 mx-auto" /></TableCell>
