@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 export const NAV_GROUPS = [
   { id: "levels", label: "Levels", items: [{ id: "leaderboard", label: "Leaderboards" }, { id: "insights", label: "Level insights" }, { id: "rating", label: "Level ratings" }] },
   { id: "rankings", label: "Rankings", items: [{ id: "score", label: "NarrowScore" }, { id: "average", label: "Total time & average" }, { id: "points", label: "Rank points" }, { id: "position", label: "Position points" }] },
-  { id: "records", label: "Records", items: [{ id: "wrs", label: "World & category records" }, { id: "tracker", label: "Recent runs" }, { id: "fame", label: "Player achievements" }] },
+  { id: "records", label: "Records", items: [{ id: "wrs", label: "World & category records" }, { id: "medal-ease", label: "Easiest medals" }, { id: "tracker", label: "Recent runs" }, { id: "fame", label: "Player achievements" }] },
   { id: "players", label: "Players", items: [{ id: "voting", label: "Player voting" }, { id: "rivalries", label: "Rivalries" }, { id: "targets", label: "Improvement targets" }, { id: "clubs", label: "Milestone clubs" }] },
   { id: "customs", label: "Customs", items: [{ id: "customs", label: "Custom levels" }, { id: "completions", label: "Custom completions" }, { id: "random", label: "Randomizer" }] },
 ] as const;

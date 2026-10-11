@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ApiAllLeaderboardsRouteImport } from './routes/api/all-leaderboards'
 import { Route as ApiDailySkinsRouteImport } from './routes/api/daily-skins'
+import { Route as ApiInGameMedalsRouteImport } from './routes/api/in-game-medals'
 import { Route as ApiOfficialCreatorsRouteImport } from './routes/api/official-creators'
 import { Route as ApiProfilesRouteImport } from './routes/api/profiles'
 import { Route as ApiPublishedLevelsRouteImport } from './routes/api/published-levels'
@@ -43,6 +44,11 @@ const ApiAllLeaderboardsRoute = ApiAllLeaderboardsRouteImport.update({
 const ApiDailySkinsRoute = ApiDailySkinsRouteImport.update({
   id: '/api/daily-skins',
   path: '/api/daily-skins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiInGameMedalsRoute = ApiInGameMedalsRouteImport.update({
+  id: '/api/in-game-medals',
+  path: '/api/in-game-medals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiOfficialCreatorsRoute = ApiOfficialCreatorsRouteImport.update({
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/in-game-medals': typeof ApiInGameMedalsRoute
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/in-game-medals': typeof ApiInGameMedalsRoute
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
@@ -142,6 +150,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/in-game-medals': typeof ApiInGameMedalsRoute
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
@@ -161,6 +170,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/all-leaderboards'
     | '/api/daily-skins'
+    | '/api/in-game-medals'
     | '/api/official-creators'
     | '/api/profiles'
     | '/api/published-levels'
@@ -178,6 +188,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/all-leaderboards'
     | '/api/daily-skins'
+    | '/api/in-game-medals'
     | '/api/official-creators'
     | '/api/profiles'
     | '/api/published-levels'
@@ -195,6 +206,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/all-leaderboards'
     | '/api/daily-skins'
+    | '/api/in-game-medals'
     | '/api/official-creators'
     | '/api/profiles'
     | '/api/published-levels'
@@ -213,6 +225,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiAllLeaderboardsRoute: typeof ApiAllLeaderboardsRoute
   ApiDailySkinsRoute: typeof ApiDailySkinsRoute
+  ApiInGameMedalsRoute: typeof ApiInGameMedalsRoute
   ApiOfficialCreatorsRoute: typeof ApiOfficialCreatorsRoute
   ApiProfilesRoute: typeof ApiProfilesRoute
   ApiPublishedLevelsRoute: typeof ApiPublishedLevelsRoute
@@ -254,6 +267,13 @@ declare module '@tanstack/react-router' {
       path: '/api/daily-skins'
       fullPath: '/api/daily-skins'
       preLoaderRoute: typeof ApiDailySkinsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/in-game-medals': {
+      id: '/api/in-game-medals'
+      path: '/api/in-game-medals'
+      fullPath: '/api/in-game-medals'
+      preLoaderRoute: typeof ApiInGameMedalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/official-creators': {
@@ -341,6 +361,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiAllLeaderboardsRoute: ApiAllLeaderboardsRoute,
   ApiDailySkinsRoute: ApiDailySkinsRoute,
+  ApiInGameMedalsRoute: ApiInGameMedalsRoute,
   ApiOfficialCreatorsRoute: ApiOfficialCreatorsRoute,
   ApiProfilesRoute: ApiProfilesRoute,
   ApiPublishedLevelsRoute: ApiPublishedLevelsRoute,

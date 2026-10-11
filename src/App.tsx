@@ -52,6 +52,7 @@ import { PositionPointsView } from "./components/PositionPointsView";
 import { LevelInsightsView } from "./components/LevelInsightsView";
 import { RivalriesView } from "./components/RivalriesView";
 import { HallOfFameView } from "./components/HallOfFameView";
+import { MedalEaseView } from "./components/MedalEaseView";
 import { ImprovementTargetsView } from "./components/ImprovementTargetsView";
 import { MilestoneClubsView } from "./components/MilestoneClubsView";
 import { RecordTracker } from "./components/RecordTracker";
@@ -116,11 +117,14 @@ import { toast } from "sonner";
 import { ArrowRecordsView } from "@/components/ArrowRecordsView";
 import { GroupedNavigation, SectionNavigation, type NavigableView } from "@/components/GroupedNavigation";
 import { SelectionSearch } from "@/components/SelectionSearch";
+import { InGameMedalsPopover } from "@/components/InGameMedalsPopover";
+import { useInGameMedals } from "@/hooks/useInGameMedals";
 import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
 
 export default function App() {
   const { isAdmin, user: adminUser } = useAdminAuth();
   const { removedKeys } = useRemovedRuns();
+  const { medals: inGameMedals, loading: inGameMedalsLoading } = useInGameMedals();
   const [dynamicPacks, setDynamicPacks] = useState<LevelPack[]>(LEVEL_PACKS);
   const [dynamicLevels, setDynamicLevels] = useState<LevelInfo[]>(LEVELS);
   const [selectedLevel, setSelectedLevel] = useState<string>(LEVELS[0]?.id || "");
@@ -352,7 +356,7 @@ export default function App() {
   const { byUsername: playerProfiles, reload: reloadProfiles, myProfile: myLinkedProfile, saveMyProfile } = usePlayerProfiles(adminUser?.id);
 
 
-  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries' | 'fame' | 'targets' | 'clubs'>('leaderboard');
+  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries' | 'fame' | 'targets' | 'clubs' | 'medal-ease'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history' | 'arrows'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -523,6 +527,12 @@ export default function App() {
   const hasLevelRanks = React.useMemo(
     () => !!(activeLevelData?.ranks && Object.keys(activeLevelData.ranks).length > 0),
     [activeLevelData],
+  );
+
+  // Only pack levels have in-game medals; custom levels are excluded.
+  const isPackLevel = React.useMemo(
+    () => dynamicLevels.some((l) => l.id.toLowerCase() === selectedLevel.toLowerCase()),
+    [dynamicLevels, selectedLevel],
   );
 
   const usingArrowRanks = React.useMemo(
@@ -1910,6 +1920,16 @@ export default function App() {
             onLevelClick={(levelId) => { setSelectedLevel(levelId); setView('leaderboard'); }}
             formatTime={(seconds) => formatTime(seconds)}
           />
+        ) : view === 'medal-ease' ? (
+          <MedalEaseView
+            levels={dynamicLevels}
+            packs={dynamicPacks}
+            data={processedAllLevelsData}
+            medals={inGameMedals}
+            loading={inGameMedalsLoading}
+            onLevelClick={(levelId) => { setSelectedLevel(levelId); setView('leaderboard'); }}
+            formatTime={(seconds) => formatTime(seconds)}
+          />
         ) : view === 'rivalries' ? (
           <RivalriesView
             levels={dynamicLevels}
@@ -2251,6 +2271,13 @@ export default function App() {
                     <Trophy className="w-3 h-3 mr-1 fill-current" /> View Ranks
                   </Button>
                 )}
+                {isPackLevel && (
+                  <InGameMedalsPopover
+                    medals={inGameMedals[selectedLevel.toUpperCase()]}
+                    loading={inGameMedalsLoading}
+                    formatTime={(s) => formatTime(s, 'seconds')}
+                  />
+                )}
                 <Badge variant="outline" className="bg-[var(--app-accent)]/10 text-[var(--app-accent)] border-[var(--app-accent)]/20 font-mono text-[10px]">
                   LIVE DATA
                 </Badge>
@@ -2497,14 +2524,23 @@ export default function App() {
                     <Trophy className="w-5 h-5 text-amber-500 fill-current" />
                     <h3 className="font-bold text-sm uppercase tracking-wider font-mono">Rank Requirements</h3>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowRankLegend(false)}
-                    className="h-8 w-8 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg"
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {isPackLevel && (
+                      <InGameMedalsPopover
+                        medals={inGameMedals[selectedLevel.toUpperCase()]}
+                        loading={inGameMedalsLoading}
+                        formatTime={(s) => formatTime(s, 'seconds')}
+                      />
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowRankLegend(false)}
+                      className="h-8 w-8 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
                 
                 <div className="p-4">

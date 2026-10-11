@@ -66,6 +66,21 @@ export interface LevelInfo {
   packId: string;
 }
 
+/**
+ * In-game medal thresholds for a level, straight from the game API. The game's
+ * "top" tier is what players see as the Diamond medal; the other three are
+ * Gold / Silver / Bronze. Times are seconds; a run earns the tier when its
+ * completion time is at or below the cutoff.
+ */
+export interface InGameMedals {
+  bronzeTime: number;
+  silverTime: number;
+  goldTime: number;
+  topTime: number;
+  official: boolean;
+  finisherCount: number;
+}
+
 export interface LevelPack {
   id: string;
   name: string;
