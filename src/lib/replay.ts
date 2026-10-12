@@ -30,19 +30,8 @@ export const REPLAY_SYMBOLS = [
 
 export type ReplaySymbolKey = (typeof REPLAY_SYMBOLS)[number]["key"];
 
-/** The "no input" symbol value. Held-input extension leaves neutral runs alone. */
-export const NEUTRAL_SYMBOL = 0;
-
 /** Milliseconds represented by a single input tick (240Hz). */
 export const REPLAY_TICK_MS = 1000 / 240;
-
-/**
- * Each held input is lengthened by this factor, to compensate for replays
- * holding each input a little early-starting and a little short. Applied per
- * contiguous run of the same symbol (trailing neutral is left alone), so a
- * segment grows proportionally rather than by a fixed amount.
- */
-export const REPLAY_INPUT_EXTENSION_FACTOR = 1.1;
 
 export interface ReplayInput {
   /** 0-based index of this input in the run. */
@@ -83,29 +72,7 @@ export function decodeInputSymbols(base64: string, inputCount?: number): number[
     const byte = binary.charCodeAt(i);
     symbols.push((byte >> 6) & 3, (byte >> 4) & 3, (byte >> 2) & 3, byte & 3);
   }
-  const decoded =
-    typeof inputCount === "number" && inputCount > 0 ? symbols.slice(0, inputCount) : symbols;
-  return extendHeldInputs(decoded);
-}
-
-/**
- * Lengthen each held (non-neutral) symbol's contiguous run by
- * {@link REPLAY_INPUT_EXTENSION_FACTOR}. Neutral/coast runs are left untouched.
- */
-function extendHeldInputs(symbols: number[]): number[] {
-  if (REPLAY_INPUT_EXTENSION_FACTOR <= 1 || symbols.length === 0) return symbols;
-  const out: number[] = [];
-  let i = 0;
-  while (i < symbols.length) {
-    const symbol = symbols[i];
-    let j = i + 1;
-    while (j < symbols.length && symbols[j] === symbol) j++;
-    const run = j - i;
-    const copies = symbol === NEUTRAL_SYMBOL ? run : Math.ceil(run * REPLAY_INPUT_EXTENSION_FACTOR);
-    for (let k = 0; k < copies; k++) out.push(symbol);
-    i = j;
-  }
-  return out;
+  return typeof inputCount === "number" && inputCount > 0 ? symbols.slice(0, inputCount) : symbols;
 }
 
 /**
