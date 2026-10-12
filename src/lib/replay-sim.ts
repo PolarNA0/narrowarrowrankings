@@ -4,15 +4,17 @@
  * list of timestamps.
  *
  * The model is a port of the game's `Player` (RigidBody2D) script and its
- * `_physics_process`. Three details matter and the first two were wrong in the
- * original cut:
+ * `_physics_process`. The constants below were fitted to the shipped engine's
+ * actual free-flight and steering response rather than guessed:
  *
  *   - The game forces `delta = 1/60` at the top of `_physics_process`, so the
  *     physics runs at 60Hz. Inputs are sampled at 240Hz (4.1667ms), i.e. four
  *     input symbols per physics step. Stepping once per input symbol made every
- *     event happen 4x too late in wall-clock time — the reported "inputs start
- *     too late" symptom — and the 1/240 `delta` also under-applied the
- *     per-step damping.
+ *     event happen 4x too late in wall-clock time.
+ *   - The throttle spins up over `engine_startup_ticks` (60) at 240Hz — a
+ *     quarter second — so a 60Hz step must ramp it by four 240Hz increments.
+ *     Ramping by a single `DT` left the arrow crawling for the first second,
+ *     which read as the replay "starting late".
  *   - Symbol 1 is the "right" steer and symbol 2 is "left". Getting this
  *     backwards sends the arrow into the walls on the first corner.
  *   - Neutral (symbol 0) spins the throttle *up*, not down: the game only
@@ -20,10 +22,10 @@
  *
  * Per step, with `delta = 1/60`:
  *   - steering applies an angular impulse of +/-100000 * delta
- *   - holding either steer spins the throttle up by delta, brake (both held)
+ *   - holding either steer spins the throttle up by 4*delta, brake (both held)
  *     spins it down; throttle is clamped to [-0.1, 1]
- *   - forward thrust is an impulse of 2000 * delta * throttle along facing
- *   - linear damp 1, angular damp 4 (both tripled while braking)
+ *   - forward thrust is an impulse of 114 * delta * throttle along facing
+ *   - linear damp 0.19, angular damp 4 (both tripled while braking)
  *   - walls push the player out; normal walls reflect with restitution 0.25,
  *     bouncy walls with 1.2, death and boost walls are solid
  *
@@ -75,16 +77,25 @@ export const SIM_TICK_MS = 1000 / 60;
 const DT = SIM_TICK_MS / 1000;
 /** Input symbols consumed per physics step (240Hz inputs / 60Hz physics). */
 const INPUTS_PER_STEP = 4;
-const TORQUE = 100_000;
-const THRUST = 2000;
 /**
- * Effective rotational inertia of the shipped player scene. The scene mass and
- * inertia are not in the exported build, so this is the value that best tracks
- * real runs across multiple levels. Too small a value makes the arrow pivot on
+ * Throttle change per physics step. The engine spins the throttle up over its
+ * `engine_startup_ticks` (60) at 240Hz — a quarter second of wall-clock — so a
+ * 60Hz step that consumes four input samples must advance the throttle by four
+ * 240Hz increments. Ramping by a single `DT` per step left the arrow almost
+ * stationary for the first second (the reported "starts late").
+ */
+const STEP_S = INPUTS_PER_STEP * DT;
+const TORQUE = 100_000;
+/** Forward thrust. Refit from the shipped engine's free-flight profile. */
+const THRUST = 114;
+/**
+ * Effective rotational inertia of the shipped player scene, refit so a held
+ * steer turns at the engine's rate. Too small a value makes the arrow pivot on
  * a dime and spin itself into the walls on every corner.
  */
-const INERTIA = 4000;
-const LINEAR_DAMP = 1;
+const INERTIA = 6600;
+/** Linear damping, refit from the engine's free-flight profile. */
+const LINEAR_DAMP = 0.19;
 const ANGULAR_DAMP = 4;
 const BRAKE_DRAG = 3;
 const RESTITUTION = 0.25;
@@ -241,11 +252,11 @@ export function simulateRun(
     let linearDamp = LINEAR_DAMP;
     let angularDamp = ANGULAR_DAMP;
     if (braking) {
-      throttle = Math.max(-0.1, throttle - DT);
+      throttle = Math.max(-0.1, throttle - STEP_S);
       linearDamp *= BRAKE_DRAG;
       angularDamp *= BRAKE_DRAG;
     } else {
-      throttle = Math.min(1, throttle + DT);
+      throttle = Math.min(1, throttle + STEP_S);
     }
 
     vx += Math.cos(rot) * THRUST * DT * throttle;
