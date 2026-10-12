@@ -80,9 +80,10 @@ const THRUST = 2000;
 /**
  * Effective rotational inertia of the shipped player scene. The scene mass and
  * inertia are not in the exported build, so this is the value that best tracks
- * real runs across multiple levels.
+ * real runs across multiple levels. Too small a value makes the arrow pivot on
+ * a dime and spin itself into the walls on every corner.
  */
-const INERTIA = 700;
+const INERTIA = 4000;
 const LINEAR_DAMP = 1;
 const ANGULAR_DAMP = 4;
 const BRAKE_DRAG = 3;
