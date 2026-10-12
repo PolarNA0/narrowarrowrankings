@@ -541,7 +541,9 @@ function ReplayStage({
       ctx.stroke();
     }
 
-    const upto = Math.min(Math.floor(frame), sim.path.length - 1);
+    if (sim.path.length === 0) return;
+    const safeFrame = Number.isFinite(frame) ? Math.floor(frame) : 0;
+    const upto = Math.max(0, Math.min(safeFrame, sim.path.length - 1));
     // Travelled path.
     ctx.strokeStyle = "rgba(56,189,248,0.55)";
     ctx.lineWidth = 1.5;
