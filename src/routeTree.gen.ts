@@ -24,6 +24,7 @@ import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
 import { Route as ApiPacksSlugRouteImport } from './routes/api/packs.$slug'
 import { Route as ApiPublicCategoryWrCheckRouteImport } from './routes/api/public/category-wr-check'
 import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
+import { Route as ApiSkinsSplatRouteImport } from './routes/api/skins.$'
 import { Route as ApiUserUsernameRouteImport } from './routes/api/user.$username'
 
 const IndexRoute = IndexRouteImport.update({
@@ -102,6 +103,11 @@ const ApiRunsRunIdRoute = ApiRunsRunIdRouteImport.update({
   path: '/api/runs/$runId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSkinsSplatRoute = ApiSkinsSplatRouteImport.update({
+  id: '/api/skins/$',
+  path: '/api/skins/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiUserUsernameRoute = ApiUserUsernameRouteImport.update({
   id: '/api/user/$username',
   path: '/api/user/$username',
@@ -123,6 +129,7 @@ export interface FileRoutesByFullPath {
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
+  '/api/skins/$': typeof ApiSkinsSplatRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs/': typeof ApiPacksIndexRoute
 }
@@ -141,6 +148,7 @@ export interface FileRoutesByTo {
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
+  '/api/skins/$': typeof ApiSkinsSplatRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs': typeof ApiPacksIndexRoute
 }
@@ -160,6 +168,7 @@ export interface FileRoutesById {
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
+  '/api/skins/$': typeof ApiSkinsSplatRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs/': typeof ApiPacksIndexRoute
 }
@@ -180,6 +189,7 @@ export interface FileRouteTypes {
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
     | '/api/runs/$runId'
+    | '/api/skins/$'
     | '/api/user/$username'
     | '/api/packs/'
   fileRoutesByTo: FileRoutesByTo
@@ -198,6 +208,7 @@ export interface FileRouteTypes {
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
     | '/api/runs/$runId'
+    | '/api/skins/$'
     | '/api/user/$username'
     | '/api/packs'
   id:
@@ -216,6 +227,7 @@ export interface FileRouteTypes {
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
     | '/api/runs/$runId'
+    | '/api/skins/$'
     | '/api/user/$username'
     | '/api/packs/'
   fileRoutesById: FileRoutesById
@@ -235,6 +247,7 @@ export interface RootRouteChildren {
   ApiPacksSlugRoute: typeof ApiPacksSlugRoute
   ApiPublicCategoryWrCheckRoute: typeof ApiPublicCategoryWrCheckRoute
   ApiRunsRunIdRoute: typeof ApiRunsRunIdRoute
+  ApiSkinsSplatRoute: typeof ApiSkinsSplatRoute
   ApiUserUsernameRoute: typeof ApiUserUsernameRoute
   ApiPacksIndexRoute: typeof ApiPacksIndexRoute
 }
@@ -346,6 +359,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRunsRunIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/skins/$': {
+      id: '/api/skins/$'
+      path: '/api/skins/$'
+      fullPath: '/api/skins/$'
+      preLoaderRoute: typeof ApiSkinsSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/user/$username': {
       id: '/api/user/$username'
       path: '/api/user/$username'
@@ -371,6 +391,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPacksSlugRoute: ApiPacksSlugRoute,
   ApiPublicCategoryWrCheckRoute: ApiPublicCategoryWrCheckRoute,
   ApiRunsRunIdRoute: ApiRunsRunIdRoute,
+  ApiSkinsSplatRoute: ApiSkinsSplatRoute,
   ApiUserUsernameRoute: ApiUserUsernameRoute,
   ApiPacksIndexRoute: ApiPacksIndexRoute,
 }

@@ -120,6 +120,7 @@ import { GroupedNavigation, SectionNavigation, type NavigableView } from "@/comp
 import { SelectionSearch } from "@/components/SelectionSearch";
 import { InGameMedalsPopover } from "@/components/InGameMedalsPopover";
 import { ReplayViewer } from "@/components/ReplayViewer";
+import { SkinsView } from "@/components/SkinsView";
 import { useInGameMedals } from "@/hooks/useInGameMedals";
 import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
 
@@ -358,7 +359,7 @@ export default function App() {
   const { byUsername: playerProfiles, reload: reloadProfiles, myProfile: myLinkedProfile, saveMyProfile } = usePlayerProfiles(adminUser?.id);
 
 
-  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries' | 'fame' | 'targets' | 'clubs' | 'medal-ease'>('leaderboard');
+  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries' | 'fame' | 'targets' | 'clubs' | 'medal-ease' | 'skins'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history' | 'arrows'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -2036,6 +2037,8 @@ export default function App() {
               formatTime={(t) => formatTime(t, 'seconds')}
             />
           </div>
+        ) : view === 'skins' ? (
+          <SkinsView />
         ) : view === 'score' ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">

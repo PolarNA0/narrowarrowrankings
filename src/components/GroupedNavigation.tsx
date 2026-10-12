@@ -8,6 +8,7 @@ export const NAV_GROUPS = [
   { id: "records", label: "Records", items: [{ id: "wrs", label: "World & category records" }, { id: "medal-ease", label: "Easiest medals" }, { id: "tracker", label: "Recent runs" }, { id: "fame", label: "Player achievements" }] },
   { id: "players", label: "Players", items: [{ id: "voting", label: "Player voting" }, { id: "rivalries", label: "Rivalries" }, { id: "targets", label: "Improvement targets" }, { id: "clubs", label: "Milestone clubs" }] },
   { id: "customs", label: "Customs", items: [{ id: "customs", label: "Custom levels" }, { id: "completions", label: "Custom completions" }, { id: "random", label: "Randomizer" }] },
+  { id: "skins", label: "Skins", items: [{ id: "skins", label: "Skin catalogue" }] },
 ] as const;
 
 export type NavigableView = typeof NAV_GROUPS[number]["items"][number]["id"];

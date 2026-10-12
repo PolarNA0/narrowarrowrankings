@@ -3,22 +3,27 @@
  *
  * A run's `inputs` field is a base64 string where each byte packs four 2-bit
  * symbols, most-significant pair first. The game samples input at four times
- * the physics rate, so one tick is 1000/240 ≈ 4.1667ms.
+ * the physics rate, so one tick is 1000/240 ≈ 4.1667ms and four ticks make one
+ * 60Hz physics frame.
  *
- * Symbol alphabet (best-effort reverse engineering — the L/R labels are a
- * constant so they can be flipped in one place if upstream ever documents
- * them, or if a replay is visually confirmed to steer the other way):
- *   0 = left steer held
- *   1 = right steer held
- *   2 = neutral / coast (no steer)
+ * Symbol alphabet (recovered by matching a live replay against the level
+ * geometry — the value that dominates while steering through a map is 0, so it
+ * is the "no input" state, not a steer):
+ *   0 = neutral / coast (no input)
+ *   1 = left steer held
+ *   2 = right steer held
  *   3 = brake (both steer directions held — cancels steering and slows down)
+ *
+ * The left/right assignment is the one remaining unknown: a mirrored replay is
+ * physically identical, so it cannot be resolved from the inputs alone. It is
+ * kept in one place here so it can be flipped if ever confirmed visually.
  */
 
-/** Column encoded per 2-bit symbol. */
+/** Column encoded per 2-bit symbol (array position === symbol value). */
 export const REPLAY_SYMBOLS = [
+  { key: "neutral", label: "Neutral", short: "n", steer: false },
   { key: "left", label: "Left", short: "l", steer: true },
   { key: "right", label: "Right", short: "r", steer: true },
-  { key: "neutral", label: "Neutral", short: "n", steer: false },
   { key: "brake", label: "Brake", short: "b", steer: false },
 ] as const;
 
@@ -66,9 +71,7 @@ export function decodeInputSymbols(base64: string, inputCount?: number): number[
     const byte = binary.charCodeAt(i);
     symbols.push((byte >> 6) & 3, (byte >> 4) & 3, (byte >> 2) & 3, byte & 3);
   }
-  return typeof inputCount === "number" && inputCount > 0
-    ? symbols.slice(0, inputCount)
-    : symbols;
+  return typeof inputCount === "number" && inputCount > 0 ? symbols.slice(0, inputCount) : symbols;
 }
 
 /**
@@ -94,7 +97,7 @@ export function summariseReplay(inputs: string, inputCount?: number): ReplaySumm
   for (let i = 1; i <= symbols.length; i++) {
     // Flush the run [start, i) when the symbol changes (or at the end).
     if (i === symbols.length || symbols[i] !== current) {
-      const meta = REPLAY_SYMBOLS[current] ?? REPLAY_SYMBOLS[2];
+      const meta = REPLAY_SYMBOLS[current] ?? REPLAY_SYMBOLS[0];
       const heldMs = (i - start) * REPLAY_TICK_MS;
       segments.push({
         index: segments.length,
@@ -128,4 +131,55 @@ export function formatReplayInput(input: ReplayInput): string {
 /** Compact label for an entire segment including its start time. */
 export function formatReplayTimestamp(ms: number): string {
   return `${(ms / 1000).toFixed(2)}s`;
+}
+
+export interface ReplayCombo {
+  /** Steering sequence, e.g. "L/RL" (held together) or "L→R" (tapped in order). */
+  sequence: string;
+  /** Number of distinct held segments the combo was folded from. */
+  segments: number;
+  /** How long the whole combo lasts, in ms. */
+  durationMs: number;
+}
+
+/** A steering segment is a tap when it is shorter than this. */
+const TAP_MS = 130;
+
+/**
+ * Fold the held-input segments into a press sequence / combo. Neutral gaps are
+ * dropped (they are coasting, not a key press) and a real pause between two
+ * presses is shown as a separator. Runs of alternating short taps are joined
+ * with "/" because in play they are mashed together, e.g. "L/RL".
+ */
+export function detectCombo(summary: ReplaySummary): ReplayCombo | null {
+  const presses = summary.inputs.filter((input) => input.key === "left" || input.key === "right");
+  if (presses.length === 0) return null;
+
+  let sequence = "";
+  let gapBefore = 0;
+  let durationMs = 0;
+  for (let i = 0; i < presses.length; i++) {
+    const press = presses[i];
+    if (i > 0) {
+      // Distance from the end of the previous press to the start of this one.
+      const prevEnd = presses[i - 1].atMs + presses[i - 1].heldMs;
+      gapBefore = press.atMs - prevEnd;
+    }
+    const ch = press.key === "left" ? "L" : "R";
+    if (i === 0) sequence = ch;
+    else if (gapBefore > 90) sequence += ` → ${ch}`;
+    else sequence += `/${ch}`;
+    durationMs = press.atMs + press.heldMs;
+  }
+
+  return {
+    sequence,
+    segments: presses.length,
+    durationMs,
+  };
+}
+
+/** True when a steering press is a quick tap rather than a sustained hold. */
+export function isTap(input: ReplayInput): boolean {
+  return (input.key === "left" || input.key === "right") && input.heldMs < TAP_MS;
 }

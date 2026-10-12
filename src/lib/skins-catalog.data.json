@@ -1,0 +1,453 @@
+{
+  "themes": [
+    {
+      "name": "Army Green",
+      "code": "0x183000"
+    },
+    {
+      "name": "Blaze Orange",
+      "code": "#FF7A1A"
+    },
+    {
+      "name": "Blue",
+      "code": "0x2266FF"
+    },
+    {
+      "name": "Bombardino Crocodilo",
+      "code": "#228B22"
+    },
+    {
+      "name": "Bombardino Green",
+      "code": "#32CD32"
+    },
+    {
+      "name": "Champion",
+      "code": "trophy_champion_energy.png"
+    },
+    {
+      "name": "Cyber Teal",
+      "code": "#00E5D0"
+    },
+    {
+      "name": "Deep Pink",
+      "code": "#ff1493"
+    },
+    {
+      "name": "Dodger Blue",
+      "code": "#1E90FF"
+    },
+    {
+      "name": "Electric Cyan",
+      "code": "#00FFFF"
+    },
+    {
+      "name": "Faded Green",
+      "code": "0x7fb07f"
+    },
+    {
+      "name": "Ghost Green",
+      "code": "0x203020"
+    },
+    {
+      "name": "Gold",
+      "code": "trophy_gold_speedy.png"
+    },
+    {
+      "name": "Green",
+      "code": "0x22FF66"
+    },
+    {
+      "name": "HTS Yellow",
+      "code": "#FFD400"
+    },
+    {
+      "name": "Hot Coral",
+      "code": "#FF5E6C"
+    },
+    {
+      "name": "Hot Pink",
+      "code": "#ff2080"
+    },
+    {
+      "name": "Lavender Fizz",
+      "code": "#D9A6FF"
+    },
+    {
+      "name": "Light Green",
+      "code": "0x66ff66"
+    },
+    {
+      "name": "Light Pink",
+      "code": "#ffb6c1"
+    },
+    {
+      "name": "Lime Green",
+      "code": "0xaaff00"
+    },
+    {
+      "name": "Lipstick Red",
+      "code": "#dd0044"
+    },
+    {
+      "name": "NADC 2R",
+      "code": "#34AC65"
+    },
+    {
+      "name": "NADC Aura Catchers",
+      "code": "#6500B3"
+    },
+    {
+      "name": "NADC Fruities",
+      "code": "#FF7700"
+    },
+    {
+      "name": "NADC Moderated Name Lovers",
+      "code": "#C4B28E"
+    },
+    {
+      "name": "NADC NEFE",
+      "code": "#00F0FF"
+    },
+    {
+      "name": "NADC Tom and Jerry",
+      "code": "#DA291C"
+    },
+    {
+      "name": "NADC schr\u00f6dinger's gays",
+      "code": "#D8102A"
+    },
+    {
+      "name": "No France",
+      "code": "#0055A4"
+    },
+    {
+      "name": "Paper Pilot",
+      "code": "toybox_test_v1_paper_pilot_narrow.png"
+    },
+    {
+      "name": "Permafrost",
+      "code": "season1_permafrost.png"
+    },
+    {
+      "name": "Pink",
+      "code": "0xFFAAFF"
+    },
+    {
+      "name": "Pixel",
+      "code": "#7A3DF0"
+    },
+    {
+      "name": "Pizza",
+      "code": "#FFC93E"
+    },
+    {
+      "name": "Rose Pink",
+      "code": "#e667ce"
+    },
+    {
+      "name": "Royal Gold",
+      "code": "#ffd000"
+    },
+    {
+      "name": "Salmon Pink",
+      "code": "#ff91a4"
+    },
+    {
+      "name": "Sigma Silver",
+      "code": "#C7D3E8"
+    },
+    {
+      "name": "Silver",
+      "code": "trophy_silver_narrow.png"
+    },
+    {
+      "name": "Skibidi White",
+      "code": "#FFFFFF"
+    },
+    {
+      "name": "Sky Blue",
+      "code": "#00BFFF"
+    },
+    {
+      "name": "Steel Blue",
+      "code": "#4682B4"
+    },
+    {
+      "name": "Teal Green",
+      "code": "0x008060"
+    },
+    {
+      "name": "Ticklish Teal",
+      "code": "#00CED1"
+    },
+    {
+      "name": "Tralalelo Tralala",
+      "code": "#2222AB"
+    },
+    {
+      "name": "Turbo Turquoise",
+      "code": "#40E0D0"
+    },
+    {
+      "name": "Wildfire",
+      "code": "season1_wildfire.png"
+    }
+  ],
+  "thrusts": [
+    {
+      "name": "Aurora",
+      "code": "aurora3_thrust.svg"
+    },
+    {
+      "name": "Bhutan",
+      "code": "flags/bt.svg"
+    },
+    {
+      "name": "Blue"
+    },
+    {
+      "name": "Brazil",
+      "code": "flags/br.svg"
+    },
+    {
+      "name": "Cloud Gray"
+    },
+    {
+      "name": "Core",
+      "code": "core_thrust.svg"
+    },
+    {
+      "name": "Cream White"
+    },
+    {
+      "name": "Czechia",
+      "code": "flags/cz.svg"
+    },
+    {
+      "name": "Deep Blue"
+    },
+    {
+      "name": "Deep Green"
+    },
+    {
+      "name": "Deep Red"
+    },
+    {
+      "name": "Dragonfire",
+      "code": "dragonfire2_thrust.svg"
+    },
+    {
+      "name": "Germany",
+      "code": "flags/de.svg"
+    },
+    {
+      "name": "Ghost Gray"
+    },
+    {
+      "name": "Glacier Pulse",
+      "code": "season1_glacier_pulse_thrust.svg"
+    },
+    {
+      "name": "Jamaica",
+      "code": "flags/jm.svg"
+    },
+    {
+      "name": "Lime White"
+    },
+    {
+      "name": "Myanmar",
+      "code": "flags/mm.svg"
+    },
+    {
+      "name": "Netherlands",
+      "code": "flags/nl.svg"
+    },
+    {
+      "name": "Octopus Purple"
+    },
+    {
+      "name": "Oil Slick",
+      "code": "oilslick2_thrust.svg"
+    },
+    {
+      "name": "Orange"
+    },
+    {
+      "name": "Pixel"
+    },
+    {
+      "name": "Poland",
+      "code": "flags/pl.svg"
+    },
+    {
+      "name": "Portugal",
+      "code": "flags/pt.svg"
+    },
+    {
+      "name": "Red"
+    },
+    {
+      "name": "Rose Pink"
+    },
+    {
+      "name": "Rose White"
+    },
+    {
+      "name": "Shards",
+      "code": "shards_thrust.svg"
+    },
+    {
+      "name": "Sky Blue"
+    },
+    {
+      "name": "Slovenia",
+      "code": "flags/si.svg"
+    },
+    {
+      "name": "Spain",
+      "code": "flags/es.svg"
+    },
+    {
+      "name": "Sunset",
+      "code": "sunset3_thrust.svg"
+    },
+    {
+      "name": "Sweden",
+      "code": "flags/se.svg"
+    },
+    {
+      "name": "Synthwave",
+      "code": "synthwave2_thrust.svg"
+    },
+    {
+      "name": "Syria",
+      "code": "flags/sy.svg"
+    },
+    {
+      "name": "Yellow"
+    }
+  ],
+  "trails": [
+    {
+      "name": "Blood Orange",
+      "code": "0xFFFF4A00"
+    },
+    {
+      "name": "Blue",
+      "code": "0xFF0000FF"
+    },
+    {
+      "name": "Cold Current",
+      "code": "season1_cold_current_trail.svg"
+    },
+    {
+      "name": "Cyan",
+      "code": "0xFF00FFFF"
+    },
+    {
+      "name": "Fresh Mint",
+      "code": "0xFF98FFCC"
+    },
+    {
+      "name": "Gray",
+      "code": "0xFF808080"
+    },
+    {
+      "name": "Green",
+      "code": "0xFF00FF00"
+    },
+    {
+      "name": "Molten Gold",
+      "code": "0xFFFFC300"
+    },
+    {
+      "name": "Peach Fuzz",
+      "code": "0xFFFFCBA4"
+    },
+    {
+      "name": "Pink",
+      "code": "0xFFFF8AC8"
+    },
+    {
+      "name": "Red",
+      "code": "0xFFFF0000"
+    },
+    {
+      "name": "White",
+      "code": "0xFFFFFFFF"
+    }
+  ],
+  "thrustShaders": [
+    {
+      "name": "Angles"
+    },
+    {
+      "name": "Bubbles"
+    },
+    {
+      "name": "Checkers"
+    },
+    {
+      "name": "Default"
+    },
+    {
+      "name": "Glitch"
+    },
+    {
+      "name": "Lines"
+    },
+    {
+      "name": "Outlines"
+    },
+    {
+      "name": "Reverse Angles"
+    },
+    {
+      "name": "Ripples"
+    },
+    {
+      "name": "Swoop"
+    },
+    {
+      "name": "Zigzag"
+    }
+  ],
+  "trailShaders": [
+    {
+      "name": "Dashed"
+    },
+    {
+      "name": "Edges"
+    },
+    {
+      "name": "Embers"
+    },
+    {
+      "name": "Glow"
+    },
+    {
+      "name": "Haze"
+    },
+    {
+      "name": "Hollow"
+    },
+    {
+      "name": "Line"
+    },
+    {
+      "name": "None"
+    },
+    {
+      "name": "Rails"
+    },
+    {
+      "name": "Ribbon"
+    },
+    {
+      "name": "Split"
+    },
+    {
+      "name": "Wake"
+    }
+  ]
+}
