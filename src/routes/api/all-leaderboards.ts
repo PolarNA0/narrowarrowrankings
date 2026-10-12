@@ -45,9 +45,14 @@ async function refreshBatch() {
   const base: Snap = memo ?? { boards: {}, loaded: 0, total: LEVELS.length, at: 0, levelAt: {} };
   const levelAt = { ...(base.levelAt ?? {}) };
   const now = Date.now();
+  // Always refresh a bounded batch. A cold start used to fetch every level at
+  // once (216 throttled upstream calls), which never finished inside the
+  // handler's 20s budget, so the snapshot was never written and `loaded` stayed
+  // at 0 forever. Warming in BATCH-sized slices lets successive requests
+  // complete and persist.
   const due = LEVELS.filter((l) => now - (levelAt[l.id] ?? 0) > LEVEL_FRESH_MS)
     .sort((a, b) => (levelAt[a.id] ?? 0) - (levelAt[b.id] ?? 0))
-    .slice(0, base.loaded === 0 ? LEVELS.length : BATCH);
+    .slice(0, BATCH);
   if (due.length === 0) return;
 
   const boards: Record<string, BoardEntry[]> = { ...base.boards };
