@@ -4,15 +4,21 @@
  * list of timestamps.
  *
  * The model is a port of the game's `Player` (RigidBody2D) script and its
- * `_physics_process`. Two details matter and were both wrong in the first cut:
+ * `_physics_process`. Three details matter and the first two were wrong in the
+ * original cut:
  *
- *   - Physics steps once per recorded input sample. The input stream is 240Hz
- *     (4.1667ms), so the bootstrapped `dt` is 1/240s — running at 60Hz made the
- *     arrow cover 4x too much ground per step and tunnel straight through walls.
+ *   - The game forces `delta = 1/60` at the top of `_physics_process`, so the
+ *     physics runs at 60Hz. Inputs are sampled at 240Hz (4.1667ms), i.e. four
+ *     input symbols per physics step. Stepping once per input symbol made every
+ *     event happen 4x too late in wall-clock time — the reported "inputs start
+ *     too late" symptom — and the 1/240 `delta` also under-applied the
+ *     per-step damping.
  *   - Symbol 1 is the "right" steer and symbol 2 is "left". Getting this
  *     backwards sends the arrow into the walls on the first corner.
+ *   - Neutral (symbol 0) spins the throttle *up*, not down: the game only
+ *     brakes when both steer directions are held (symbol 3).
  *
- * Per step, with `delta = 1/240`:
+ * Per step, with `delta = 1/60`:
  *   - steering applies an angular impulse of +/-100000 * delta
  *   - holding either steer spins the throttle up by delta, brake (both held)
  *     spins it down; throttle is clamped to [-0.1, 1]
@@ -21,9 +27,9 @@
  *   - walls push the player out; normal walls reflect with restitution 0.25,
  *     bouncy walls with 1.2, death and boost walls are solid
  *
- * This is still an approximation: the exact collision shape and per-run input
- * latency are not reproduced, so the result is directionally correct and ends
- * near the finish line rather than crossing it at the exact recorded time.
+ * This is still an approximation: the exact collision shape, zone effects and
+ * mass/inertia of the shipped player scene are not reproduced, so the result is
+ * directionally faithful but not a frame-exact reproduction of the game.
  */
 
 import { decodeInputSymbols } from "./replay";
@@ -46,7 +52,7 @@ export interface SimWall {
 
 export interface SimResult {
   path: SimPoint[];
-  /** Sample index (240Hz) at which the finish line was crossed, or null. */
+  /** Step index (60Hz) at which the finish line was crossed, or null. */
   finishTick: number | null;
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
 }
@@ -60,13 +66,23 @@ export interface RawLevelData {
   }>;
 }
 
-/** Milliseconds per simulation step (one recorded input sample). */
-export const SIM_TICK_MS = 1000 / 240;
+/**
+ * Milliseconds per simulation step. The game's `_physics_process` forces
+ * `delta = 1/60`, so one physics step is one 60Hz frame = four recorded input
+ * samples (inputs are 240Hz).
+ */
+export const SIM_TICK_MS = 1000 / 60;
 const DT = SIM_TICK_MS / 1000;
+/** Input symbols consumed per physics step (240Hz inputs / 60Hz physics). */
+const INPUTS_PER_STEP = 4;
 const TORQUE = 100_000;
 const THRUST = 2000;
-/** Effective rotational inertia; tuned so turns match the game's pace. */
-const INERTIA = 4000;
+/**
+ * Effective rotational inertia of the shipped player scene. The scene mass and
+ * inertia are not in the exported build, so this is the value that best tracks
+ * real runs across multiple levels.
+ */
+const INERTIA = 700;
 const LINEAR_DAMP = 1;
 const ANGULAR_DAMP = 4;
 const BRAKE_DRAG = 3;
@@ -183,7 +199,7 @@ export interface SimOptions {
 
 /**
  * Run the physics forward over the decoded input stream and return the path.
- * One input sample is one physics step (240Hz).
+ * One physics step is one 60Hz frame (four 240Hz input samples).
  */
 export function simulateRun(
   inputsBase64: string,
@@ -195,7 +211,6 @@ export function simulateRun(
   const radius = options.radius ?? PLAYER_RADIUS;
   const inertia = options.inertia ?? INERTIA;
   const walls = prepare(levelWalls(data), radius);
-  const maxTicks = options.maxTicks ?? 240 * 180;
 
   let x = 0;
   let y = 0;
@@ -205,13 +220,18 @@ export function simulateRun(
   let av = 0;
   let throttle = 0;
 
+  const maxTicks = options.maxTicks ?? 60 * 180;
+  const steps = Math.min(Math.ceil(symbols.length / INPUTS_PER_STEP), maxTicks);
+
   const path: SimPoint[] = [{ x, y, rot }];
   let finishTick: number | null = null;
   const bounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 
-  const frames = Math.min(symbols.length, maxTicks);
-  for (let f = 0; f < frames; f++) {
-    const symbol = symbols[f];
+  for (let f = 0; f < steps; f++) {
+    // A physics step spans four 240Hz input samples; the game reads the key
+    // state once at the top of the frame, so use the first sample in the group.
+    const start = f * INPUTS_PER_STEP;
+    const symbol = symbols[Math.min(start, symbols.length - 1)];
     const steer = SYMBOL_TO_STEER[symbol] ?? 0;
     const braking = symbol === 3;
 
