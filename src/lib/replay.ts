@@ -30,8 +30,22 @@ export const REPLAY_SYMBOLS = [
 
 export type ReplaySymbolKey = (typeof REPLAY_SYMBOLS)[number]["key"];
 
+/** The "no input" symbol value. Held-input extension leaves neutral runs alone. */
+export const NEUTRAL_SYMBOL = 0;
+
 /** Milliseconds represented by a single input tick (240Hz). */
 export const REPLAY_TICK_MS = 1000 / 240;
+
+/**
+ * Every held input is extended by this much, to compensate for replays holding
+ * each input a little early-starting and a little short. Applied per contiguous
+ * run of the same symbol (trailing neutral is left alone), so a segment's
+ * duration grows by a fixed 0.25s rather than stretching proportionally.
+ */
+export const REPLAY_INPUT_EXTENSION_MS = 250;
+
+/** Extra tick copies appended to each held-input segment. */
+const EXTENSION_TICKS = Math.round(REPLAY_INPUT_EXTENSION_MS / REPLAY_TICK_MS);
 
 export interface ReplayInput {
   /** 0-based index of this input in the run. */
@@ -72,7 +86,31 @@ export function decodeInputSymbols(base64: string, inputCount?: number): number[
     const byte = binary.charCodeAt(i);
     symbols.push((byte >> 6) & 3, (byte >> 4) & 3, (byte >> 2) & 3, byte & 3);
   }
-  return typeof inputCount === "number" && inputCount > 0 ? symbols.slice(0, inputCount) : symbols;
+  const decoded =
+    typeof inputCount === "number" && inputCount > 0 ? symbols.slice(0, inputCount) : symbols;
+  return extendHeldInputs(decoded);
+}
+
+/**
+ * Append {@link EXTENSION_TICKS} copies of each held (non-neutral) symbol to
+ * its contiguous run, so every input lasts 0.25s longer. Neutral/coast runs are
+ * left untouched.
+ */
+function extendHeldInputs(symbols: number[]): number[] {
+  if (EXTENSION_TICKS <= 0 || symbols.length === 0) return symbols;
+  const out: number[] = [];
+  let i = 0;
+  while (i < symbols.length) {
+    const symbol = symbols[i];
+    let j = i + 1;
+    while (j < symbols.length && symbols[j] === symbol) j++;
+    for (let k = i; k < j; k++) out.push(symbol);
+    if (symbol !== NEUTRAL_SYMBOL) {
+      for (let k = 0; k < EXTENSION_TICKS; k++) out.push(symbol);
+    }
+    i = j;
+  }
+  return out;
 }
 
 /**
