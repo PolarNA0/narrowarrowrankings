@@ -1,44 +1,38 @@
 /**
- * Reconstructs a run's trajectory from its recorded inputs and the level
- * geometry, so a replay can be played back as an animation rather than only a
- * list of timestamps.
+ * Replay trajectory reconstruction.
  *
- * The model is a port of the game's `Player` (RigidBody2D) script and its
- * `_physics_process`. The constants below were fitted to the shipped engine's
- * actual free-flight and steering response rather than guessed:
+ * Rather than approximating the game's `Player` physics, this drives the exact
+ * engine the live game runs — a small Rust/WASM core bundled under
+ * `./physics` (the same `GameMechanicsEngine` the Flutter app loads through
+ * `physics_core_capacitor.js`). The engine steps once per recorded input
+ * sample, so the replay is a faithful reconstruction rather than a plausible
+ * but drifting guess.
  *
- *   - The game forces `delta = 1/60` at the top of `_physics_process`, so the
- *     physics runs at 60Hz. Inputs are sampled at 240Hz (4.1667ms), i.e. four
- *     input symbols per physics step. Stepping once per input symbol made every
- *     event happen 4x too late in wall-clock time.
- *   - The throttle spins up over `engine_startup_ticks` (60) at 240Hz — a
- *     quarter second — so a 60Hz step must ramp it by four 240Hz increments.
- *     Ramping by a single `DT` left the arrow crawling for the first second,
- *     which read as the replay "starting late".
- *   - Symbol 1 is the "right" steer and symbol 2 is "left". Getting this
- *     backwards sends the arrow into the walls on the first corner.
- *   - Neutral (symbol 0) spins the throttle *up*, not down: the game only
- *     brakes when both steer directions are held (symbol 3).
+ * The previous hand-rolled model had several wrong constants (thrust ~17x too
+ * high, a throttle ramp that was 4x too slow at 60Hz, no traction, no speed
+ * cap, no proper collision), which is why the arrow started late and then
+ * wandered off the real path.
  *
- * Per step, with `delta = 1/60`:
- *   - steering applies an angular impulse of +/-100000 * delta
- *   - holding either steer spins the throttle up by 4*delta, brake (both held)
- *     spins it down; throttle is clamped to [-0.1, 1]
- *   - forward thrust is an impulse of 114 * delta * throttle along facing
- *   - linear damp 0.19, angular damp 4 (both tripled while braking)
- *   - walls push the player out; normal walls reflect with restitution 0.25,
- *     bouncy walls with 1.2, death and boost walls are solid
- *
- * This is still an approximation: the exact collision shape, zone effects and
- * mass/inertia of the shipped player scene are not reproduced, so the result is
- * directionally faithful but not a frame-exact reproduction of the game.
+ * Coordinate note: the engine's `rotation` is 0 when facing "north" (toward
+ * -y, matching the level's spawn heading), while the renderer treats `rot` as
+ * a standard screen angle. `SimPoint.rot` is therefore stored as the facing
+ * angle (`engineRotation - PI/2`) so the arrow points the way it travels.
  */
 
-import { decodeInputSymbols } from "./replay";
+/**
+ * Milliseconds per simulation step. The engine advances one step per 240Hz
+ * input tick; the viewer samples it every four ticks (one 60Hz frame) to match
+ * the render rate.
+ */
+export const SIM_TICK_MS = 1000 / 60;
+
+/** Input ticks consumed per rendered step (240Hz inputs / 60Hz frames). */
+const INPUTS_PER_STEP = 4;
 
 export interface SimPoint {
   x: number;
   y: number;
+  /** Facing angle in radians (engine rotation minus 90°, i.e. "forward"). */
   rot: number;
 }
 
@@ -48,64 +42,37 @@ export interface SimWall {
   bx: number;
   by: number;
   type: string;
-  /** Wall thickness, used to size the player's push-out radius. */
   thickness: number;
 }
 
 export interface SimResult {
   path: SimPoint[];
-  /** Step index (60Hz) at which the finish line was crossed, or null. */
+  /** Tick (input index) at which the finish was reached, or null. */
   finishTick: number | null;
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
 /** Raw level payload as returned by `/level-details`. */
 export interface RawLevelData {
+  map_name?: string;
+  game_mode?: string;
   obstacles?: Array<{
     points?: Array<{ x?: number; y?: number }>;
     wall_type?: string;
+    obstacle_type?: string;
     wall_thickness?: number;
+    rotation_pivot?: { x?: number; y?: number } | null;
+    rotation_speed?: number | null;
+    zone_type?: string;
   }>;
 }
 
-/**
- * Milliseconds per simulation step. The game's `_physics_process` forces
- * `delta = 1/60`, so one physics step is one 60Hz frame = four recorded input
- * samples (inputs are 240Hz).
- */
-export const SIM_TICK_MS = 1000 / 60;
-const DT = SIM_TICK_MS / 1000;
-/** Input symbols consumed per physics step (240Hz inputs / 60Hz physics). */
-const INPUTS_PER_STEP = 4;
-/**
- * Throttle change per physics step. The engine spins the throttle up over its
- * `engine_startup_ticks` (60) at 240Hz — a quarter second of wall-clock — so a
- * 60Hz step that consumes four input samples must advance the throttle by four
- * 240Hz increments. Ramping by a single `DT` per step left the arrow almost
- * stationary for the first second (the reported "starts late").
- */
-const STEP_S = INPUTS_PER_STEP * DT;
-const TORQUE = 100_000;
-/** Forward thrust. Refit from the shipped engine's free-flight profile. */
-const THRUST = 114;
-/**
- * Effective rotational inertia of the shipped player scene, refit so a held
- * steer turns at the engine's rate. Too small a value makes the arrow pivot on
- * a dime and spin itself into the walls on every corner.
- */
-const INERTIA = 6600;
-/** Linear damping, refit from the engine's free-flight profile. */
-const LINEAR_DAMP = 0.19;
-const ANGULAR_DAMP = 4;
-const BRAKE_DRAG = 3;
-const RESTITUTION = 0.25;
-const BOUNCY_RESTITUTION = 1.2;
-/** Player collision radius in level units. */
-const PLAYER_RADIUS = 16;
-/** Steer symbol (1 or 2) mapped to -1 (left) / +1 (right); see module docs. */
-const SYMBOL_TO_STEER: Record<number, number> = { 1: 1, 2: -1 };
+export interface SimOptions {
+  /** Maximum number of input samples to simulate (guards very long runs). */
+  maxTicks?: number;
+}
 
-/** Flatten a level's obstacles into line segments. */
+/** Flatten a level's obstacles into line segments for rendering. */
 export function levelWalls(data: RawLevelData | null | undefined): SimWall[] {
   const walls: SimWall[] = [];
   for (const obstacle of data?.obstacles ?? []) {
@@ -122,163 +89,142 @@ export function levelWalls(data: RawLevelData | null | undefined): SimWall[] {
   return walls;
 }
 
-interface ResolvedWall {
-  ax: number;
-  ay: number;
-  bx: number;
-  by: number;
-  type: string;
-  dx: number;
-  dy: number;
-  len2: number;
-  /** Push-out radius: player radius plus half the wall's thickness. */
-  radius: number;
-  restitution: number;
-  finish: boolean;
+/** Build the obstacle list the engine expects (zones and walls alike). */
+function engineObstacles(data: RawLevelData) {
+  return (data.obstacles ?? []).map((o) => ({
+    obstacle_type: o.obstacle_type ?? "wall",
+    wall_type: o.wall_type ?? "normal",
+    wall_thickness: o.wall_thickness ?? null,
+    points: (o.points ?? []).map((p) => ({ x: p.x ?? 0, y: p.y ?? 0 })),
+    rotation_pivot: o.rotation_pivot ?? null,
+    rotation_speed: o.rotation_speed ?? null,
+    ...(o.zone_type ? { zone_type: o.zone_type } : {}),
+  }));
 }
 
-function prepare(walls: SimWall[], radius: number): ResolvedWall[] {
-  return walls.map((w) => {
-    const dx = w.bx - w.ax;
-    const dy = w.by - w.ay;
-    return {
-      ax: w.ax,
-      ay: w.ay,
-      bx: w.bx,
-      by: w.by,
-      type: w.type,
-      dx,
-      dy,
-      len2: dx * dx + dy * dy,
-      radius: radius + w.thickness / 2,
-      restitution: w.type === "bouncy" ? BOUNCY_RESTITUTION : RESTITUTION,
-      finish: w.type === "finish",
-    };
-  });
-}
+type EngineInput = { left: boolean; right: boolean };
+type EngineModule = typeof import("./physics/rust.js");
 
-function closestDistance(w: ResolvedWall, x: number, y: number): number {
-  const t =
-    w.len2 > 0 ? Math.max(0, Math.min(1, ((x - w.ax) * w.dx + (y - w.ay) * w.dy) / w.len2)) : 0;
-  return Math.hypot(x - (w.ax + t * w.dx), y - (w.ay + t * w.dy));
-}
+let enginePromise: Promise<EngineModule> | null = null;
 
-/** Push the player out of any wall it overlaps and reflect its velocity. */
-function resolveCollisions(
-  x: number,
-  y: number,
-  vx: number,
-  vy: number,
-  walls: ResolvedWall[],
-): [number, number, number, number] {
-  for (let pass = 0; pass < 2; pass++) {
-    for (const w of walls) {
-      if (w.finish) continue;
-      const t =
-        w.len2 > 0 ? Math.max(0, Math.min(1, ((x - w.ax) * w.dx + (y - w.ay) * w.dy) / w.len2)) : 0;
-      let nx = x - (w.ax + t * w.dx);
-      let ny = y - (w.ay + t * w.dy);
-      const dist = Math.hypot(nx, ny);
-      if (dist >= w.radius || dist < 1e-6) continue;
-      nx /= dist;
-      ny /= dist;
-      const penetration = w.radius - dist;
-      x += nx * penetration;
-      y += ny * penetration;
-      const vn = vx * nx + vy * ny;
-      if (vn < 0) {
-        vx -= (1 + w.restitution) * vn * nx;
-        vy -= (1 + w.restitution) * vn * ny;
-      }
-    }
+/** Lazily initialise the bundled physics engine exactly once. */
+function loadEngine(): Promise<EngineModule> {
+  if (!enginePromise) {
+    enginePromise = import("./physics/rust.js").then(async (mod) => {
+      await mod.default();
+      return mod;
+    });
   }
-  return [x, y, vx, vy];
-}
-
-function withinFinish(x: number, y: number, walls: ResolvedWall[], radius: number): boolean {
-  for (const w of walls) {
-    if (w.finish && closestDistance(w, x, y) <= radius + 2) return true;
-  }
-  return false;
-}
-
-export interface SimOptions {
-  /** Maximum number of input samples to simulate (guards very long runs). */
-  maxTicks?: number;
-  inertia?: number;
-  radius?: number;
+  return enginePromise;
 }
 
 /**
- * Run the physics forward over the decoded input stream and return the path.
- * One physics step is one 60Hz frame (four 240Hz input samples).
+ * Map a decoded 2-bit symbol to the engine's input. Symbol mapping is pinned
+ * in `replay.ts`: 1 = right steer, 2 = left steer, 3 = brake (both held).
  */
-export function simulateRun(
+function symbolToInput(symbol: number): EngineInput {
+  switch (symbol) {
+    case 1:
+      return { left: false, right: true };
+    case 2:
+      return { left: true, right: false };
+    case 3:
+      return { left: true, right: true };
+    default:
+      return { left: false, right: false };
+  }
+}
+
+/**
+ * Reconstruct a run by stepping the real engine over its recorded inputs.
+ * Returns an empty path (and null finish) if the engine cannot be initialised,
+ * so callers can fall back to the input breakdown.
+ */
+export async function simulateRun(
   inputsBase64: string,
   inputCount: number | undefined,
   data: RawLevelData | null | undefined,
   options: SimOptions = {},
-): SimResult {
+): Promise<SimResult> {
+  const empty: SimResult = {
+    path: [],
+    finishTick: null,
+    bounds: { minX: 0, minY: 0, maxX: 0, maxY: 0 },
+  };
+  if (!data || !inputsBase64) return empty;
+
+  const { decodeInputSymbols } = await import("./replay");
   const symbols = decodeInputSymbols(inputsBase64, inputCount);
-  const radius = options.radius ?? PLAYER_RADIUS;
-  const inertia = options.inertia ?? INERTIA;
-  const walls = prepare(levelWalls(data), radius);
+  if (symbols.length === 0) return empty;
 
-  let x = 0;
-  let y = 0;
-  let rot = -Math.PI / 2;
-  let vx = 0;
-  let vy = 0;
-  let av = 0;
-  let throttle = 0;
-
-  const maxTicks = options.maxTicks ?? 60 * 180;
-  const steps = Math.min(Math.ceil(symbols.length / INPUTS_PER_STEP), maxTicks);
-
-  const path: SimPoint[] = [{ x, y, rot }];
-  let finishTick: number | null = null;
-  const bounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-
-  for (let f = 0; f < steps; f++) {
-    // A physics step spans four 240Hz input samples; the game reads the key
-    // state once at the top of the frame, so use the first sample in the group.
-    const start = f * INPUTS_PER_STEP;
-    const symbol = symbols[Math.min(start, symbols.length - 1)];
-    const steer = SYMBOL_TO_STEER[symbol] ?? 0;
-    const braking = symbol === 3;
-
-    if (steer !== 0) av += (steer * DT * TORQUE) / inertia;
-
-    let linearDamp = LINEAR_DAMP;
-    let angularDamp = ANGULAR_DAMP;
-    if (braking) {
-      throttle = Math.max(-0.1, throttle - STEP_S);
-      linearDamp *= BRAKE_DRAG;
-      angularDamp *= BRAKE_DRAG;
-    } else {
-      throttle = Math.min(1, throttle + STEP_S);
-    }
-
-    vx += Math.cos(rot) * THRUST * DT * throttle;
-    vy += Math.sin(rot) * THRUST * DT * throttle;
-    vx *= 1 - linearDamp * DT;
-    vy *= 1 - linearDamp * DT;
-    av *= 1 - angularDamp * DT;
-
-    x += vx * DT;
-    y += vy * DT;
-    rot += av * DT;
-
-    [x, y, vx, vy] = resolveCollisions(x, y, vx, vy, walls);
-
-    path.push({ x, y, rot });
-    if (x < bounds.minX) bounds.minX = x;
-    if (x > bounds.maxX) bounds.maxX = x;
-    if (y < bounds.minY) bounds.minY = y;
-    if (y > bounds.maxY) bounds.maxY = y;
-
-    if (finishTick === null && withinFinish(x, y, walls, radius)) finishTick = f;
+  let mod: EngineModule;
+  try {
+    mod = await loadEngine();
+  } catch {
+    return empty;
   }
 
+  const base = mod.create_default_game_state();
+  const maxTicks = options.maxTicks ?? symbols.length;
+  const n = Math.min(symbols.length, maxTicks);
+
+  const map = {
+    game_mode: data.game_mode ?? "speedrun",
+    map_name: data.map_name ?? "",
+    obstacles: engineObstacles(data),
+  };
+
+  let engine: InstanceType<EngineModule["GameMechanicsEngine"]>;
+  try {
+    engine = new mod.GameMechanicsEngine({
+      player: base.player,
+      map,
+      ticks: 0,
+      effects: base.effects,
+    });
+  } catch {
+    return empty;
+  }
+
+  const path: SimPoint[] = [];
+  const bounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  let finishTick: number | null = null;
+
+  // Initial pose is part of the path (index 0 = spawn), matching the renderer's
+  // expectation that `path[0]` is the start.
+  {
+    const s0 = JSON.parse(engine.state) as {
+      player: { translation: { x: number; y: number }; rotation: number };
+    };
+    path.push({
+      x: s0.player.translation.x,
+      y: s0.player.translation.y,
+      rot: s0.player.rotation - Math.PI / 2,
+    });
+  }
+
+  // Advance the engine one 240Hz tick at a time and record one point per 60Hz
+  // frame (every fourth tick), so playback spans the same wall-clock time as
+  // the run.
+  for (let i = 0; i < n; i += INPUTS_PER_STEP) {
+    const group = symbols.slice(i, i + INPUTS_PER_STEP);
+    engine.process_ticks(group.map(symbolToInput));
+    const state = JSON.parse(engine.state) as {
+      player: {
+        translation: { x: number; y: number };
+        rotation: number;
+        state?: string;
+      };
+    };
+    const { translation, rotation, state: playerState } = state.player;
+    path.push({ x: translation.x, y: translation.y, rot: rotation - Math.PI / 2 });
+    bounds.minX = Math.min(bounds.minX, translation.x);
+    bounds.minY = Math.min(bounds.minY, translation.y);
+    bounds.maxX = Math.max(bounds.maxX, translation.x);
+    bounds.maxY = Math.max(bounds.maxY, translation.y);
+    if (finishTick === null && playerState === "finish") finishTick = path.length - 1;
+  }
+
+  engine.free();
   return { path, finishTick, bounds };
 }

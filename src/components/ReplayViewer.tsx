@@ -30,6 +30,7 @@ import {
   levelWalls,
   simulateRun,
   type RawLevelData,
+  type SimResult,
   type SimWall,
 } from "@/lib/replay-sim";
 
@@ -84,7 +85,7 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
   const [summary, setSummary] = React.useState<ReplaySummary | null>(null);
   const [meta, setMeta] = React.useState<RunPayload | null>(null);
   const [walls, setWalls] = React.useState<SimWall[]>([]);
-  const [sim, setSim] = React.useState<ReturnType<typeof simulateRun> | null>(null);
+  const [sim, setSim] = React.useState<SimResult | null>(null);
   const [selected, setSelected] = React.useState(0);
   const [panel, setPanel] = React.useState<"none" | "input" | "combo">("none");
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -132,7 +133,8 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
               const levelData = payload.levelInfo?.data ?? null;
               if (levelData && !cancelled) {
                 setWalls(levelWalls(levelData));
-                setSim(simulateRun(data.inputs ?? "", data.input_count, levelData));
+                const result = await simulateRun(data.inputs ?? "", data.input_count, levelData);
+                if (!cancelled) setSim(result);
               }
             }
           } catch {
@@ -456,7 +458,7 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
 }
 
 interface StageProps {
-  sim: ReturnType<typeof simulateRun>;
+  sim: SimResult;
   walls: SimWall[];
   frame: number;
   playing: boolean;
