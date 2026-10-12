@@ -47,8 +47,8 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function fetchWithRetry(url: string): Promise<unknown> {
-  const MAX_ATTEMPTS = 4;
+async function fetchWithRetry(url: string, attempts = 4): Promise<unknown> {
+  const MAX_ATTEMPTS = attempts;
   let lastStatus = 0;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     let response: Response;
@@ -63,11 +63,16 @@ async function fetchWithRetry(url: string): Promise<unknown> {
     if (response.ok) return response.json();
     lastStatus = response.status;
     if (response.status !== 429 && response.status < 500) break;
-    const reset = Number(response.headers.get("ratelimit-reset") ?? response.headers.get("retry-after"));
+    const reset = Number(
+      response.headers.get("ratelimit-reset") ?? response.headers.get("retry-after"),
+    );
     if (response.status === 429 && Number.isFinite(reset) && reset > 0) {
-      pauseAll(reset * 1000);
+      // Only hold requests briefly. Pausing for a whole (possibly 60s+) window
+      // starves user-facing requests behind bulk prefetch, which read to the
+      // user as a hung "Loading replay…".
+      pauseAll(Math.min(reset * 1000, 4000));
       if (reset > 20) break; // don't hold requests for a whole window; serve stale instead
-      await sleep(reset * 1000);
+      await sleep(Math.min(reset * 1000, 4000));
     } else {
       await sleep(300 * 2 ** attempt + Math.random() * 200);
     }
@@ -75,6 +80,15 @@ async function fetchWithRetry(url: string): Promise<unknown> {
   throw Object.assign(new Error(`Upstream request failed with status ${lastStatus}`), {
     status: lastStatus,
   });
+}
+
+export interface ProxyOptions {
+  /**
+   * User-initiated requests (e.g. opening one replay) skip the bulk queue so
+   * they aren't starved behind background prefetch. A single replay is only a
+   * couple of requests, so this stays well under the rate limit.
+   */
+  priority?: boolean;
 }
 
 /** Cached, queued upstream GET that returns parsed JSON (server-side use). */
@@ -97,7 +111,11 @@ export async function fetchJson(path: string, ttlMs: number): Promise<unknown> {
   }
 }
 
-export async function proxyJson(path: string, ttlMs: number): Promise<Response> {
+export async function proxyJson(
+  path: string,
+  ttlMs: number,
+  options: ProxyOptions = {},
+): Promise<Response> {
   const url = `${API_BASE}${path}`;
   const now = Date.now();
   const cached = cacheStore[url];
@@ -105,13 +123,21 @@ export async function proxyJson(path: string, ttlMs: number): Promise<Response> 
     return Response.json(cached.data);
   }
 
+  // Priority (user-initiated) requests bypass the bulk queue entirely and use
+  // a single attempt with a short timeout, so a throttled upstream surfaces an
+  // error the UI can recover from instead of hanging on "Loading replay…".
   try {
-    const request =
-      inflight[url] ??
-      (inflight[url] = schedule(() => fetchWithRetry(url)).finally(() => {
-        delete inflight[url];
-      }));
-    const data = await request;
+    let data: unknown;
+    if (options.priority) {
+      data = await fetchWithRetry(url, 1);
+    } else {
+      const request =
+        inflight[url] ??
+        (inflight[url] = schedule(() => fetchWithRetry(url)).finally(() => {
+          delete inflight[url];
+        }));
+      data = await request;
+    }
     cacheStore[url] = { data, expiresAt: Date.now() + ttlMs };
     return Response.json(data);
   } catch (error) {

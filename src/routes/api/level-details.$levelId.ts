@@ -8,6 +8,7 @@ export const Route = createFileRoute("/api/level-details/$levelId")({
         proxyJson(
           `/level-details/${encodeURIComponent(params.levelId)}?isCustomLevel=true`,
           15 * 60 * 1000,
+          { priority: true },
         ),
     },
   },

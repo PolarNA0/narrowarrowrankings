@@ -91,12 +91,13 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
   const [playing, setPlaying] = React.useState(true);
   const [frame, setFrame] = React.useState(0);
   const [speed, setSpeed] = React.useState(1);
+  const [attempt, setAttempt] = React.useState(0);
   const loadedRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
     const key = String(runId);
-    if (loadedRef.current === key) return;
+    if (loadedRef.current === key && attempt === 0) return;
     loadedRef.current = key;
     let cancelled = false;
     setState("loading");
@@ -108,30 +109,37 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
 
     (async () => {
       try {
-        const res = await fetch(`/api/runs/${encodeURIComponent(key)}`);
+        // Client-side timeout: the server proxy already bounds upstream, but a
+        // stalled network hop must not leave the dialog on "Loading replay…".
+        const res = await fetch(`/api/runs/${encodeURIComponent(key)}`, {
+          signal: AbortSignal.timeout(20000),
+        });
         if (!res.ok) throw new Error(String(res.status));
         const data = (await res.json()) as RunPayload;
         if (cancelled) return;
         setMeta(data);
         setSummary(summariseReplay(data.inputs ?? "", data.input_count));
 
-        let levelData: RawLevelData | null = null;
+        // Level geometry is only needed for the animation; if it is slow or
+        // missing, show the input breakdown rather than blocking on it.
         if (data.mapName) {
           try {
-            const levelRes = await fetch(`/api/level-details/${encodeURIComponent(data.mapName)}`);
+            const levelRes = await fetch(`/api/level-details/${encodeURIComponent(data.mapName)}`, {
+              signal: AbortSignal.timeout(20000),
+            });
             if (levelRes.ok) {
               const payload = (await levelRes.json()) as { levelInfo?: { data?: RawLevelData } };
-              levelData = payload.levelInfo?.data ?? null;
+              const levelData = payload.levelInfo?.data ?? null;
+              if (levelData && !cancelled) {
+                setWalls(levelWalls(levelData));
+                setSim(simulateRun(data.inputs ?? "", data.input_count, levelData));
+              }
             }
           } catch {
             /* animation is optional; fall back to the input breakdown */
           }
         }
         if (cancelled) return;
-        if (levelData) {
-          setWalls(levelWalls(levelData));
-          setSim(simulateRun(data.inputs ?? "", data.input_count, levelData));
-        }
         setState("ready");
       } catch {
         if (cancelled) return;
@@ -143,7 +151,7 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
     return () => {
       cancelled = true;
     };
-  }, [open, runId]);
+  }, [open, runId, attempt]);
 
   const inputs = summary?.inputs ?? [];
   const active = inputs[selected];
@@ -206,8 +214,18 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
         )}
 
         {state === "error" && (
-          <div className="py-16 text-center text-slate-500 text-sm italic">
-            Replay not available for this run.
+          <div className="py-16 text-center text-sm">
+            <p className="text-slate-500 italic mb-4">Replay couldn't be loaded.</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                loadedRef.current = null;
+                setAttempt((n) => n + 1);
+              }}
+            >
+              Retry
+            </Button>
           </div>
         )}
 

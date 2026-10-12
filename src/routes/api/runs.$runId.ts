@@ -5,7 +5,7 @@ export const Route = createFileRoute("/api/runs/$runId")({
   server: {
     handlers: {
       GET: async ({ params }) =>
-        proxyJson(`/runs/${encodeURIComponent(params.runId)}`, 15 * 60 * 1000),
+        proxyJson(`/runs/${encodeURIComponent(params.runId)}`, 15 * 60 * 1000, { priority: true }),
     },
   },
 });
