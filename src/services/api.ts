@@ -35,13 +35,37 @@ export function hydratePersistedLeaderboards(): Record<string, LeaderboardEntry[
   }
 }
 
+/**
+ * Writes the snapshot to localStorage, dropping boards from the smallest until
+ * the payload fits. A full 72-board snapshot is several megabytes, so the last
+ * few levels would otherwise silently fail to persist once the quota is hit.
+ */
+function writeSnapshot(boards: Record<string, LeaderboardEntry[]>) {
+  const persist = (payload: Record<string, LeaderboardEntry[]>) =>
+    window.localStorage.setItem(PERSIST_KEY, JSON.stringify({ timestamp: Date.now(), boards: payload }));
+
+  const ordered = Object.entries(boards).sort((a, b) => a[1].length - b[1].length);
+  // Keep at least one board; if even that won't fit, leave the previous copy.
+  for (let drop = 0; drop < ordered.length; drop++) {
+    try {
+      persist(Object.fromEntries(ordered.slice(drop)));
+      return;
+    } catch {
+      /* quota hit — drop the next-smallest board and retry */
+    }
+  }
+}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
 export function persistLeaderboards(boards: Record<string, LeaderboardEntry[]>) {
   if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(PERSIST_KEY, JSON.stringify({ timestamp: Date.now(), boards }));
-  } catch {
-    /* quota — caching is best effort */
-  }
+  // Debounce so rapid board updates don't re-serialize the whole snapshot.
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    writeSnapshot(boards);
+  }, 250);
 }
 
 /** Newest cache timestamp for a level, so the UI can show how fresh the data is. */
