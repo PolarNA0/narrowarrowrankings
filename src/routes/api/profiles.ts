@@ -4,21 +4,34 @@ import { fetchJson } from "@/lib/na-proxy";
 const TTL = 30 * 60 * 1000;
 const MAX_USERS = 40;
 
-interface Medals {
+interface DailyMedals {
   first?: number;
   second?: number;
   third?: number;
   top10?: number;
 }
 
+/** In-game medal tallies keyed by tier. */
+export interface MedalCounts {
+  bronze: number;
+  silver: number;
+  gold: number;
+  platinum: number;
+  author: number;
+}
+
 export interface ProfileSummary {
   username: string;
   found: boolean;
   customCompleted: number;
-  customMedals: Medals;
-  officialMedals: Medals;
-  packMedals: Medals;
   mapsCompleted: number;
+  totalMaps: number;
+  medalCounts: MedalCounts;
+  medalCountsPacks: MedalCounts;
+  medalCountsCommunity: MedalCounts;
+  dailyMedals: DailyMedals;
+  dailyDaysPlayed: number;
+  dailyBestStreak: number;
   totalRuns: number;
   league: string | null;
   trophies: number;
@@ -30,6 +43,18 @@ export interface ProfileSummary {
   dailyBestFinish: number | null;
 }
 
+function medalTiers(raw: unknown): MedalCounts {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const m = (raw ?? {}) as any;
+  return {
+    bronze: Number(m.bronze ?? 0) || 0,
+    silver: Number(m.silver ?? 0) || 0,
+    gold: Number(m.gold ?? 0) || 0,
+    platinum: Number(m.platinum ?? 0) || 0,
+    author: Number(m.author ?? 0) || 0,
+  };
+}
+
 function summarise(username: string, payload: unknown): ProfileSummary {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw = (payload ?? {}) as any;
@@ -38,10 +63,14 @@ function summarise(username: string, payload: unknown): ProfileSummary {
     username: raw.user?.username ?? username,
     found,
     customCompleted: Number(raw.custom_levels_completed ?? 0) || 0,
-    customMedals: raw.custom_medals ?? {},
-    officialMedals: raw.official_medals ?? {},
-    packMedals: raw.pack_medals ?? {},
     mapsCompleted: Number(raw.maps_completed ?? 0) || 0,
+    totalMaps: Number(raw.total_maps ?? 0) || 0,
+    medalCounts: medalTiers(raw.medal_counts),
+    medalCountsPacks: medalTiers(raw.medal_counts_packs),
+    medalCountsCommunity: medalTiers(raw.medal_counts_community),
+    dailyMedals: raw.daily_stats?.medals ?? {},
+    dailyDaysPlayed: Number(raw.daily_stats?.days_played ?? 0) || 0,
+    dailyBestStreak: Number(raw.daily_stats?.best_streak ?? 0) || 0,
     totalRuns: Number(raw.total_runs ?? 0) || 0,
     league: raw.league ?? null,
     trophies: Number(raw.trophies ?? 0) || 0,

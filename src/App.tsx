@@ -119,6 +119,7 @@ import { ArrowRecordsView } from "@/components/ArrowRecordsView";
 import { GroupedNavigation, SectionNavigation, type NavigableView } from "@/components/GroupedNavigation";
 import { SelectionSearch } from "@/components/SelectionSearch";
 import { InGameMedalsPopover } from "@/components/InGameMedalsPopover";
+import { ReplayViewer } from "@/components/ReplayViewer";
 import { useInGameMedals } from "@/hooks/useInGameMedals";
 import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
 
@@ -2468,17 +2469,27 @@ export default function App() {
                                 )}
                               </TableCell>
                               <TableCell className="text-center">
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleCompareClick(entry.username);
-                                  }}
-                                  className="text-slate-500 hover:text-[var(--app-accent)] hover:bg-[var(--app-accent)]/10 h-8 w-8 mx-auto"
-                                >
-                                  <TrendingUp className="w-4 h-4" />
-                                </Button>
+                                <div className="flex items-center justify-center gap-0.5">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCompareClick(entry.username);
+                                    }}
+                                    className="text-slate-500 hover:text-[var(--app-accent)] hover:bg-[var(--app-accent)]/10 h-8 w-8"
+                                    title="Compare with..."
+                                  >
+                                    <TrendingUp className="w-4 h-4" />
+                                  </Button>
+                                  {!entry.isLegacy && entry.run_id > 0 && (
+                                    <ReplayViewer
+                                      runId={entry.run_id}
+                                      username={entry.username}
+                                      levelName={selectedLevel}
+                                    />
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell className="text-right text-slate-500 text-xs font-mono">
                                 {formatDate(entry.created_at)}

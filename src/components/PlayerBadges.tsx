@@ -48,8 +48,8 @@ export function computePlayerBadges({
   customBadges,
 }: Omit<PlayerBadgesProps, "size" | "className">): PlayerBadge[] {
   const badges: PlayerBadge[] = [];
-  const wrs = medals?.first ?? summary?.officialMedals?.first ?? 0;
-  const customFirsts = summary?.customMedals?.first ?? 0;
+  const wrs = medals?.first ?? 0;
+  const communityFirsts = summary?.dailyMedals?.first ?? 0;
 
 
   if (verified) {
@@ -88,20 +88,20 @@ export function computePlayerBadges({
       className: "text-fuchsia-300 border-fuchsia-400/30 bg-fuchsia-400/10",
     });
   }
-  if (customFirsts >= 5) {
+  if (communityFirsts >= 5) {
     badges.push({
       id: "custom-king",
       label: "Custom King",
-      detail: `${customFirsts} community-level golds`,
+      detail: `${communityFirsts} community-level golds`,
       icon: <Medal className="w-3.5 h-3.5" />,
       className: "text-orange-300 border-orange-400/30 bg-orange-400/10",
     });
   }
-  if (customFirsts >= 25) {
+  if (communityFirsts >= 25) {
     badges.push({
       id: "custom-royalty",
       label: "Custom Royalty",
-      detail: `${customFirsts} community-level golds`,
+      detail: `${communityFirsts} community-level golds`,
       icon: <Crown className="w-3.5 h-3.5" />,
       className: "text-yellow-300 border-yellow-400/30 bg-yellow-400/10",
     });
@@ -133,19 +133,19 @@ export function computePlayerBadges({
       className: "text-cyan-300 border-cyan-400/30 bg-cyan-400/10",
     });
   }
-  if ((summary?.packMedals?.first ?? 0) > 0) {
+  if ((summary?.medalCountsPacks?.gold ?? 0) > 0) {
     badges.push({
       id: "pack-champion",
       label: "Pack Champion",
-      detail: `${summary?.packMedals?.first} pack golds`,
+      detail: `${summary?.medalCountsPacks?.gold} pack golds`,
       icon: <Award className="w-3.5 h-3.5" />,
       className: "text-yellow-300 border-yellow-400/30 bg-yellow-400/10",
     });
   }
   const podiums =
-    (summary?.officialMedals?.first ?? 0) +
-    (summary?.officialMedals?.second ?? 0) +
-    (summary?.officialMedals?.third ?? 0);
+    (summary?.dailyMedals?.first ?? 0) +
+    (summary?.dailyMedals?.second ?? 0) +
+    (summary?.dailyMedals?.third ?? 0);
   if (podiums >= 10) {
     badges.push({
       id: "podium-machine",

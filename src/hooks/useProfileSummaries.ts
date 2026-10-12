@@ -1,13 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+export interface MedalCounts {
+  bronze: number;
+  silver: number;
+  gold: number;
+  platinum: number;
+  author: number;
+}
+
 export interface ProfileSummary {
   username: string;
   found: boolean;
   customCompleted: number;
-  customMedals: { first?: number; second?: number; third?: number; top10?: number };
-  officialMedals: { first?: number; second?: number; third?: number; top10?: number };
-  packMedals: { first?: number; second?: number; third?: number; top10?: number };
   mapsCompleted: number;
+  totalMaps: number;
+  medalCounts: MedalCounts;
+  medalCountsPacks: MedalCounts;
+  medalCountsCommunity: MedalCounts;
+  dailyMedals: { first?: number; second?: number; third?: number; top10?: number };
+  dailyDaysPlayed: number;
+  dailyBestStreak: number;
   totalRuns: number;
   league: string | null;
   trophies: number;

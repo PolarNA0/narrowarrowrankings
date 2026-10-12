@@ -66,6 +66,16 @@ interface PlayerProfileProps {
 
 const userDataCache = new Map<string, { at: number; data: unknown }>();
 
+/** In-game medal tiers, best-to-worst, with display styling. */
+const MEDAL_TIERS = [
+  { key: "platinum", short: "P", label: "Platinum", chip: "bg-cyan-300 text-black", text: "text-cyan-300" },
+  { key: "gold", short: "G", label: "Gold", chip: "bg-yellow-400 text-black", text: "text-yellow-400" },
+  { key: "silver", short: "S", label: "Silver", chip: "bg-slate-300 text-black", text: "text-slate-300" },
+  { key: "bronze", short: "B", label: "Bronze", chip: "bg-amber-600 text-white", text: "text-amber-500" },
+  { key: "author", short: "A", label: "Author", chip: "bg-fuchsia-500 text-white", text: "text-fuchsia-400" },
+] as const;
+
+
 const CWR_ARROWS: ArrowScope[] = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
 
 export function PlayerProfile({ 
@@ -537,10 +547,14 @@ export function PlayerProfile({
               username: stats.username,
               found: true,
               customCompleted: extraData?.custom_levels_completed ?? 0,
-              customMedals: extraData?.custom_medals ?? {},
-              officialMedals: extraData?.official_medals ?? {},
-              packMedals: extraData?.pack_medals ?? {},
               mapsCompleted: extraData?.maps_completed ?? 0,
+              totalMaps: extraData?.total_maps ?? 0,
+              medalCounts: extraData?.medal_counts ?? {},
+              medalCountsPacks: extraData?.medal_counts_packs ?? {},
+              medalCountsCommunity: extraData?.medal_counts_community ?? {},
+              dailyMedals: extraData?.daily_stats?.medals ?? {},
+              dailyDaysPlayed: extraData?.daily_stats?.days_played ?? 0,
+              dailyBestStreak: extraData?.daily_stats?.best_streak ?? 0,
               totalRuns: extraData?.total_runs ?? 0,
               league: extraData?.league ?? null,
               trophies: extraData?.trophies ?? 0,
@@ -771,6 +785,47 @@ export function PlayerProfile({
             </Card>
           </div>
 
+          {/* Medal Collection — in-game medals across packs & community levels */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <h4 className="text-xs font-extrabold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Medal className="w-4 h-4 text-amber-400" /> Medal Collection
+              </h4>
+              <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider">
+                <span className="text-slate-400">
+                  <span className="text-white font-mono">{extraData.maps_completed ?? 0}</span>
+                  {extraData.total_maps ? <span className="text-slate-600">/{extraData.total_maps}</span> : null} Maps
+                </span>
+                <span className="text-[#2DD4BF]">
+                  <span className="text-white font-mono">{extraData.custom_levels_completed ?? 0}</span> Customs
+                </span>
+              </div>
+            </div>
+            <div className="grid grid-cols-5 gap-2">
+              {MEDAL_TIERS.map((tier) => (
+                <div key={tier.key} className="bg-black/30 rounded-lg p-2 text-center border border-white/5">
+                  <div className={cn("w-6 h-6 rounded-full flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg", tier.chip)}>
+                    {tier.short}
+                  </div>
+                  <div className={cn("text-lg font-mono font-bold mt-1", tier.text)}>
+                    {extraData.medal_counts?.[tier.key] ?? 0}
+                  </div>
+                  <div className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mt-0.5">{tier.label}</div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-5 gap-2 mt-2 text-[10px] font-mono">
+              {MEDAL_TIERS.map((tier) => (
+                <div key={tier.key} className="text-center text-slate-400 border-t border-white/5 pt-1.5">
+                  <span className="text-[8px] uppercase tracking-wider text-slate-600 block font-bold">
+                    {extraData.medal_counts_packs?.[tier.key] ?? 0} pack
+                  </span>
+                  {extraData.medal_counts_community?.[tier.key] ?? 0} custom
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Medal Case */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Official Medals */}
@@ -781,45 +836,49 @@ export function PlayerProfile({
               <div className="grid grid-cols-4 gap-2">
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-yellow-500/10">
                   <div className="w-6 h-6 rounded-full bg-yellow-400 text-black flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">1st</div>
-                  <div className="text-lg font-mono font-bold text-yellow-400 mt-1">{computedMedals?.first ?? extraData.official_medals?.first ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-yellow-400 mt-1">{computedMedals?.first ?? 0}</div>
                 </div>
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-slate-400/10">
                   <div className="w-6 h-6 rounded-full bg-slate-300 text-black flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">2nd</div>
-                  <div className="text-lg font-mono font-bold text-slate-300 mt-1">{computedMedals?.second ?? extraData.official_medals?.second ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-slate-300 mt-1">{computedMedals?.second ?? 0}</div>
                 </div>
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-amber-600/10">
                   <div className="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">3rd</div>
-                  <div className="text-lg font-mono font-bold text-amber-500 mt-1">{computedMedals?.third ?? extraData.official_medals?.third ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-amber-500 mt-1">{computedMedals?.third ?? 0}</div>
                 </div>
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-blue-400/10">
                   <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">T10</div>
-                  <div className="text-lg font-mono font-bold text-blue-400 mt-1">{computedMedals?.top10 ?? extraData.official_medals?.top10 ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-blue-400 mt-1">{computedMedals?.top10 ?? 0}</div>
                 </div>
               </div>
             </div>
 
-            {/* Custom Medals */}
+            {/* Daily Challenge Medals */}
             <div className="bg-white/5 border border-white/10 rounded-xl p-4">
               <h4 className="text-xs font-extrabold text-[#2DD4BF] uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <Target className="w-4 h-4 text-[#2DD4BF]" /> Custom Medals
+                <Target className="w-4 h-4 text-[#2DD4BF]" /> Daily Challenge Medals
               </h4>
               <div className="grid grid-cols-4 gap-2">
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-yellow-500/10">
                   <div className="w-6 h-6 rounded-full bg-yellow-400 text-black flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">1st</div>
-                  <div className="text-lg font-mono font-bold text-yellow-400 mt-1">{extraData.custom_medals?.first ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-yellow-400 mt-1">{extraData.daily_stats?.medals?.first ?? 0}</div>
                 </div>
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-slate-400/10">
                   <div className="w-6 h-6 rounded-full bg-slate-300 text-black flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">2nd</div>
-                  <div className="text-lg font-mono font-bold text-slate-300 mt-1">{extraData.custom_medals?.second ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-slate-300 mt-1">{extraData.daily_stats?.medals?.second ?? 0}</div>
                 </div>
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-amber-600/10">
                   <div className="w-6 h-6 rounded-full bg-amber-600 text-white flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">3rd</div>
-                  <div className="text-lg font-mono font-bold text-amber-500 mt-1">{extraData.custom_medals?.third ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-amber-500 mt-1">{extraData.daily_stats?.medals?.third ?? 0}</div>
                 </div>
                 <div className="bg-black/30 rounded-lg p-2 text-center border border-blue-400/10">
                   <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center mx-auto text-[10px] font-extrabold shadow-lg">T10</div>
-                  <div className="text-lg font-mono font-bold text-blue-400 mt-1">{extraData.custom_medals?.top10 ?? 0}</div>
+                  <div className="text-lg font-mono font-bold text-blue-400 mt-1">{extraData.daily_stats?.medals?.top10 ?? 0}</div>
                 </div>
+              </div>
+              <div className="text-[10px] text-slate-500 font-semibold mt-2 flex items-center gap-3">
+                <span>{extraData.daily_stats?.days_played ?? 0} days played</span>
+                <span>{extraData.daily_stats?.best_streak ?? 0} best streak</span>
               </div>
             </div>
           </div>

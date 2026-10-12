@@ -38,10 +38,10 @@ export function CustomCompletionsView({ usernames, onSelectPlayer }: Props) {
     const list: CompletionRow[] = Object.values(profiles)
       .filter((p) => p.found)
       .map((p) => {
-        const first = p.customMedals?.first ?? 0;
-        const second = p.customMedals?.second ?? 0;
-        const third = p.customMedals?.third ?? 0;
-        const top10 = p.customMedals?.top10 ?? 0;
+        const first = p.dailyMedals?.first ?? 0;
+        const second = p.dailyMedals?.second ?? 0;
+        const third = p.dailyMedals?.third ?? 0;
+        const top10 = p.dailyMedals?.top10 ?? 0;
         return {
           username: p.username,
           first,
