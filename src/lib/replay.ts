@@ -8,22 +8,23 @@
  *
  * Symbol alphabet (recovered by matching a live replay against the level
  * geometry — the value that dominates while steering through a map is 0, so it
- * is the "no input" state, not a steer):
+ * is the "no input" state, not a steer; the steer symbols are then assigned by
+ * simulating each run and checking which way the arrow actually turns):
  *   0 = neutral / coast (no input)
- *   1 = left steer held
- *   2 = right steer held
+ *   1 = right steer held
+ *   2 = left steer held
  *   3 = brake (both steer directions held — cancels steering and slows down)
  *
- * The left/right assignment is the one remaining unknown: a mirrored replay is
- * physically identical, so it cannot be resolved from the inputs alone. It is
- * kept in one place here so it can be flipped if ever confirmed visually.
+ * A mirrored replay is physically identical, so the hand cannot be proven from
+ * the inputs alone; it is pinned here (and in `replay-sim.ts`) so the two stay
+ * in agreement.
  */
 
 /** Column encoded per 2-bit symbol (array position === symbol value). */
 export const REPLAY_SYMBOLS = [
   { key: "neutral", label: "Neutral", short: "n", steer: false },
-  { key: "left", label: "Left", short: "l", steer: true },
   { key: "right", label: "Right", short: "r", steer: true },
+  { key: "left", label: "Left", short: "l", steer: true },
   { key: "brake", label: "Brake", short: "b", steer: false },
 ] as const;
 
