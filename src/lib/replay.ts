@@ -37,15 +37,12 @@ export const NEUTRAL_SYMBOL = 0;
 export const REPLAY_TICK_MS = 1000 / 240;
 
 /**
- * Every held input is extended by this much, to compensate for replays holding
- * each input a little early-starting and a little short. Applied per contiguous
- * run of the same symbol (trailing neutral is left alone), so a segment's
- * duration grows by a fixed 0.25s rather than stretching proportionally.
+ * Each held input is lengthened by this factor, to compensate for replays
+ * holding each input a little early-starting and a little short. Applied per
+ * contiguous run of the same symbol (trailing neutral is left alone), so a
+ * segment grows proportionally rather than by a fixed amount.
  */
-export const REPLAY_INPUT_EXTENSION_MS = 250;
-
-/** Extra tick copies appended to each held-input segment. */
-const EXTENSION_TICKS = Math.round(REPLAY_INPUT_EXTENSION_MS / REPLAY_TICK_MS);
+export const REPLAY_INPUT_EXTENSION_FACTOR = 1.1;
 
 export interface ReplayInput {
   /** 0-based index of this input in the run. */
@@ -92,22 +89,20 @@ export function decodeInputSymbols(base64: string, inputCount?: number): number[
 }
 
 /**
- * Append {@link EXTENSION_TICKS} copies of each held (non-neutral) symbol to
- * its contiguous run, so every input lasts 0.25s longer. Neutral/coast runs are
- * left untouched.
+ * Lengthen each held (non-neutral) symbol's contiguous run by
+ * {@link REPLAY_INPUT_EXTENSION_FACTOR}. Neutral/coast runs are left untouched.
  */
 function extendHeldInputs(symbols: number[]): number[] {
-  if (EXTENSION_TICKS <= 0 || symbols.length === 0) return symbols;
+  if (REPLAY_INPUT_EXTENSION_FACTOR <= 1 || symbols.length === 0) return symbols;
   const out: number[] = [];
   let i = 0;
   while (i < symbols.length) {
     const symbol = symbols[i];
     let j = i + 1;
     while (j < symbols.length && symbols[j] === symbol) j++;
-    for (let k = i; k < j; k++) out.push(symbol);
-    if (symbol !== NEUTRAL_SYMBOL) {
-      for (let k = 0; k < EXTENSION_TICKS; k++) out.push(symbol);
-    }
+    const run = j - i;
+    const copies = symbol === NEUTRAL_SYMBOL ? run : Math.ceil(run * REPLAY_INPUT_EXTENSION_FACTOR);
+    for (let k = 0; k < copies; k++) out.push(symbol);
     i = j;
   }
   return out;
