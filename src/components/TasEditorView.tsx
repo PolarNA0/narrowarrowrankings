@@ -8,9 +8,12 @@ import {
   Upload,
   Download,
   Trash2,
+  Trophy,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -20,6 +23,8 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { LEVELS } from "@/constants";
+import { fetchLeaderboard } from "@/services/api";
+import type { LeaderboardEntry } from "@/types";
 import {
   REPLAY_SYMBOLS,
   REPLAY_TICK_MS,
@@ -76,6 +81,9 @@ export function TasEditorView() {
   const [status, setStatus] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [goTo, setGoTo] = React.useState("");
+  const [boardOpen, setBoardOpen] = React.useState(false);
+  const [boardEntries, setBoardEntries] = React.useState<LeaderboardEntry[]>([]);
+  const [boardLoading, setBoardLoading] = React.useState(false);
 
   const engineRef = React.useRef<ReplayEngine | null>(null);
   const symbolsRef = React.useRef<number[]>([]);
@@ -198,13 +206,15 @@ export function TasEditorView() {
     }
   };
 
-  /** Load a run's inputs and level, ready to edit. */
-  const loadRun = async () => {
+  /** Load a specific run's inputs and level, ready to edit. */
+  const loadRunById = async (rawId: string) => {
+    const id = rawId.trim();
+    if (!id) return;
     setLoading(true);
     setError(null);
     setStatus(null);
     try {
-      const res = await fetch(`/api/runs/${encodeURIComponent(runId.trim())}`, {
+      const res = await fetch(`/api/runs/${encodeURIComponent(id)}`, {
         signal: AbortSignal.timeout(20000),
       });
       if (!res.ok) throw new Error(`Run request failed (${res.status})`);
@@ -215,23 +225,45 @@ export function TasEditorView() {
         arrow_name?: string;
       };
       const mapName = data.mapName ?? "";
-      const id = LEVELS.find((l) => l.name.toLowerCase() === mapName.toLowerCase())?.id ?? mapName;
+      const level =
+        LEVELS.find((l) => l.name.toLowerCase() === mapName.toLowerCase())?.id ?? mapName;
       const arrow = data.arrow_name ?? arrowName;
-      const info = await loadLevel(id, arrow);
+      const info = await loadLevel(level, arrow);
       if (!info) return;
       setLoaded(info);
-      setLevelId(id);
+      setLevelId(level);
       setArrowName(arrow);
+      setRunId(id);
       const decoded = decodeInputSymbols(data.inputs ?? "", data.input_count);
       applySymbols(decoded);
       setFrame(0);
       setStatus(
-        `Loaded run ${runId.trim()} — ${decoded.length} inputs, ${((decoded.length * REPLAY_TICK_MS) / 1000).toFixed(2)}s.`,
+        `Loaded run ${id} — ${decoded.length} inputs, ${((decoded.length * REPLAY_TICK_MS) / 1000).toFixed(2)}s.`,
       );
+      setBoardOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  /** Load the run whose id is typed into the Run ID field. */
+  const loadRun = () => loadRunById(runId);
+
+  /** Fetch the selected level's leaderboard so a run can be picked by name. */
+  const openBoard = async (open: boolean) => {
+    setBoardOpen(open);
+    if (!open) return;
+    setBoardLoading(true);
+    setError(null);
+    try {
+      const entries = await fetchLeaderboard(levelId, false, true);
+      setBoardEntries(entries);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBoardLoading(false);
     }
   };
 
@@ -347,7 +379,7 @@ export function TasEditorView() {
       </div>
 
       {/* Loader */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-black/30 border border-white/5 rounded-lg p-3">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 bg-black/30 border border-white/5 rounded-lg p-3">
         <div className="space-y-1">
           <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
             Level
@@ -389,6 +421,9 @@ export function TasEditorView() {
           <Input
             value={runId}
             onChange={(e) => setRunId(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void loadRun();
+            }}
             placeholder="e.g. 396461"
             className="bg-white/5 border-white/10 h-9 text-xs font-mono"
           />
@@ -411,6 +446,71 @@ export function TasEditorView() {
           >
             Load level
           </Button>
+        </div>
+        <div className="flex items-end">
+          <Popover open={boardOpen} onOpenChange={openBoard}>
+            <PopoverTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={loading}
+                className="h-9 text-xs w-full border-[var(--app-accent)]/30 text-[var(--app-accent)] hover:bg-[var(--app-accent)]/10"
+              >
+                <Trophy className="w-3.5 h-3.5 mr-1" /> Leaderboard
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-80 p-0 bg-[#121212] border-white/10 text-slate-200"
+            >
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-white/10">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-white">
+                  Load a run
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 text-slate-400"
+                  onClick={() => void openBoard(true)}
+                  disabled={boardLoading}
+                  aria-label="Refresh leaderboard"
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5", boardLoading && "animate-spin")} />
+                </Button>
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                {boardLoading ? (
+                  <div className="flex items-center gap-2 text-slate-500 text-xs px-3 py-4">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading board…
+                  </div>
+                ) : boardEntries.length === 0 ? (
+                  <div className="text-slate-500 text-xs px-3 py-4">No runs on this board.</div>
+                ) : (
+                  boardEntries.map((entry, i) => (
+                    <button
+                      key={`${entry.run_id}-${i}`}
+                      onClick={() => void loadRunById(String(entry.run_id))}
+                      disabled={loading}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 disabled:opacity-50"
+                    >
+                      <span className="w-6 text-right font-mono text-[11px] text-slate-500">
+                        {i + 1}
+                      </span>
+                      <span className="flex-1 truncate text-xs text-slate-200">
+                        {entry.username}
+                      </span>
+                      <span className="text-[10px] text-slate-500 truncate max-w-20">
+                        {entry.arrow_name}
+                      </span>
+                      <span className="font-mono text-[11px] text-[var(--app-accent)]">
+                        {entry.completion_time.toFixed(3)}s
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
