@@ -109,6 +109,30 @@ export interface SimWall {
   rotationSpeed?: number;
 }
 
+/** A filled zone (boost/ice/nosteer/steer/rail), given as an axis-aligned box. */
+export interface SimZone {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  type: string;
+}
+
+/** A portal, drawn as a segment with an arrow showing the travel direction. */
+export interface SimPortal {
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+}
+
+/** Everything the renderer needs, split by how each obstacle is drawn. */
+export interface SimGeometry {
+  walls: SimWall[];
+  zones: SimZone[];
+  portals: SimPortal[];
+}
+
 export interface SimResult {
   path: SimPoint[];
   /** Tick (input index) at which the finish was reached, or null. */
@@ -140,11 +164,44 @@ export interface SimOptions {
   maxTicks?: number;
 }
 
-/** Flatten a level's obstacles into line segments for rendering. */
-export function levelWalls(data: RawLevelData | null | undefined): SimWall[] {
+/**
+ * Flatten a level's obstacles into what the renderer draws. Walls become line
+ * segments, zones become filled boxes, portals become directed segments, and
+ * the finish wall is tagged so it can be drawn as a checkered strip.
+ */
+export function levelGeometry(data: RawLevelData | null | undefined): SimGeometry {
   const walls: SimWall[] = [];
+  const zones: SimZone[] = [];
+  const portals: SimPortal[] = [];
   for (const obstacle of data?.obstacles ?? []) {
     const pts = obstacle.points ?? [];
+    const isZone = obstacle.zone_type != null || obstacle.obstacle_type === "zone";
+    const isPortal = obstacle.portal_id != null || obstacle.obstacle_type === "portal";
+
+    if (isZone) {
+      const xs = pts.map((p) => p?.x).filter((x): x is number => x != null);
+      const ys = pts.map((p) => p?.y).filter((y): y is number => y != null);
+      if (xs.length === 0 || ys.length === 0) continue;
+      zones.push({
+        x0: Math.min(...xs),
+        y0: Math.min(...ys),
+        x1: Math.max(...xs),
+        y1: Math.max(...ys),
+        type: obstacle.zone_type ?? "boost",
+      });
+      continue;
+    }
+
+    if (isPortal) {
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        if (a?.x == null || a?.y == null || b?.x == null || b?.y == null) continue;
+        portals.push({ ax: a.x, ay: a.y, bx: b.x, by: b.y });
+      }
+      continue;
+    }
+
     const type = obstacle.wall_type ?? "normal";
     const thickness = obstacle.wall_thickness ?? 8;
     for (let i = 0; i + 1 < pts.length; i++) {
@@ -166,7 +223,7 @@ export function levelWalls(data: RawLevelData | null | undefined): SimWall[] {
       });
     }
   }
-  return walls;
+  return { walls, zones, portals };
 }
 
 /**

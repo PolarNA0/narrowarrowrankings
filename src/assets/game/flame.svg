@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- The streak flame: a red-orange outer tongue with a gold inner flame,
+       layered like a real fire rather than a tinted glyph. -->
+  <path d="M33 2 C36 12 30 18 24 24 C16 32 10 40 12 48 C14 57 22 62 32 62 C44 62 52 55 53 45 C54 36 49 29 46 22 C45 27 43 30 40 31 C43 22 40 10 33 2 Z" fill="#F4643C"/>
+  <path d="M33 30 C35 36 32 39 29 42 C25 46 23 50 24 53 C25 58 28 60 32 60 C38 60 42 57 43 52 C44 47 41 43 40 39 C39 41 38 43 36 44 C38 39 37 34 33 30 Z" fill="#FFD447"/>
+</svg>

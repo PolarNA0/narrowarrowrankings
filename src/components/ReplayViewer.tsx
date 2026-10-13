@@ -28,12 +28,32 @@ import {
 } from "@/lib/replay";
 import {
   SIM_TICK_MS,
-  levelWalls,
+  arrowConstants,
+  levelGeometry,
   simulateRun,
   type RawLevelData,
+  type SimGeometry,
   type SimResult,
+  type SimPortal,
   type SimWall,
 } from "@/lib/replay-sim";
+import {
+  themeColor,
+  thrustColor,
+  trailColor,
+  wallVisual,
+  withAlpha,
+  lighten,
+  type SkinConfig,
+} from "@/lib/replay-visuals";
+import { arrowKind, drawArrowSprite, type ArrowKind } from "@/lib/arrow-sprites";
+import bounceIcon from "@/assets/game/bounce.svg";
+import skullIcon from "@/assets/game/skull.svg";
+import finishIcon from "@/assets/game/finish_line_icon.svg";
+import flameIcon from "@/assets/game/flame.svg";
+import portalIcon from "@/assets/game/portal.svg";
+import railIcon from "@/assets/game/rail.svg";
+import zoneIcon from "@/assets/game/zone.svg";
 
 interface ReplayViewerProps {
   runId: number | string;
@@ -48,6 +68,7 @@ interface RunPayload {
   completion_time?: number;
   mapName?: string;
   arrow_name?: string;
+  skinConfig?: SkinConfig;
 }
 
 const SYMBOL_TONE: Record<ReplaySymbolKey, string> = {
@@ -64,42 +85,6 @@ const SYMBOL_TEXT: Record<ReplaySymbolKey, string> = {
   brake: "text-rose-400",
 };
 
-/** Colour + weight per obstacle type. Types are the engine's `wall_type` /
- * `zone_type` vocabulary; anything unrecognised falls back to a hashed hue. */
-const WALL_STYLE: Record<string, { stroke: string; width: number }> = {
-  normal: { stroke: "#94a3b8", width: 1.4 },
-  death: { stroke: "#ef4444", width: 2 },
-  bouncy: { stroke: "#eab308", width: 2 },
-  boost: { stroke: "#38bdf8", width: 2.4 },
-  ice: { stroke: "#67e8f9", width: 2.4 },
-  rail: { stroke: "#f472b6", width: 2.4 },
-  nosteer: { stroke: "#a855f7", width: 2.4 },
-  steer: { stroke: "#4ade80", width: 2.4 },
-  portal: { stroke: "#fb923c", width: 2.4 },
-  finish: { stroke: "#22c55e", width: 5 },
-};
-
-/** Deterministic hue for a type we have no explicit colour for. */
-function hashHue(type: string): number {
-  let h = 0;
-  for (let i = 0; i < type.length; i++) h = (h * 31 + type.charCodeAt(i)) % 360;
-  return h;
-}
-
-function wallStroke(type: string): string {
-  return (WALL_STYLE[type] ?? { stroke: `hsl(${hashHue(type)} 70% 62%)` }).stroke;
-}
-
-function wallWidth(type: string): number {
-  return (WALL_STYLE[type] ?? { width: 1.8 }).width;
-}
-
-/** Random, high-contrast arrow hue. HSL keeps it vivid against the dark
- * canvas regardless of which hue is picked. */
-function randomHue(): number {
-  return Math.floor(Math.random() * 360);
-}
-
 /** Playback speeds offered for the animated replay. */
 const SPEEDS = [0.5, 1, 2, 4];
 
@@ -113,7 +98,11 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
   const [state, setState] = React.useState<"idle" | "loading" | "ready" | "error">("idle");
   const [summary, setSummary] = React.useState<ReplaySummary | null>(null);
   const [meta, setMeta] = React.useState<RunPayload | null>(null);
-  const [walls, setWalls] = React.useState<SimWall[]>([]);
+  const [geometry, setGeometry] = React.useState<SimGeometry>({
+    walls: [],
+    zones: [],
+    portals: [],
+  });
   const [sim, setSim] = React.useState<SimResult | null>(null);
   const [selected, setSelected] = React.useState(0);
   const [panel, setPanel] = React.useState<"none" | "input" | "combo">("none");
@@ -122,8 +111,16 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
   const [frame, setFrame] = React.useState(0);
   const [speed, setSpeed] = React.useState(1);
   const [attempt, setAttempt] = React.useState(0);
-  const [arrowHue, setArrowHue] = React.useState(randomHue);
   const loadedRef = React.useRef<string | null>(null);
+
+  // The run's own skin: the game tints the arrow, trail and thrust with it.
+  const skin = meta?.skinConfig ?? null;
+  const bodyColor = themeColor(skin);
+  const trail = trailColor(skin);
+  const thrust = thrustColor(skin);
+  // The arrow sprite and hitbox radius the run actually flew.
+  const arrow = arrowKind(meta?.arrow_name);
+  const arrowRadius = arrowConstants(meta?.arrow_name).radius ?? 16;
 
   React.useEffect(() => {
     if (!open) return;
@@ -133,11 +130,10 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
     let cancelled = false;
     setState("loading");
     setSim(null);
-    setWalls([]);
+    setGeometry({ walls: [], zones: [], portals: [] });
     setPanel("none");
     setFrame(0);
     setPlaying(true);
-    setArrowHue(randomHue());
 
     (async () => {
       try {
@@ -167,7 +163,7 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
               const payload = (await levelRes.json()) as { levelInfo?: { data?: RawLevelData } };
               const levelData = payload.levelInfo?.data ?? null;
               if (levelData && !cancelled) {
-                setWalls(levelWalls(levelData));
+                setGeometry(levelGeometry(levelData));
                 const result = await simulateRun(
                   data.inputs ?? "",
                   data.input_count,
@@ -289,11 +285,15 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
             {sim && pathLength > 0 ? (
               <ReplayStage
                 sim={sim}
-                walls={walls}
+                geometry={geometry}
                 frame={frame}
                 playing={playing}
                 speed={speed}
-                arrowHue={arrowHue}
+                bodyColor={bodyColor}
+                trail={trail}
+                thrust={thrust}
+                arrow={arrow}
+                arrowRadius={arrowRadius}
                 replayTimeMs={replayTimeMs}
                 onTogglePlay={() => {
                   if (frame >= pathLength - 1) setFrame(0);
@@ -501,11 +501,15 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
 
 interface StageProps {
   sim: SimResult;
-  walls: SimWall[];
+  geometry: SimGeometry;
   frame: number;
   playing: boolean;
   speed: number;
-  arrowHue: number;
+  bodyColor: string;
+  trail: string;
+  thrust: string;
+  arrow: ArrowKind;
+  arrowRadius: number;
   replayTimeMs: number;
   onTogglePlay: () => void;
   onScrub: (value: number) => void;
@@ -514,11 +518,15 @@ interface StageProps {
 
 function ReplayStage({
   sim,
-  walls,
+  geometry,
   frame,
   playing,
   speed,
-  arrowHue,
+  bodyColor,
+  trail,
+  thrust,
+  arrow,
+  arrowRadius,
   replayTimeMs,
   onTogglePlay,
   onScrub,
@@ -534,7 +542,7 @@ function ReplayStage({
 
     const dpr = window.devicePixelRatio || 1;
     const width = parent.clientWidth;
-    const height = 320;
+    const height = 340;
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     canvas.style.width = `${width}px`;
@@ -543,6 +551,9 @@ function ReplayStage({
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
+    // The game paints on a dark field, not pure black.
+    ctx.fillStyle = "#07070b";
+    ctx.fillRect(0, 0, width, height);
 
     // World bounds: the level plus the simulated path. Rotating walls sweep a
     // circle around their pivot, so bound them by that circle (not just their
@@ -566,12 +577,18 @@ function ReplayStage({
         y1: Math.max(w.ay, w.by),
       };
     };
-    for (const w of walls) {
+    for (const w of geometry.walls) {
       const b = reach(w);
       minX = Math.min(minX, b.x0);
       minY = Math.min(minY, b.y0);
       maxX = Math.max(maxX, b.x1);
       maxY = Math.max(maxY, b.y1);
+    }
+    for (const z of geometry.zones) {
+      minX = Math.min(minX, z.x0);
+      minY = Math.min(minY, z.y0);
+      maxX = Math.max(maxX, z.x1);
+      maxY = Math.max(maxY, z.y1);
     }
     for (const p of sim.path) {
       minX = Math.min(minX, p.x);
@@ -596,11 +613,33 @@ function ReplayStage({
     if (sim.path.length === 0) return;
     const safeFrame = Number.isFinite(frame) ? Math.floor(frame) : 0;
     const upto = Math.max(0, Math.min(safeFrame, sim.path.length - 1));
-    // Walls, each rotated to the pose the engine has it in at this frame.
     // One 60Hz frame is four 240Hz ticks, matching `simulateRun`'s sampling.
     const tick = upto * 4;
+
+    // Zones first: filled areas the arrow passes through (boost/ice/nosteer/…).
+    for (const z of geometry.zones) {
+      const visual = wallVisual(z.type);
+      const x = tx(Math.min(z.x0, z.x1));
+      const y = ty(Math.min(z.y0, z.y1));
+      const w = Math.abs(tx(z.x1) - tx(z.x0));
+      const h = Math.abs(ty(z.y1) - ty(z.y0));
+      ctx.fillStyle = withAlpha(visual.color, 0.14);
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = withAlpha(visual.color, 0.55);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.setLineDash([]);
+    }
+
+    // Portals: a dashed segment with a chevron showing the travel direction.
+    for (const p of geometry.portals) {
+      drawPortal(ctx, p, tx, ty);
+    }
+
+    // Walls, each rotated to the pose the engine has it in at this frame.
     ctx.lineCap = "round";
-    for (const w of walls) {
+    for (const w of geometry.walls) {
       let ax = w.ax;
       let ay = w.ay;
       let bx = w.bx;
@@ -621,58 +660,90 @@ function ReplayStage({
         bx = b.x;
         by = b.y;
       }
-      ctx.strokeStyle = wallStroke(w.type);
-      ctx.lineWidth = wallWidth(w.type);
+      const visual = wallVisual(w.type);
+      const X0 = tx(ax);
+      const Y0 = ty(ay);
+      const X1 = tx(bx);
+      const Y1 = ty(by);
+      if (visual.kind === "finish") {
+        drawFinish(ctx, X0, Y0, X1, Y1);
+        continue;
+      }
+      // A faint wide pass under a crisp core reads as the game's neon walls.
+      ctx.strokeStyle = withAlpha(visual.color, 0.16);
+      ctx.lineWidth = Math.max(3, visual.width * 3);
       ctx.beginPath();
-      ctx.moveTo(tx(ax), ty(ay));
-      ctx.lineTo(tx(bx), ty(by));
+      ctx.moveTo(X0, Y0);
+      ctx.lineTo(X1, Y1);
+      ctx.stroke();
+      ctx.strokeStyle = visual.color;
+      ctx.lineWidth = visual.width;
+      ctx.beginPath();
+      ctx.moveTo(X0, Y0);
+      ctx.lineTo(X1, Y1);
       ctx.stroke();
     }
 
-    // Travelled path.
-    ctx.strokeStyle = `hsl(${arrowHue} 85% 62% / 0.5)`;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    for (let i = 0; i <= upto; i++) {
-      const p = sim.path[i];
-      if (i === 0) ctx.moveTo(tx(p.x), ty(p.y));
-      else ctx.lineTo(tx(p.x), ty(p.y));
+    // Travelled path: a soft glow under a bright core, in the run's trail colour.
+    if (upto > 0) {
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (const [w, a] of [
+        [7, 0.12],
+        [3.5, 0.3],
+      ] as const) {
+        ctx.strokeStyle = withAlpha(trail, a);
+        ctx.lineWidth = w;
+        ctx.beginPath();
+        for (let i = 0; i <= upto; i++) {
+          const p = sim.path[i];
+          if (i === 0) ctx.moveTo(tx(p.x), ty(p.y));
+          else ctx.lineTo(tx(p.x), ty(p.y));
+        }
+        ctx.stroke();
+      }
+      ctx.strokeStyle = lighten(trail, 0.35);
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      for (let i = 0; i <= upto; i++) {
+        const p = sim.path[i];
+        if (i === 0) ctx.moveTo(tx(p.x), ty(p.y));
+        else ctx.lineTo(tx(p.x), ty(p.y));
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
 
-    // Arrow at the current position.
+    // Arrow at the current position, drawn as the game's two-tone sprite:
+    // a tinted body with a lighter nose and a grey tail.
     const point = sim.path[upto];
-    const len = 9;
-    const wid = 6;
-    const cos = Math.cos(point.rot);
-    const sin = Math.sin(point.rot);
-    const tipX = tx(point.x) + cos * len;
-    const tipY = ty(point.y) + sin * len;
-    const leftX = tx(point.x) - sin * wid - cos * wid;
-    const leftY = ty(point.y) + cos * wid - sin * wid;
-    const rightX = tx(point.x) + sin * wid - cos * wid;
-    const rightY = ty(point.y) - cos * wid - sin * wid;
-    ctx.fillStyle = `hsl(${arrowHue} 90% 62%)`;
-    ctx.beginPath();
-    ctx.moveTo(tipX, tipY);
-    ctx.lineTo(leftX, leftY);
-    ctx.lineTo(rightX, rightY);
-    ctx.closePath();
-    ctx.fill();
+    const prev = sim.path[Math.max(0, upto - 1)];
+    const heading = upto > 0 ? Math.atan2(point.y - prev.y, point.x - prev.x) : point.rot;
+    drawArrowSprite(
+      ctx,
+      arrow,
+      tx(point.x),
+      ty(point.y),
+      heading,
+      scale,
+      arrowRadius,
+      bodyColor,
+      thrust,
+    );
 
     if (sim.finishTick !== null && upto >= sim.finishTick) {
-      ctx.fillStyle = "#22c55e";
-      ctx.font = "bold 11px monospace";
-      ctx.fillText("FINISH", 8, 16);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 11px ui-monospace, monospace";
+      ctx.fillText("FINISH", 10, 18);
     }
-  }, [sim, walls, frame, arrowHue]);
+  }, [sim, geometry, frame, bodyColor, trail, thrust, arrow, arrowRadius]);
 
   const maxFrame = Math.max(1, sim.path.length - 1);
   return (
     <div className="space-y-2">
-      <div className="rounded-lg overflow-hidden border border-white/10 bg-[#06060a]">
+      <div className="rounded-lg overflow-hidden border border-white/10 bg-[#07070b]">
         <canvas ref={canvasRef} />
       </div>
+      <ReplayLegend geometry={geometry} />
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"
@@ -716,9 +787,125 @@ function ReplayStage({
         </Select>
       </div>
       <p className="text-[10px] text-slate-600">
-        Animation reconstructed from the recorded inputs and level geometry — approximate, not
-        frame-perfect.
+        Animation reconstructed from the recorded inputs and level geometry, coloured with the run's
+        own skin — approximate, not frame-perfect.
       </p>
+    </div>
+  );
+}
+
+/** A portal as a dashed segment with a chevron pointing along the travel. */
+function drawPortal(
+  ctx: CanvasRenderingContext2D,
+  p: SimPortal,
+  tx: (x: number) => number,
+  ty: (y: number) => number,
+) {
+  const x0 = tx(p.ax);
+  const y0 = ty(p.ay);
+  const x1 = tx(p.bx);
+  const y1 = ty(p.by);
+  const visual = wallVisual("portal");
+  ctx.save();
+  ctx.strokeStyle = withAlpha(visual.color, 0.7);
+  ctx.lineWidth = 1.6;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x1, y1);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const ang = Math.atan2(y1 - y0, x1 - x0);
+  const mx = (x0 + x1) / 2;
+  const my = (y0 + y1) / 2;
+  const s = 6;
+  ctx.fillStyle = visual.color;
+  ctx.beginPath();
+  ctx.moveTo(mx + Math.cos(ang) * s, my + Math.sin(ang) * s);
+  ctx.lineTo(mx + Math.cos(ang + 2.5) * s, my + Math.sin(ang + 2.5) * s);
+  ctx.lineTo(mx + Math.cos(ang - 2.5) * s, my + Math.sin(ang - 2.5) * s);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/** The finish line: a white strip with a black chequer, like the game's grid. */
+function drawFinish(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number) {
+  const len = Math.hypot(x1 - x0, y1 - y0);
+  const ang = Math.atan2(y1 - y0, x1 - x0);
+  const cells = Math.max(4, Math.round(len / 12));
+  const cell = len / cells;
+  const thick = 10;
+  ctx.save();
+  ctx.translate(x0, y0);
+  ctx.rotate(ang);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, -thick / 2, len, thick);
+  ctx.fillStyle = "#111114";
+  for (let i = 0; i < cells; i++) {
+    const onTop = i % 2 === 0;
+    ctx.fillRect(i * cell, onTop ? -thick / 2 : 0, cell, thick / 2);
+  }
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, -thick / 2, len, thick);
+  ctx.restore();
+}
+
+/** The game's own icons for the obstacle types, used in the legend below. */
+const LEGEND_ICONS: Record<string, string> = {
+  normal: railIcon,
+  death: skullIcon,
+  bouncy: bounceIcon,
+  boost: flameIcon,
+  finish: finishIcon,
+  portal: portalIcon,
+  ice: zoneIcon,
+  nosteer: railIcon,
+};
+
+const LEGEND_LABELS: Record<string, string> = {
+  normal: "Wall",
+  death: "Death",
+  bouncy: "Bouncy",
+  boost: "Boost",
+  finish: "Finish",
+  portal: "Portal",
+  ice: "Ice",
+  nosteer: "No steer",
+};
+
+/**
+ * A one-line key for the obstacle types actually present in the level, drawn
+ * with the game's own icons so the canvas colours are self-explanatory.
+ */
+function ReplayLegend({ geometry }: { geometry: SimGeometry }) {
+  const types = React.useMemo(() => {
+    const seen = new Set<string>();
+    for (const w of geometry.walls) seen.add(w.type);
+    for (const z of geometry.zones) seen.add(z.type);
+    if (geometry.portals.length > 0) seen.add("portal");
+    return [...seen].filter((t) => LEGEND_ICONS[t]);
+  }, [geometry]);
+
+  if (types.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      {types.map((type) => {
+        const visual = wallVisual(type);
+        return (
+          <span key={type} className="flex items-center gap-1.5 text-[10px] text-slate-400">
+            <img
+              src={LEGEND_ICONS[type]}
+              alt=""
+              className="w-3.5 h-3.5 opacity-90"
+              style={{ filter: `drop-shadow(0 0 3px ${withAlpha(visual.color, 0.8)})` }}
+            />
+            <span className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: visual.color }} />
+            {LEGEND_LABELS[type] ?? type}
+          </span>
+        );
+      })}
     </div>
   );
 }
