@@ -202,6 +202,38 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_public_profiles: {
+        Args: never
+        Returns: {
+          accent_color: string
+          avatar_url: string
+          banner_url: string
+          bio: string
+          country: string
+          display_name: string
+          id: string
+          socials: Json
+          username: string
+          verified: boolean
+        }[]
+      }
+      get_rating_summaries: {
+        Args: never
+        Returns: {
+          average: number
+          count: number
+          level_id: string
+        }[]
+      }
+      get_vote_totals: {
+        Args: never
+        Returns: {
+          category: string
+          target_username: string
+          total: number
+          voters: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
