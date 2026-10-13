@@ -122,6 +122,7 @@ import { InGameMedalsPopover } from "@/components/InGameMedalsPopover";
 import { ReplayViewer } from "@/components/ReplayViewer";
 import { SkinsView } from "@/components/SkinsView";
 import { TasEditorView } from "@/components/TasEditorView";
+import { TasLeaderboardView } from "@/components/TasLeaderboardView";
 import { useInGameMedals } from "@/hooks/useInGameMedals";
 import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
 
@@ -360,7 +361,7 @@ export default function App() {
   const { byUsername: playerProfiles, reload: reloadProfiles, myProfile: myLinkedProfile, saveMyProfile } = usePlayerProfiles(adminUser?.id);
 
 
-  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries' | 'fame' | 'targets' | 'clubs' | 'medal-ease' | 'skins' | 'tas'>('leaderboard');
+  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries' | 'fame' | 'targets' | 'clubs' | 'medal-ease' | 'skins' | 'tas' | 'tas-board'>('leaderboard');
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history' | 'arrows'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -1178,7 +1179,7 @@ export default function App() {
 
   const navigateView = (next: NavigableView) => {
     setView(next);
-    if (!["leaderboard", "customs", "random", "completions", "voting", "rating", "tas"].includes(next)) void fetchAllLevels();
+    if (!["leaderboard", "customs", "random", "completions", "voting", "rating", "tas", "tas-board"].includes(next)) void fetchAllLevels();
   };
 
   return (
@@ -2042,6 +2043,8 @@ export default function App() {
           <SkinsView />
         ) : view === 'tas' ? (
           <TasEditorView />
+        ) : view === 'tas-board' ? (
+          <TasLeaderboardView />
         ) : view === 'score' ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
