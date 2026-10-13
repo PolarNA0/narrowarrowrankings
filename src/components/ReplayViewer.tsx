@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { LEVELS } from "@/constants";
 import {
   REPLAY_SYMBOLS,
   REPLAY_TICK_MS,
@@ -123,9 +124,13 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
 
         // Level geometry is only needed for the animation; if it is slow or
         // missing, show the input breakdown rather than blocking on it.
-        if (data.mapName) {
+        const levelKey = data.mapName
+          ? (LEVELS.find((l) => l.name.toLowerCase() === data.mapName!.toLowerCase())?.id ??
+            data.mapName)
+          : null;
+        if (levelKey) {
           try {
-            const levelRes = await fetch(`/api/level-details/${encodeURIComponent(data.mapName)}`, {
+            const levelRes = await fetch(`/api/level-details/${encodeURIComponent(levelKey)}`, {
               signal: AbortSignal.timeout(20000),
             });
             if (levelRes.ok) {
