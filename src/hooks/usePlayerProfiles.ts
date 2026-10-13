@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export interface PlayerProfileRow {
   id: string;
-  user_id: string;
+  user_id?: string;
   username: string | null;
   display_name: string | null;
   avatar_url: string | null;
@@ -34,7 +34,7 @@ export function usePlayerProfiles(userId?: string | null) {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.from("player_profiles").select("*");
+    const { data, error } = await supabase.rpc("get_public_profiles");
     if (error) {
       console.error("Profile load failed:", error.message);
       setLoading(false);
@@ -46,7 +46,10 @@ export function usePlayerProfiles(userId?: string | null) {
       if (row.username) map[row.username.toLowerCase()] = row;
     }
     setByUsername(map);
-    setMyProfile(userId ? rows.find((r) => r.user_id === userId) ?? null : null);
+    if (userId) {
+      const { data: mine } = await supabase.from("player_profiles").select("*").eq("user_id", userId).maybeSingle();
+      setMyProfile((mine as unknown as PlayerProfileRow) ?? null);
+    } else setMyProfile(null);
     setLoading(false);
   }, [userId]);
 

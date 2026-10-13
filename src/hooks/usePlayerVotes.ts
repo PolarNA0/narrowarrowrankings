@@ -34,12 +34,25 @@ const EMPTY: VoteTotals = { official: 0, hard: 0, custom: 0, total: 0, voters: 0
  */
 export function usePlayerVotes(userId?: string | null) {
   const [rows, setRows] = useState<VoteRow[]>([]);
+  const [totals, setTotals] = useState<Record<string, VoteTotals>>({});
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    const { data: agg, error: aggError } = await supabase.rpc("get_vote_totals");
+    if (aggError) console.error("Vote totals failed:", aggError.message);
+    const map: Record<string, VoteTotals> = {};
+    for (const r of (agg ?? []) as { target_username: string; category: VoteCategory; total: number; voters: number }[]) {
+      const entry = (map[r.target_username.toLowerCase()] ??= { ...EMPTY });
+      entry[r.category] += Number(r.total);
+      entry.total += Number(r.total);
+      entry.voters = Math.max(entry.voters, Number(r.voters));
+    }
+    setTotals(map);
+    if (!userId) { setRows([]); setLoading(false); return; }
     const { data, error } = await supabase
       .from("player_votes")
-      .select("id, user_id, target_username, category, value");
+      .select("id, user_id, target_username, category, value")
+      .eq("user_id", userId);
     if (error) {
       console.error("Vote load failed:", error.message);
       setLoading(false);
@@ -47,25 +60,11 @@ export function usePlayerVotes(userId?: string | null) {
     }
     setRows((data ?? []) as unknown as VoteRow[]);
     setLoading(false);
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     void load();
   }, [load]);
-
-  const totals = useMemo(() => {
-    const map: Record<string, VoteTotals> = {};
-    const voterSets: Record<string, Set<string>> = {};
-    for (const row of rows) {
-      const key = row.target_username.toLowerCase();
-      const entry = (map[key] ??= { ...EMPTY });
-      entry[row.category] += row.value;
-      entry.total += row.value;
-      (voterSets[key] ??= new Set()).add(row.user_id);
-    }
-    for (const [key, set] of Object.entries(voterSets)) map[key].voters = set.size;
-    return map;
-  }, [rows]);
 
   const myVotes = useMemo(() => {
     const map: Record<string, Partial<Record<VoteCategory, number>>> = {};
@@ -88,16 +87,14 @@ export function usePlayerVotes(userId?: string | null) {
       if (existing && existing.value === value) {
         const { error } = await supabase.from("player_votes").delete().eq("id", existing.id);
         if (error) throw new Error(error.message);
-        setRows((prev) => prev.filter((r) => r.id !== existing.id));
+        await load();
         return;
       }
 
-      const saved = (await castVoteFn({
-        data: { username: target, category, value },
-      })) as unknown as VoteRow;
-      setRows((prev) => [...prev.filter((r) => r.id !== saved.id && r !== existing), saved]);
+      await castVoteFn({ data: { username: target, category, value } });
+      await load();
     },
-    [rows, userId],
+    [rows, userId, load],
   );
 
 
