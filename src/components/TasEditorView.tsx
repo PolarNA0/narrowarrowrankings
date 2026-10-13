@@ -3,11 +3,10 @@ import {
   Play,
   Pause,
   Loader2,
-  ChevronLeft,
-  ChevronRight,
   Upload,
   Download,
-  Trash2,
+  Plus,
+  Minus,
   Trophy,
   RefreshCw,
 } from "lucide-react";
@@ -46,7 +45,6 @@ import {
 import { arrowKind, type ArrowKind } from "@/lib/arrow-sprites";
 import { ReplayStage } from "@/components/ReplayViewer";
 
-const NEUTRAL = 0;
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
 /** Inputs between saved engine snapshots, trading memory for rewind speed. */
 const CHECKPOINT = 600;
@@ -60,12 +58,26 @@ interface Loaded {
   arrowRadius: number;
 }
 
+/** A run-length segment: one input held for `length` consecutive 240Hz ticks. */
+interface Segment {
+  symbol: number;
+  start: number;
+  length: number;
+}
+
+/** Run-length of the held input that begins at `index`. */
+function lengthOf(symbols: number[], index: number): number {
+  let len = 0;
+  const symbol = symbols[index];
+  while (index + len < symbols.length && symbols[index + len] === symbol) len++;
+  return len;
+}
+
 /**
- * A tool-assisted-speedrun editor. Loads a run's inputs (or a level to start
- * from scratch), then lets every 240Hz input tick be edited, inserted or
- * deleted while the real game engine re-simulates the result. The slider scrubs
- * the timeline; its current time can be typed into "Go to time" to jump
- * straight to that tick instead of hunting for it.
+ * A tool-assisted-speedrun editor. A run is shown the way speedrunners think
+ * about it — a list of held inputs ("Left 37", "Right 42") from the start to
+ * the finish — rather than tick by tick. Each row's +/- grows or shrinks that
+ * hold by one tick; the real game engine re-simulates the result live.
  */
 export function TasEditorView() {
   const [levelId, setLevelId] = React.useState(LEVELS[0]?.id ?? "");
@@ -185,7 +197,7 @@ export function TasEditorView() {
     [resimulate],
   );
 
-  /** Load a level from scratch (all-neutral inputs). */
+  /** Load a level from scratch (no inputs yet). */
   const loadLevelOnly = async () => {
     setLoading(true);
     setError(null);
@@ -288,38 +300,71 @@ export function TasEditorView() {
     return () => cancelAnimationFrame(rafRef.current);
   }, [playing, path.length]);
 
-  const setSymbolAt = (index: number, symbol: number) => {
+  const commit = (next: number[], fromTick: number) => {
+    symbolsRef.current = next;
+    setSymbols(next);
+    resimulate(fromTick, next);
+  };
+
+  /** Change the input held at `index` (splitting/merging its segments). */
+  const changeSymbol = (index: number, symbol: number) => {
     if (index < 0 || index >= symbolsRef.current.length) return;
+    if (symbolsRef.current[index] === symbol) return;
     const next = symbolsRef.current.slice();
     next[index] = symbol;
-    symbolsRef.current = next;
-    setSymbols(next);
-    resimulate(index, next);
+    commit(next, index);
   };
 
-  const insertSymbol = (index: number, symbol: number) => {
+  /** Grow (+1) or shrink (-1) the hold that starts at `segStart`. */
+  const adjustSegment = (segStart: number, delta: number, symbol: number) => {
+    const len = lengthOf(symbolsRef.current, segStart);
+    if (delta > 0) {
+      const next = symbolsRef.current.slice();
+      next.splice(segStart + len, 0, symbol);
+      commit(next, segStart + len);
+      setFrame(segStart + len + 1);
+    } else {
+      if (len <= 1) return;
+      const next = symbolsRef.current.slice();
+      next.splice(segStart + len - 1, 1);
+      commit(next, segStart + len - 1);
+      setFrame(Math.min(segStart + len - 1, next.length));
+    }
+  };
+
+  /** Append a new hold of `symbol` (and `length` ticks) at the end. */
+  const appendSegment = (symbol: number, length: number) => {
     const next = symbolsRef.current.slice();
-    next.splice(index, 0, symbol);
-    symbolsRef.current = next;
-    setSymbols(next);
-    resimulate(index, next);
-    // Keep the cursor on the freshly inserted tick so it can be edited at once.
-    setFrame(index);
+    const start = next.length;
+    for (let i = 0; i < length; i++) next.push(symbol);
+    commit(next, start);
+    setFrame(Math.min(start + 1, next.length));
   };
 
-  const deleteSymbol = (index: number) => {
-    if (index < 0 || index >= symbolsRef.current.length) return;
-    const next = symbolsRef.current.slice();
-    next.splice(index, 1);
-    symbolsRef.current = next;
-    setSymbols(next);
-    resimulate(index, next);
-    setFrame((f) => Math.min(f, next.length));
-  };
+  const segments = React.useMemo<Segment[]>(() => {
+    const out: Segment[] = [];
+    let i = 0;
+    while (i < symbols.length) {
+      const symbol = symbols[i];
+      let len = 1;
+      while (i + len < symbols.length && symbols[i + len] === symbol) len++;
+      out.push({ symbol, start: i, length: len });
+      i += len;
+    }
+    return out;
+  }, [symbols]);
 
-  const currentTick = Math.max(0, Math.min(Math.floor(frame), symbols.length - 1));
+  const currentTick = Math.max(0, Math.min(Math.floor(frame), Math.max(0, symbols.length - 1)));
   const currentSymbol = symbols[currentTick];
   const frameTimeMs = frame * SIM_TICK_MS;
+  const currentSegIndex = segments.findIndex(
+    (s) => currentTick >= s.start && currentTick < s.start + s.length,
+  );
+
+  const jumpToSegment = (start: number) => {
+    setPlaying(false);
+    setFrame(Math.min(start + 1, Math.max(0, path.length - 1)));
+  };
 
   const jumpToTime = () => {
     const seconds = Number(goTo);
@@ -371,9 +416,9 @@ export function TasEditorView() {
             <Upload className="w-4 h-4 text-[var(--app-accent)]" /> TAS Editor
           </h2>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Load a run's inputs (or just a level) and edit every 240Hz input tick. The real game
-            engine re-simulates your edits live. Scrub the timeline, read the time, then type it
-            into “Go to time” to jump straight back to the tick you want to change.
+            Load a run's inputs (or just a level). The run is listed as the inputs it holds, in
+            order, from Start to Finish. Use +/- on a row to lengthen or shorten that hold by one
+            tick; the real game engine re-simulates the result live.
           </p>
         </div>
       </div>
@@ -523,196 +568,226 @@ export function TasEditorView() {
       {status && !error && <div className="text-slate-500 text-xs">{status}</div>}
 
       {loaded && sim && (
-        <>
-          <ReplayStage
-            sim={sim}
-            geometry={loaded.geometry}
-            frame={frame}
-            playing={false}
-            speed={1}
-            bodyColor="#ffffff"
-            trail="#8b5cf6"
-            thrust="#cbd5e1"
-            arrow={loaded.arrow}
-            arrowRadius={loaded.arrowRadius}
-            replayTimeMs={frameTimeMs}
-            onTogglePlay={() => {}}
-            onScrub={() => {}}
-            onSpeed={() => {}}
-            hideControls
-          />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 space-y-4">
+            <ReplayStage
+              sim={sim}
+              geometry={loaded.geometry}
+              frame={frame}
+              playing={false}
+              speed={1}
+              bodyColor="#ffffff"
+              trail="#8b5cf6"
+              thrust="#cbd5e1"
+              arrow={loaded.arrow}
+              arrowRadius={loaded.arrowRadius}
+              replayTimeMs={frameTimeMs}
+              onTogglePlay={() => {}}
+              onScrub={() => {}}
+              onSpeed={() => {}}
+              hideControls
+            />
 
-          {/* Transport */}
-          <div className="space-y-2 bg-black/30 border border-white/5 rounded-lg p-3">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-slate-300"
-                onClick={() => {
-                  if (frame >= path.length - 1) setFrame(0);
-                  setPlaying((p) => !p);
-                }}
-              >
-                {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-              </Button>
-              <input
-                type="range"
-                min={0}
-                max={Math.max(1, path.length - 1)}
-                value={Math.floor(frame)}
-                onChange={(e) => {
-                  setPlaying(false);
-                  setFrame(Number(e.target.value));
-                }}
-                className="flex-1 accent-[var(--app-accent)]"
-                aria-label="TAS scrubber"
-              />
-              <span className="font-mono text-[11px] text-slate-400 w-24 text-right">
-                tick {currentTick} · {(frameTimeMs / 1000).toFixed(3)}s
-              </span>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-                Go to time (s)
-              </span>
-              <Input
-                value={goTo}
-                onChange={(e) => setGoTo(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") jumpToTime();
-                }}
-                placeholder={(frameTimeMs / 1000).toFixed(2)}
-                className="bg-white/5 border-white/10 h-8 w-24 text-xs font-mono"
-              />
-              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={jumpToTime}>
-                Jump
-              </Button>
-              <span className="text-[11px] text-slate-500">
-                {finishTick !== null
-                  ? `Finish at tick ${finishTick} (${((finishTick * SIM_TICK_MS) / 1000).toFixed(3)}s)`
-                  : "Not finished"}
-              </span>
-            </div>
-          </div>
-
-          {/* Input editor */}
-          <div className="bg-black/30 border border-white/5 rounded-lg p-3 space-y-3">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-                Input at tick {currentTick} ({symbols.length} total)
-              </div>
-              <div className="flex items-center gap-2">
+            {/* Transport */}
+            <div className="space-y-2 bg-black/30 border border-white/5 rounded-lg p-3">
+              <div className="flex items-center gap-3">
                 <Button
-                  size="sm"
                   variant="ghost"
-                  className="h-8 text-xs"
+                  size="icon"
+                  className="h-8 w-8 text-slate-300"
                   onClick={() => {
-                    setPlaying(false);
-                    setFrame((f) => Math.max(0, Math.floor(f) - 1));
+                    if (frame >= path.length - 1) setFrame(0);
+                    setPlaying((p) => !p);
                   }}
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                  {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 text-xs"
-                  onClick={() => {
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(1, path.length - 1)}
+                  value={Math.floor(frame)}
+                  onChange={(e) => {
                     setPlaying(false);
-                    setFrame((f) => Math.min(path.length - 1, Math.floor(f) + 1));
+                    setFrame(Number(e.target.value));
                   }}
-                >
-                  Next <ChevronRight className="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-xs"
-                  onClick={exportInputs}
-                  disabled={symbols.length === 0}
-                >
-                  <Download className="w-3.5 h-3.5 mr-1" /> Export
-                </Button>
-                <label className="cursor-pointer">
-                  <input
-                    type="file"
-                    accept="application/json"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) void importInputs(file);
-                      e.target.value = "";
-                    }}
-                  />
-                  <span className="inline-flex items-center h-8 px-3 rounded-md border border-white/10 text-xs hover:bg-white/5">
-                    <Upload className="w-3.5 h-3.5 mr-1" /> Import
-                  </span>
-                </label>
+                  className="flex-1 accent-[var(--app-accent)]"
+                  aria-label="TAS scrubber"
+                />
+                <span className="font-mono text-[11px] text-slate-400 w-24 text-right">
+                  tick {currentTick} · {(frameTimeMs / 1000).toFixed(3)}s
+                </span>
               </div>
-            </div>
-
-            {/* Symbol picker for the current tick */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {REPLAY_SYMBOLS.map((s) => (
-                <Button
-                  key={s.key}
-                  size="sm"
-                  variant={currentSymbol === symbolValue(s.key) ? "secondary" : "ghost"}
-                  className={cn("h-8 text-xs font-mono", symbolTone(s.key))}
-                  onClick={() => setSymbolAt(currentTick, symbolValue(s.key))}
-                >
-                  {s.short} · {s.label}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                  Go to time (s)
+                </span>
+                <Input
+                  value={goTo}
+                  onChange={(e) => setGoTo(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") jumpToTime();
+                  }}
+                  placeholder={(frameTimeMs / 1000).toFixed(2)}
+                  className="bg-white/5 border-white/10 h-8 w-24 text-xs font-mono"
+                />
+                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={jumpToTime}>
+                  Jump
                 </Button>
-              ))}
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 text-xs"
-                onClick={() => insertSymbol(currentTick, NEUTRAL)}
-              >
-                + Insert tick
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 text-xs text-rose-400"
-                onClick={() => deleteSymbol(currentTick)}
-                disabled={symbols.length === 0}
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete tick
-              </Button>
-            </div>
-
-            {/* Neighbouring ticks for context. */}
-            {symbols.length > 0 && (
-              <div className="flex items-center gap-1 overflow-x-auto pb-1">
-                {symbols.slice(Math.max(0, currentTick - 12), currentTick + 13).map((sym, i) => {
-                  const index = Math.max(0, currentTick - 12) + i;
-                  return (
-                    <button
-                      key={index}
-                      onClick={() => {
-                        setPlaying(false);
-                        setFrame(index + 1);
+                <span className="text-[11px] text-slate-500">
+                  {finishTick !== null
+                    ? `Finish at tick ${finishTick} (${((finishTick * SIM_TICK_MS) / 1000).toFixed(3)}s)`
+                    : "Not finished"}
+                </span>
+                <div className="ml-auto flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={exportInputs}
+                    disabled={symbols.length === 0}
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1" /> Export
+                  </Button>
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept="application/json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void importInputs(file);
+                        e.target.value = "";
                       }}
-                      className={cn(
-                        "w-6 h-6 shrink-0 rounded text-[10px] font-mono border",
-                        index === currentTick
-                          ? "border-[var(--app-accent)] text-white"
-                          : "border-white/10 text-slate-400",
-                        index === currentTick ? "" : tickTone(sym),
-                      )}
-                      title={`tick ${index}`}
-                    >
-                      {REPLAY_SYMBOLS[sym]?.short ?? "?"}
-                    </button>
-                  );
-                })}
+                    />
+                    <span className="inline-flex items-center h-8 px-3 rounded-md border border-white/10 text-xs hover:bg-white/5">
+                      <Upload className="w-3.5 h-3.5 mr-1" /> Import
+                    </span>
+                  </label>
+                </div>
               </div>
-            )}
+            </div>
           </div>
-        </>
+
+          {/* Input list */}
+          <div className="bg-black/30 border border-white/5 rounded-lg p-3 space-y-3 lg:max-h-[70vh] lg:overflow-y-auto">
+            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+              Inputs ({symbols.length} ticks)
+            </div>
+
+            <div className="flex items-center justify-between px-2">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                Start
+              </span>
+              <span className="font-mono text-[11px] text-slate-500">0.000s</span>
+            </div>
+
+            <div className="space-y-1">
+              {segments.length === 0 && (
+                <div className="text-slate-500 text-xs px-2 py-3">
+                  No inputs yet — add a hold to start building the run.
+                </div>
+              )}
+              {segments.map((seg, i) => {
+                const active = i === currentSegIndex;
+                return (
+                  <div
+                    key={seg.start}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-md px-2 py-1",
+                      active && "bg-white/5 ring-1 ring-[var(--app-accent)]/40",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "w-4 text-center text-xs font-bold font-mono",
+                        symbolTone(REPLAY_SYMBOLS[seg.symbol]?.key ?? "neutral"),
+                      )}
+                    >
+                      {REPLAY_SYMBOLS[seg.symbol]?.short ?? "?"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-slate-400"
+                      onClick={() => adjustSegment(seg.start, -1, seg.symbol)}
+                      disabled={seg.length <= 1}
+                      aria-label="Remove one tick"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </Button>
+                    <span className="w-9 text-center font-mono text-xs text-slate-100">
+                      {seg.length}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-slate-400"
+                      onClick={() => adjustSegment(seg.start, 1, seg.symbol)}
+                      aria-label="Add one tick"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </Button>
+                    <button
+                      className="ml-auto font-mono text-[10px] text-slate-500 hover:text-slate-300"
+                      onClick={() => jumpToSegment(seg.start)}
+                      title="Jump to this hold"
+                    >
+                      tick {seg.start}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between px-2 pt-1 border-t border-white/5">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                Finish
+              </span>
+              <span className="font-mono text-[11px] text-[var(--app-accent)]">
+                {finishTick !== null ? `${((finishTick * SIM_TICK_MS) / 1000).toFixed(3)}s` : "—"}
+              </span>
+            </div>
+
+            {/* Edit the hold under the cursor */}
+            <div className="pt-2 border-t border-white/5 space-y-2">
+              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                {segments.length > 0 ? `Tick ${currentTick} — set input` : "Add a hold"}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {REPLAY_SYMBOLS.map((s) => (
+                  <Button
+                    key={s.key}
+                    size="sm"
+                    variant={
+                      segments.length > 0 && currentSymbol === symbolValue(s.key)
+                        ? "secondary"
+                        : "ghost"
+                    }
+                    className={cn("h-7 text-[11px] font-mono", symbolTone(s.key))}
+                    onClick={() => {
+                      if (segments.length === 0) appendSegment(symbolValue(s.key), 1);
+                      else changeSymbol(currentTick, symbolValue(s.key));
+                    }}
+                  >
+                    {s.short}
+                  </Button>
+                ))}
+                {[10, 100].map((n) => (
+                  <Button
+                    key={n}
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[11px]"
+                    onClick={() => appendSegment(symbolValue("neutral"), n)}
+                  >
+                    +{n}n
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -729,8 +804,4 @@ function symbolTone(key: ReplaySymbolKey): string {
     right: "text-[#fbbf24]",
     brake: "text-rose-400",
   }[key];
-}
-
-function tickTone(sym: number): string {
-  return ["bg-slate-700/40", "bg-[#3b82f6]/30", "bg-[#f59e0b]/30", "bg-rose-500/30"][sym] ?? "";
 }
