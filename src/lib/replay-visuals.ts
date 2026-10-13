@@ -21,11 +21,13 @@ export interface WallVisual {
 
 /** Engine obstacle type -> how the game draws it. */
 const VISUALS: Record<string, WallVisual> = {
-  // Walls.
+  // Walls. Colours sampled from the game's own level renders
+  // (`api.narrowarrow.xyz/level-image/<id>.png`): normal walls white, death
+  // red, bouncy green, boost blue.
   normal: { color: "#ffffff", kind: "wall", width: 1.6 },
-  death: { color: "#e5484d", kind: "wall", width: 2.2 },
-  bouncy: { color: "#ffeb3b", kind: "wall", width: 2.2 },
-  boost: { color: "#ff6611", kind: "wall", width: 2.2 },
+  death: { color: "#ff2020", kind: "wall", width: 2.2 },
+  bouncy: { color: "#33ff33", kind: "wall", width: 2.2 },
+  boost: { color: "#1188ff", kind: "wall", width: 2.2 },
   // Zones (filled areas, not lines).
   ice: { color: "#2b4d80", kind: "zone", width: 2 },
   rail: { color: "#6b4d80", kind: "zone", width: 2 },

@@ -81,6 +81,26 @@ export function decodeInputSymbols(base64: string, inputCount?: number): number[
 }
 
 /**
+ * Inverse of {@link decodeInputSymbols}: pack 2-bit symbols back into the
+ * base64 the game stores in a run's `inputs` field, most-significant pair
+ * first and the final byte zero-padded. Lets the TAS editor export its edits.
+ */
+export function encodeInputSymbols(symbols: number[]): string {
+  if (symbols.length === 0) return "";
+  const bytes: number[] = [];
+  for (let i = 0; i < symbols.length; i += 4) {
+    const a = symbols[i] & 3;
+    const b = (symbols[i + 1] ?? 0) & 3;
+    const c = (symbols[i + 2] ?? 0) & 3;
+    const d = (symbols[i + 3] ?? 0) & 3;
+    bytes.push((a << 6) | (b << 4) | (c << 2) | d);
+  }
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+/**
  * Collapse the raw symbol stream into held-input segments, e.g. "right 72ms".
  * Ported to milliseconds using the 240Hz tick rate.
  */

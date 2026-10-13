@@ -412,7 +412,8 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
                           const index = Number(v);
                           setSelected(index);
                           setPlaying(false);
-                          setFrame(Math.round((inputs[index]?.atMs ?? 0) / SIM_TICK_MS));
+                          // path[0] is the spawn pose, so input i lands on path[i + 1].
+                          setFrame(Math.round((inputs[index]?.atMs ?? 0) / SIM_TICK_MS) + 1);
                         }}
                       >
                         <SelectTrigger className="bg-black/30 border-white/10 text-slate-200 font-mono text-xs">
@@ -514,9 +515,11 @@ interface StageProps {
   onTogglePlay: () => void;
   onScrub: (value: number) => void;
   onSpeed: (value: number) => void;
+  /** Hide the built-in transport bar (the TAS editor provides its own). */
+  hideControls?: boolean;
 }
 
-function ReplayStage({
+export function ReplayStage({
   sim,
   geometry,
   frame,
@@ -531,6 +534,7 @@ function ReplayStage({
   onTogglePlay,
   onScrub,
   onSpeed,
+  hideControls,
 }: StageProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
@@ -613,8 +617,8 @@ function ReplayStage({
     if (sim.path.length === 0) return;
     const safeFrame = Number.isFinite(frame) ? Math.floor(frame) : 0;
     const upto = Math.max(0, Math.min(safeFrame, sim.path.length - 1));
-    // One 60Hz frame is four 240Hz ticks, matching `simulateRun`'s sampling.
-    const tick = upto * 4;
+    // One sample per 240Hz tick, matching `simulateRun`'s sampling.
+    const tick = upto;
 
     // Zones first: filled areas the arrow passes through (boost/ice/nosteer/…).
     for (const z of geometry.zones) {
@@ -713,17 +717,16 @@ function ReplayStage({
       ctx.stroke();
     }
 
-    // Arrow at the current position, drawn as the game's two-tone sprite:
-    // a tinted body with a lighter nose and a grey tail.
+    // Arrow at the current position, drawn as the game's two-tone sprite and
+    // facing the engine's recorded rotation, so spins animate even when the
+    // arrow is pinned against a wall.
     const point = sim.path[upto];
-    const prev = sim.path[Math.max(0, upto - 1)];
-    const heading = upto > 0 ? Math.atan2(point.y - prev.y, point.x - prev.x) : point.rot;
     drawArrowSprite(
       ctx,
       arrow,
       tx(point.x),
       ty(point.y),
-      heading,
+      point.rot,
       scale,
       arrowRadius,
       bodyColor,
@@ -744,52 +747,56 @@ function ReplayStage({
         <canvas ref={canvasRef} />
       </div>
       <ReplayLegend geometry={geometry} />
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-slate-300"
-          onClick={onTogglePlay}
-        >
-          {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-slate-300"
-          onClick={() => onScrub(0)}
-        >
-          <RotateCcw className="w-4 h-4" />
-        </Button>
-        <input
-          type="range"
-          min={0}
-          max={maxFrame}
-          value={Math.floor(frame)}
-          onChange={(e) => onScrub(Number(e.target.value))}
-          className="flex-1 accent-[var(--app-accent)]"
-          aria-label="Replay scrubber"
-        />
-        <span className="font-mono text-[11px] text-slate-400 w-14 text-right">
-          {(replayTimeMs / 1000).toFixed(2)}s
-        </span>
-        <Select value={String(speed)} onValueChange={(v) => onSpeed(Number(v))}>
-          <SelectTrigger className="h-8 w-16 bg-black/30 border-white/10 text-xs font-mono">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="bg-[#0d0d10] border-white/10 text-slate-200">
-            {SPEEDS.map((s) => (
-              <SelectItem key={s} value={String(s)} className="text-xs font-mono">
-                {s}×
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <p className="text-[10px] text-slate-600">
-        Animation reconstructed from the recorded inputs and level geometry, coloured with the run's
-        own skin — approximate, not frame-perfect.
-      </p>
+      {!hideControls && (
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-slate-300"
+            onClick={onTogglePlay}
+          >
+            {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-slate-300"
+            onClick={() => onScrub(0)}
+          >
+            <RotateCcw className="w-4 h-4" />
+          </Button>
+          <input
+            type="range"
+            min={0}
+            max={maxFrame}
+            value={Math.floor(frame)}
+            onChange={(e) => onScrub(Number(e.target.value))}
+            className="flex-1 accent-[var(--app-accent)]"
+            aria-label="Replay scrubber"
+          />
+          <span className="font-mono text-[11px] text-slate-400 w-14 text-right">
+            {(replayTimeMs / 1000).toFixed(2)}s
+          </span>
+          <Select value={String(speed)} onValueChange={(v) => onSpeed(Number(v))}>
+            <SelectTrigger className="h-8 w-16 bg-black/30 border-white/10 text-xs font-mono">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-[#0d0d10] border-white/10 text-slate-200">
+              {SPEEDS.map((s) => (
+                <SelectItem key={s} value={String(s)} className="text-xs font-mono">
+                  {s}×
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {!hideControls && (
+        <p className="text-[10px] text-slate-600">
+          Animation reconstructed from the recorded inputs and level geometry, coloured with the
+          run's own skin — approximate, not frame-perfect.
+        </p>
+      )}
     </div>
   );
 }

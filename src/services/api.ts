@@ -100,9 +100,15 @@ async function requestLeaderboard(levelId: string, deep: boolean): Promise<Leade
   for (let attempt = 0; attempt < 4; attempt++) {
     const response = await fetch(`${BASE_URL}/${encodedLevel}${deep ? "?deep=1" : ""}`);
     if (response.ok) {
-      const data = await response.json();
-      leaderboardCache[levelId] = { data, timestamp: Date.now() };
-      return data;
+      const data = (await response.json()) as LeaderboardEntry[];
+      // Merge rather than replace: a single-board refresh must not drop PBs the
+      // bulk snapshot already surfaced for this level.
+      const merged = mergeLeaderboardUpdates(
+        { [levelId]: leaderboardCache[levelId]?.data ?? [] },
+        { [levelId]: data },
+      );
+      leaderboardCache[levelId] = { data: merged[levelId], timestamp: Date.now() };
+      return merged[levelId];
     }
     lastStatus = response.status;
     if (response.status !== 502 && response.status !== 429) break;

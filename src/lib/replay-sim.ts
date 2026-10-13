@@ -27,13 +27,11 @@ import type { ApiMap } from "./physics/rust";
 
 /**
  * Milliseconds per simulation step. The engine advances one step per 240Hz
- * input tick; the viewer samples it every four ticks (one 60Hz frame) to match
- * the render rate.
+ * input tick and the viewer samples every tick, so a spin that never moves the
+ * arrow still plays back — the heading comes from the engine's rotation, not
+ * from the displacement between samples.
  */
-export const SIM_TICK_MS = 1000 / 60;
-
-/** Input ticks consumed per rendered step (240Hz inputs / 60Hz frames). */
-const INPUTS_PER_STEP = 4;
+export const SIM_TICK_MS = 1000 / 240;
 
 /**
  * The engine ships only a neutral default, but the three playable arrows each
@@ -94,6 +92,8 @@ export interface SimPoint {
   y: number;
   /** Facing angle in radians (engine rotation minus 90°, i.e. "forward"). */
   rot: number;
+  /** True once the arrow has crossed the finish line at this sample. */
+  finished?: boolean;
 }
 
 export interface SimWall {
@@ -262,6 +262,15 @@ function engineObstacles(data: RawLevelData) {
 type EngineInput = { left: boolean; right: boolean };
 type EngineModule = typeof import("./physics/rust.js");
 
+/** Minimal shape of the engine state the replay reads. */
+interface EnginePlayerState {
+  player: {
+    translation: { x: number; y: number };
+    rotation: number;
+    state?: string;
+  };
+}
+
 let enginePromise: Promise<EngineModule> | null = null;
 
 /** Lazily initialise the bundled physics engine exactly once. */
@@ -273,6 +282,94 @@ function loadEngine(): Promise<EngineModule> {
     });
   }
   return enginePromise;
+}
+
+/**
+ * A live engine bound to one level and arrow, steppable one tick at a time.
+ * The read-only replay uses it once; the TAS editor keeps one open and rewinds
+ * it, so a scrub never re-runs the whole run from the spawn.
+ */
+export interface ReplayEngine {
+  /** Step the engine with one input symbol, returning the resulting sample. */
+  step(symbol: number): SimPoint;
+  /** Reset to the spawn pose (engine rebuild) and return the initial sample. */
+  reset(): SimPoint;
+  /** Serialize the full engine state so a later `restore` can resume exactly. */
+  snapshot(): string;
+  /** Rebuild the engine from a snapshot, returning the pose at that tick. */
+  restore(snapshot: string): SimPoint;
+  /** Release the underlying WASM object. */
+  free(): void;
+}
+
+/**
+ * Build an engine from a level and arrow so callers can drive it tick by tick.
+ * Resolves to null if the engine cannot be initialised, mirroring
+ * `simulateRun`'s fallback.
+ */
+export async function createReplayEngine(
+  data: RawLevelData | null | undefined,
+  arrowName?: string | null,
+): Promise<ReplayEngine | null> {
+  if (!data) return null;
+  let mod: EngineModule;
+  try {
+    mod = await loadEngine();
+  } catch {
+    return null;
+  }
+
+  const base = mod.create_default_game_state();
+  const map = {
+    game_mode: data.game_mode ?? "speedrun",
+    map_name: data.map_name ?? "",
+    obstacles: engineObstacles(data),
+  };
+  const player = {
+    ...base.player,
+    constants: { ...base.player.constants, ...arrowConstants(arrowName) },
+  };
+  const state = () => ({ player, map: map as unknown as ApiMap, ticks: 0, effects: base.effects });
+
+  const read = (engine: InstanceType<EngineModule["GameMechanicsEngine"]>): SimPoint => {
+    const s = JSON.parse(engine.state) as EnginePlayerState;
+    return {
+      x: s.player.translation.x,
+      y: s.player.translation.y,
+      rot: s.player.rotation - Math.PI / 2,
+      finished: s.player.state === "finish",
+    };
+  };
+
+  let engine: InstanceType<EngineModule["GameMechanicsEngine"]>;
+  try {
+    engine = new mod.GameMechanicsEngine(state());
+  } catch {
+    return null;
+  }
+
+  return {
+    step(symbol) {
+      engine.process_ticks([symbolToInput(symbol)]);
+      return read(engine);
+    },
+    reset() {
+      engine.free();
+      engine = new mod.GameMechanicsEngine(state());
+      return read(engine);
+    },
+    snapshot() {
+      return engine.state;
+    },
+    restore(snapshot) {
+      engine.free();
+      engine = mod.GameMechanicsEngine.from_state(JSON.parse(snapshot) as never);
+      return read(engine);
+    },
+    free() {
+      engine.free();
+    },
+  };
 }
 
 /**
@@ -315,81 +412,30 @@ export async function simulateRun(
   const symbols = decodeInputSymbols(inputsBase64, inputCount);
   if (symbols.length === 0) return empty;
 
-  let mod: EngineModule;
-  try {
-    mod = await loadEngine();
-  } catch {
-    return empty;
-  }
+  const replay = await createReplayEngine(data, arrowName);
+  if (!replay) return empty;
 
-  const base = mod.create_default_game_state();
-  const maxTicks = options.maxTicks ?? symbols.length;
-  const n = Math.min(symbols.length, maxTicks);
-
-  const map = {
-    game_mode: data.game_mode ?? "speedrun",
-    map_name: data.map_name ?? "",
-    obstacles: engineObstacles(data),
-  };
-
-  // The engine's default constants are a mix of two arrows; override them with
-  // the run's own arrow so the reconstruction matches what was actually played.
-  const player = {
-    ...base.player,
-    constants: { ...base.player.constants, ...arrowConstants(arrowName) },
-  };
-
-  let engine: InstanceType<EngineModule["GameMechanicsEngine"]>;
-  try {
-    engine = new mod.GameMechanicsEngine({
-      player,
-      map: map as unknown as ApiMap,
-      ticks: 0,
-      effects: base.effects,
-    });
-  } catch {
-    return empty;
-  }
-
+  const n = Math.min(symbols.length, options.maxTicks ?? symbols.length);
   const path: SimPoint[] = [];
   const bounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
   let finishTick: number | null = null;
 
   // Initial pose is part of the path (index 0 = spawn), matching the renderer's
   // expectation that `path[0]` is the start.
-  {
-    const s0 = JSON.parse(engine.state) as {
-      player: { translation: { x: number; y: number }; rotation: number };
-    };
-    path.push({
-      x: s0.player.translation.x,
-      y: s0.player.translation.y,
-      rot: s0.player.rotation - Math.PI / 2,
-    });
+  path.push(replay.reset());
+
+  // Advance one 240Hz tick per recorded input and record every sample, so a
+  // spin that never translates still shows up in the path.
+  for (let i = 0; i < n; i++) {
+    const point = replay.step(symbols[i]);
+    path.push(point);
+    bounds.minX = Math.min(bounds.minX, point.x);
+    bounds.minY = Math.min(bounds.minY, point.y);
+    bounds.maxX = Math.max(bounds.maxX, point.x);
+    bounds.maxY = Math.max(bounds.maxY, point.y);
+    if (finishTick === null && point.finished) finishTick = path.length - 1;
   }
 
-  // Advance the engine one 240Hz tick at a time and record one point per 60Hz
-  // frame (every fourth tick), so playback spans the same wall-clock time as
-  // the run.
-  for (let i = 0; i < n; i += INPUTS_PER_STEP) {
-    const group = symbols.slice(i, i + INPUTS_PER_STEP);
-    engine.process_ticks(group.map(symbolToInput));
-    const state = JSON.parse(engine.state) as {
-      player: {
-        translation: { x: number; y: number };
-        rotation: number;
-        state?: string;
-      };
-    };
-    const { translation, rotation, state: playerState } = state.player;
-    path.push({ x: translation.x, y: translation.y, rot: rotation - Math.PI / 2 });
-    bounds.minX = Math.min(bounds.minX, translation.x);
-    bounds.minY = Math.min(bounds.minY, translation.y);
-    bounds.maxX = Math.max(bounds.maxX, translation.x);
-    bounds.maxY = Math.max(bounds.maxY, translation.y);
-    if (finishTick === null && playerState === "finish") finishTick = path.length - 1;
-  }
-
-  engine.free();
+  replay.free();
   return { path, finishTick, bounds };
 }
