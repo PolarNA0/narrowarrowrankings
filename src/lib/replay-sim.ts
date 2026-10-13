@@ -13,6 +13,11 @@
  * cap, no proper collision), which is why the arrow started late and then
  * wandered off the real path.
  *
+ * The engine itself ships only a neutral default, but each arrow (Narrow /
+ * Speedy / Energy) runs its own physics. `simulateRun` therefore swaps in the
+ * run's arrow constants (see {@link ARROW_CONSTANTS}) — without them the
+ * reconstruction DNFs against walls the real run cleared.
+ *
  * Coordinate note: the engine's `rotation` is 0 when facing "north" (toward
  * -y, matching the level's spawn heading), while the renderer treats `rot` as
  * a standard screen angle. `SimPoint.rot` is therefore stored as the facing
@@ -28,6 +33,60 @@ export const SIM_TICK_MS = 1000 / 60;
 
 /** Input ticks consumed per rendered step (240Hz inputs / 60Hz frames). */
 const INPUTS_PER_STEP = 4;
+
+/**
+ * The engine ships only a neutral default, but the three playable arrows each
+ * have their own physics. These are the exact constants the game client feeds
+ * the engine, recovered from its compiled Dart (`bui`), keyed by arrow name.
+ * `create_default_game_state()` is a mix of Narrow's power and Speedy's
+ * energy/traction, so using it for every run made replays diverge.
+ */
+export const ARROW_CONSTANTS: Record<string, Record<string, number>> = {
+  narrow: {
+    radius: 16,
+    engine_power: 0.002,
+    engine_startup_ticks: 60,
+    energy_capacity: 0.6,
+    energy_regeneration: 0.002,
+    traction_power: 0.006,
+    brake_power: 0.01,
+    aerodynamics: 0.9992,
+    oiliness: 0.996,
+    turning_speed: 0.00032,
+  },
+  speedy: {
+    radius: 20,
+    engine_power: 0.0028,
+    engine_startup_ticks: 120,
+    energy_capacity: 0.2,
+    energy_regeneration: 0.001,
+    traction_power: 0.002,
+    brake_power: 0.012,
+    aerodynamics: 0.9996,
+    oiliness: 0.996,
+    turning_speed: 0.00028,
+  },
+  energy: {
+    radius: 12,
+    engine_power: 0.0016,
+    engine_startup_ticks: 40,
+    energy_capacity: 1.8,
+    energy_regeneration: 0.004,
+    traction_power: 0.005,
+    brake_power: 0.02,
+    aerodynamics: 0.999,
+    oiliness: 0.998,
+    turning_speed: 0.00038,
+  },
+};
+
+/** Resolve a run's `arrow_name` to its physics constants (default: Narrow). */
+export function arrowConstants(arrowName: string | null | undefined): Record<string, number> {
+  const name = (arrowName ?? "").toLowerCase();
+  if (name.includes("speedy")) return ARROW_CONSTANTS.speedy;
+  if (name.includes("energy")) return ARROW_CONSTANTS.energy;
+  return ARROW_CONSTANTS.narrow;
+}
 
 export interface SimPoint {
   x: number;
@@ -145,6 +204,7 @@ export async function simulateRun(
   inputCount: number | undefined,
   data: RawLevelData | null | undefined,
   options: SimOptions = {},
+  arrowName?: string | null,
 ): Promise<SimResult> {
   const empty: SimResult = {
     path: [],
@@ -174,10 +234,17 @@ export async function simulateRun(
     obstacles: engineObstacles(data),
   };
 
+  // The engine's default constants are a mix of two arrows; override them with
+  // the run's own arrow so the reconstruction matches what was actually played.
+  const player = {
+    ...base.player,
+    constants: { ...base.player.constants, ...arrowConstants(arrowName) },
+  };
+
   let engine: InstanceType<EngineModule["GameMechanicsEngine"]>;
   try {
     engine = new mod.GameMechanicsEngine({
-      player: base.player,
+      player,
       map,
       ticks: 0,
       effects: base.effects,

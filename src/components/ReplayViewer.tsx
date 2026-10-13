@@ -133,7 +133,13 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
               const levelData = payload.levelInfo?.data ?? null;
               if (levelData && !cancelled) {
                 setWalls(levelWalls(levelData));
-                const result = await simulateRun(data.inputs ?? "", data.input_count, levelData);
+                const result = await simulateRun(
+                  data.inputs ?? "",
+                  data.input_count,
+                  levelData,
+                  {},
+                  data.arrow_name,
+                );
                 if (!cancelled) setSim(result);
               }
             }

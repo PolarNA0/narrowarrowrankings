@@ -36,12 +36,6 @@ export const NEUTRAL_SYMBOL = 0;
 /** Milliseconds represented by a single input tick (240Hz). */
 export const REPLAY_TICK_MS = 1000 / 240;
 
-/**
- * Neutral (no-input) runs are lengthened by this factor, so coasting lasts a
- * little longer without changing how long any held input lasts.
- */
-export const REPLAY_NEUTRAL_EXTENSION_FACTOR = 1.1;
-
 export interface ReplayInput {
   /** 0-based index of this input in the run. */
   index: number;
@@ -83,28 +77,7 @@ export function decodeInputSymbols(base64: string, inputCount?: number): number[
   }
   const decoded =
     typeof inputCount === "number" && inputCount > 0 ? symbols.slice(0, inputCount) : symbols;
-  return extendNeutralRuns(decoded);
-}
-
-/**
- * Lengthen each contiguous neutral (no-input) run by
- * {@link REPLAY_NEUTRAL_EXTENSION_FACTOR}. Held inputs are left untouched.
- */
-function extendNeutralRuns(symbols: number[]): number[] {
-  if (REPLAY_NEUTRAL_EXTENSION_FACTOR <= 1 || symbols.length === 0) return symbols;
-  const out: number[] = [];
-  let i = 0;
-  while (i < symbols.length) {
-    const symbol = symbols[i];
-    let j = i + 1;
-    while (j < symbols.length && symbols[j] === symbol) j++;
-    const run = j - i;
-    const copies =
-      symbol === NEUTRAL_SYMBOL ? Math.ceil(run * REPLAY_NEUTRAL_EXTENSION_FACTOR) : run;
-    for (let k = 0; k < copies; k++) out.push(symbol);
-    i = j;
-  }
-  return out;
+  return decoded;
 }
 
 /**
