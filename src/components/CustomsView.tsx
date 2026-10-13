@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ArrowIcon } from "./ArrowIcon";
 import { ClickToCopy } from "./ClickToCopy";
+import { ReplayViewer } from "./ReplayViewer";
 
 interface CustomsViewProps {
   onBack: () => void;
@@ -451,6 +452,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
                       <TableHead className="w-16 text-center font-mono text-[10px] uppercase tracking-widest text-slate-500">#</TableHead>
                       <TableHead className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Player</TableHead>
                       <TableHead className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Time</TableHead>
+                      <TableHead className="text-center font-mono text-[10px] uppercase tracking-widest text-slate-500">Replay</TableHead>
                       <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest text-slate-500">Date</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -492,6 +494,17 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
                           </TableCell>
                           <TableCell className="font-mono font-bold text-[#2DD4BF]">
                             {formatTime(entry.completion_time, 'seconds')}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {entry.run_id > 0 ? (
+                              <ReplayViewer
+                                runId={entry.run_id}
+                                username={entry.username}
+                                levelName={levelName}
+                              />
+                            ) : (
+                              <span className="text-slate-600 text-xs">—</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right font-mono text-slate-500 text-[11px]">
                             {dateStr}

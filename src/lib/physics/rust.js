@@ -357,6 +357,12 @@ export class MultiPlayerEngine {
         return ret >>> 0;
     }
     /**
+     * @param {number} ticks
+     */
+    set_ticks(ticks) {
+        wasm.multiplayerengine_set_ticks(this.__wbg_ptr, ticks);
+    }
+    /**
      * @param {any} players_js
      * @param {any} effects_js
      * @param {any} inputs_js

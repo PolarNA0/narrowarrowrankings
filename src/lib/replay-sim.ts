@@ -123,6 +123,9 @@ export interface RawLevelData {
     rotation_pivot?: { x?: number; y?: number } | null;
     rotation_speed?: number | null;
     zone_type?: string;
+    portal_id?: string;
+    side?: string;
+    speed?: number;
   }>;
 }
 
@@ -148,17 +151,35 @@ export function levelWalls(data: RawLevelData | null | undefined): SimWall[] {
   return walls;
 }
 
-/** Build the obstacle list the engine expects (zones and walls alike). */
+/**
+ * Build the obstacle list the engine expects. `ApiObstacle` is an internally
+ * tagged enum: walls carry `wall_type`/`wall_thickness`, zones carry
+ * `zone_type` (boost/ice/nosteer/steer), and portals carry
+ * `portal_id`/`side`. Every field the level uses is passed through verbatim
+ * and only `obstacle_type` is inferred when the payload omits it, because the
+ * engine rejects an entry whose type does not match its required fields.
+ */
 function engineObstacles(data: RawLevelData) {
-  return (data.obstacles ?? []).map((o) => ({
-    obstacle_type: o.obstacle_type ?? "wall",
-    wall_type: o.wall_type ?? "normal",
-    wall_thickness: o.wall_thickness ?? null,
-    points: (o.points ?? []).map((p) => ({ x: p.x ?? 0, y: p.y ?? 0 })),
-    rotation_pivot: o.rotation_pivot ?? null,
-    rotation_speed: o.rotation_speed ?? null,
-    ...(o.zone_type ? { zone_type: o.zone_type } : {}),
-  }));
+  const fields = [
+    "wall_type",
+    "wall_thickness",
+    "zone_type",
+    "portal_id",
+    "side",
+    "rotation_pivot",
+    "rotation_speed",
+    "speed",
+  ] as const;
+  return (data.obstacles ?? []).map((o) => {
+    const out: Record<string, unknown> = {
+      obstacle_type: o.obstacle_type ?? (o.zone_type ? "zone" : o.portal_id ? "portal" : "wall"),
+      points: (o.points ?? []).map((p) => ({ x: p.x ?? 0, y: p.y ?? 0 })),
+    };
+    for (const key of fields) {
+      if (o[key] != null) out[key] = o[key];
+    }
+    return out;
+  });
 }
 
 type EngineInput = { left: boolean; right: boolean };
