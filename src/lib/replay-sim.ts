@@ -123,6 +123,7 @@ export interface RawLevelData {
     rotation_pivot?: { x?: number; y?: number } | null;
     rotation_speed?: number | null;
     zone_type?: string;
+    zone_direction?: number;
     portal_id?: string;
     side?: string;
     speed?: number;
@@ -154,16 +155,18 @@ export function levelWalls(data: RawLevelData | null | undefined): SimWall[] {
 /**
  * Build the obstacle list the engine expects. `ApiObstacle` is an internally
  * tagged enum: walls carry `wall_type`/`wall_thickness`, zones carry
- * `zone_type` (boost/ice/nosteer/steer), and portals carry
- * `portal_id`/`side`. Every field the level uses is passed through verbatim
- * and only `obstacle_type` is inferred when the payload omits it, because the
- * engine rejects an entry whose type does not match its required fields.
+ * `zone_type` (boost/ice/nosteer/steer/rail) plus an optional
+ * `zone_direction`, and portals carry `portal_id`/`side`. Every field the
+ * level uses is passed through verbatim and only `obstacle_type` is inferred
+ * when the payload omits it, because the engine rejects an entry whose type
+ * does not match its required fields.
  */
 function engineObstacles(data: RawLevelData) {
   const fields = [
     "wall_type",
     "wall_thickness",
     "zone_type",
+    "zone_direction",
     "portal_id",
     "side",
     "rotation_pivot",

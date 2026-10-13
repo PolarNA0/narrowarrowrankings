@@ -167,56 +167,21 @@ function debugString(val) {
     return className;
 }
 
-export function init_panic_hook() {
-    wasm.init_panic_hook();
-}
-
 function takeFromExternrefTable0(idx) {
     const value = wasm.__wbindgen_export_4.get(idx);
     wasm.__externref_table_dealloc(idx);
     return value;
 }
 /**
- * @param {string} state_json
- * @param {string} input_json
- * @returns {string}
- */
-export function process_single_tick(state_json, input_json) {
-    let deferred3_0;
-    let deferred3_1;
-    try {
-        const ptr0 = passStringToWasm0(state_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.process_single_tick(ptr0, len0, ptr1, len1);
-        deferred3_0 = ret[0];
-        deferred3_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-    }
-}
-
-/**
- * @param {any} state
- * @param {any} input
- * @returns {any}
- */
-export function process_single_tick_value(state, input) {
-    const ret = wasm.process_single_tick_value(state, input);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-/**
  * @returns {ApiGameState}
  */
 export function create_default_game_state() {
     const ret = wasm.create_default_game_state();
     return ret;
+}
+
+export function init_panic_hook() {
+    wasm.init_panic_hook();
 }
 
 const GameMechanicsEngineFinalization = (typeof FinalizationRegistry === 'undefined')
@@ -253,6 +218,34 @@ export class GameMechanicsEngine {
         return GameMechanicsEngine.__wrap(ret);
     }
     /**
+     * Process the ticks of the game based on the inputs. The amount of processed ticks is equal to the amount of inputs.
+     * @param {any} inputs
+     */
+    process_ticks(inputs) {
+        wasm.gamemechanicsengine_process_ticks(this.__wbg_ptr, inputs);
+    }
+    /**
+     * The player's terminal state as a cheap scalar: 0 playing, 1 finish,
+     * 2 dead. The verifier polls this between input chunks; the full JSON
+     * `state` serializes the whole map every call, which is far too heavy
+     * for a per-chunk "are we done yet".
+     * @returns {number}
+     */
+    player_state_code() {
+        const ret = wasm.gamemechanicsengine_player_state_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * JS-friendly constructor that creates the engine from an ApiGameState.
+     * @param {ApiGameState} state
+     */
+    constructor(state) {
+        const ret = wasm.gamemechanicsengine_new(state);
+        this.__wbg_ptr = ret >>> 0;
+        GameMechanicsEngineFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
      * @returns {string}
      */
     get state() {
@@ -275,50 +268,22 @@ export class GameMechanicsEngine {
         return ret >>> 0;
     }
     /**
-     * Process the ticks of the game based on the inputs. The amount of processed ticks is equal to the amount of inputs.
-     * @param {any} inputs
+     * The run's cumulative statistics counters as a small JSON object.
+     * Observation-only: reading them cannot perturb the simulation, and the
+     * terminal-state latch means they froze at the finish or death tick.
+     * @returns {string}
      */
-    process_ticks(inputs) {
-        wasm.gamemechanicsengine_process_ticks(this.__wbg_ptr, inputs);
-    }
-    /**
-     * JS-friendly constructor that creates the engine from an ApiGameState.
-     * @param {ApiGameState} state
-     */
-    constructor(state) {
-        const ret = wasm.gamemechanicsengine_new(state);
-        this.__wbg_ptr = ret >>> 0;
-        GameMechanicsEngineFinalization.register(this, this.__wbg_ptr, this);
-        return this;
-    }
-    /**
-     * convenience helper for Dart/JS – accept the game state as a JSON
-     * string and return a raw pointer to the newly created engine so that
-     * the host can store it and pass it back on every call.
-     * @param {string} json
-     * @returns {number}
-     */
-    static new_from_json(json) {
-        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.gamemechanicsengine_new_from_json(ptr0, len0);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
+    run_stats() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.gamemechanicsengine_run_stats(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
-        return ret[0] >>> 0;
-    }
-    /**
-     * Same as above but receives a generic `JsValue` (Dart map / JS object)
-     * so the host does not need to stringify to JSON first.
-     * @param {any} value
-     * @returns {number}
-     */
-    static new_from_value(value) {
-        const ret = wasm.gamemechanicsengine_new_from_value(value);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return ret[0] >>> 0;
     }
 }
 
@@ -338,6 +303,19 @@ export class MultiPlayerEngine {
     free() {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_multiplayerengine_free(ptr, 0);
+    }
+    /**
+     * @param {any} players_js
+     * @param {any} effects_js
+     * @param {any} inputs_js
+     * @returns {any}
+     */
+    process_multi_player_ticks(players_js, effects_js, inputs_js) {
+        const ret = wasm.multiplayerengine_process_multi_player_ticks(this.__wbg_ptr, players_js, effects_js, inputs_js);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
     }
     /**
      * Create a new MultiPlayerEngine from an API map.
@@ -361,19 +339,6 @@ export class MultiPlayerEngine {
      */
     set_ticks(ticks) {
         wasm.multiplayerengine_set_ticks(this.__wbg_ptr, ticks);
-    }
-    /**
-     * @param {any} players_js
-     * @param {any} effects_js
-     * @param {any} inputs_js
-     * @returns {any}
-     */
-    process_multi_player_ticks(players_js, effects_js, inputs_js) {
-        const ret = wasm.multiplayerengine_process_multi_player_ticks(this.__wbg_ptr, players_js, effects_js, inputs_js);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return takeFromExternrefTable0(ret[0]);
     }
 }
 
@@ -467,16 +432,6 @@ function __wbg_get_imports() {
         const ret = result;
         return ret;
     };
-    imports.wbg.__wbg_instanceof_Map_f3469ce2244d2430 = function(arg0) {
-        let result;
-        try {
-            result = arg0 instanceof Map;
-        } catch (_) {
-            result = false;
-        }
-        const ret = result;
-        return ret;
-    };
     imports.wbg.__wbg_instanceof_Uint8Array_17156bcf118086a9 = function(arg0) {
         let result;
         try {
@@ -557,10 +512,6 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbindgen_as_number = function(arg0) {
         const ret = +arg0;
-        return ret;
-    };
-    imports.wbg.__wbindgen_bigint_from_i64 = function(arg0) {
-        const ret = arg0;
         return ret;
     };
     imports.wbg.__wbindgen_bigint_from_u64 = function(arg0) {
