@@ -93,6 +93,8 @@ export function TasEditorView() {
   const [status, setStatus] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [goTo, setGoTo] = React.useState("");
+  /** Whether the input list shows tick counts or their wall-clock time. */
+  const [showTime, setShowTime] = React.useState(false);
   const [boardOpen, setBoardOpen] = React.useState(false);
   const [boardEntries, setBoardEntries] = React.useState<LeaderboardEntry[]>([]);
   const [boardLoading, setBoardLoading] = React.useState(false);
@@ -671,15 +673,38 @@ export function TasEditorView() {
 
           {/* Input list */}
           <div className="bg-black/30 border border-white/5 rounded-lg p-3 space-y-3 lg:max-h-[70vh] lg:overflow-y-auto">
-            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-              Inputs ({symbols.length} ticks)
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                Inputs ({symbols.length} ticks)
+              </span>
+              <div className="inline-flex rounded-md border border-white/10 overflow-hidden">
+                {(["ticks", "time"] as const).map((mode) => {
+                  const active = (mode === "time") === showTime;
+                  return (
+                    <button
+                      key={mode}
+                      onClick={() => setShowTime(mode === "time")}
+                      className={cn(
+                        "px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                        active
+                          ? "bg-[var(--app-accent)]/20 text-[var(--app-accent)]"
+                          : "text-slate-500 hover:text-slate-300",
+                      )}
+                    >
+                      {mode}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="flex items-center justify-between px-2">
               <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
                 Start
               </span>
-              <span className="font-mono text-[11px] text-slate-500">0.000s</span>
+              <span className="font-mono text-[11px] text-slate-500">
+                {showTime ? "0.000s" : "0t"}
+              </span>
             </div>
 
             <div className="space-y-1">
@@ -716,8 +741,8 @@ export function TasEditorView() {
                     >
                       <Minus className="w-3.5 h-3.5" />
                     </Button>
-                    <span className="w-9 text-center font-mono text-xs text-slate-100">
-                      {seg.length}
+                    <span className="w-12 text-center font-mono text-xs text-slate-100">
+                      {showTime ? seconds(seg.length) : seg.length}
                     </span>
                     <Button
                       size="sm"
@@ -733,7 +758,7 @@ export function TasEditorView() {
                       onClick={() => jumpToSegment(seg.start)}
                       title="Jump to this hold"
                     >
-                      tick {seg.start}
+                      {showTime ? seconds(seg.start) : `tick ${seg.start}`}
                     </button>
                   </div>
                 );
@@ -745,7 +770,11 @@ export function TasEditorView() {
                 Finish
               </span>
               <span className="font-mono text-[11px] text-[var(--app-accent)]">
-                {finishTick !== null ? `${((finishTick * SIM_TICK_MS) / 1000).toFixed(3)}s` : "—"}
+                {finishTick !== null
+                  ? showTime
+                    ? seconds(finishTick)
+                    : `tick ${finishTick}`
+                  : "—"}
               </span>
             </div>
 
@@ -795,6 +824,11 @@ export function TasEditorView() {
 
 function symbolValue(key: ReplaySymbolKey): number {
   return REPLAY_SYMBOLS.findIndex((s) => s.key === key);
+}
+
+/** A tick count as a wall-clock time string, e.g. 240 ticks → "1.000s". */
+function seconds(ticks: number): string {
+  return `${((ticks * SIM_TICK_MS) / 1000).toFixed(3)}s`;
 }
 
 function symbolTone(key: ReplaySymbolKey): string {
