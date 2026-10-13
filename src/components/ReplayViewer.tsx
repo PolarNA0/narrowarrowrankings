@@ -64,13 +64,41 @@ const SYMBOL_TEXT: Record<ReplaySymbolKey, string> = {
   brake: "text-rose-400",
 };
 
+/** Colour + weight per obstacle type. Types are the engine's `wall_type` /
+ * `zone_type` vocabulary; anything unrecognised falls back to a hashed hue. */
 const WALL_STYLE: Record<string, { stroke: string; width: number }> = {
-  normal: { stroke: "#64748b", width: 1 },
-  death: { stroke: "#ef4444", width: 1.4 },
-  bouncy: { stroke: "#eab308", width: 1.4 },
-  boost: { stroke: "#38bdf8", width: 1.8 },
-  finish: { stroke: "#22c55e", width: 4 },
+  normal: { stroke: "#94a3b8", width: 1.4 },
+  death: { stroke: "#ef4444", width: 2 },
+  bouncy: { stroke: "#eab308", width: 2 },
+  boost: { stroke: "#38bdf8", width: 2.4 },
+  ice: { stroke: "#67e8f9", width: 2.4 },
+  rail: { stroke: "#f472b6", width: 2.4 },
+  nosteer: { stroke: "#a855f7", width: 2.4 },
+  steer: { stroke: "#4ade80", width: 2.4 },
+  portal: { stroke: "#fb923c", width: 2.4 },
+  finish: { stroke: "#22c55e", width: 5 },
 };
+
+/** Deterministic hue for a type we have no explicit colour for. */
+function hashHue(type: string): number {
+  let h = 0;
+  for (let i = 0; i < type.length; i++) h = (h * 31 + type.charCodeAt(i)) % 360;
+  return h;
+}
+
+function wallStroke(type: string): string {
+  return (WALL_STYLE[type] ?? { stroke: `hsl(${hashHue(type)} 70% 62%)` }).stroke;
+}
+
+function wallWidth(type: string): number {
+  return (WALL_STYLE[type] ?? { width: 1.8 }).width;
+}
+
+/** Random, high-contrast arrow hue. HSL keeps it vivid against the dark
+ * canvas regardless of which hue is picked. */
+function randomHue(): number {
+  return Math.floor(Math.random() * 360);
+}
 
 /** Playback speeds offered for the animated replay. */
 const SPEEDS = [0.5, 1, 2, 4];
@@ -94,6 +122,7 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
   const [frame, setFrame] = React.useState(0);
   const [speed, setSpeed] = React.useState(1);
   const [attempt, setAttempt] = React.useState(0);
+  const [arrowHue, setArrowHue] = React.useState(randomHue);
   const loadedRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -108,6 +137,7 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
     setPanel("none");
     setFrame(0);
     setPlaying(true);
+    setArrowHue(randomHue());
 
     (async () => {
       try {
@@ -263,6 +293,7 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
                 frame={frame}
                 playing={playing}
                 speed={speed}
+                arrowHue={arrowHue}
                 replayTimeMs={replayTimeMs}
                 onTogglePlay={() => {
                   if (frame >= pathLength - 1) setFrame(0);
@@ -474,6 +505,7 @@ interface StageProps {
   frame: number;
   playing: boolean;
   speed: number;
+  arrowHue: number;
   replayTimeMs: number;
   onTogglePlay: () => void;
   onScrub: (value: number) => void;
@@ -486,6 +518,7 @@ function ReplayStage({
   frame,
   playing,
   speed,
+  arrowHue,
   replayTimeMs,
   onTogglePlay,
   onScrub,
@@ -511,16 +544,34 @@ function ReplayStage({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    // World bounds: the level plus the simulated path.
+    // World bounds: the level plus the simulated path. Rotating walls sweep a
+    // circle around their pivot, so bound them by that circle (not just their
+    // start pose) to keep the whole animation in frame.
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
+    const reach = (w: SimWall) => {
+      if (w.pivot && w.rotationSpeed) {
+        const r = Math.max(
+          Math.hypot(w.ax - w.pivot.x, w.ay - w.pivot.y),
+          Math.hypot(w.bx - w.pivot.x, w.by - w.pivot.y),
+        );
+        return { x0: w.pivot.x - r, x1: w.pivot.x + r, y0: w.pivot.y - r, y1: w.pivot.y + r };
+      }
+      return {
+        x0: Math.min(w.ax, w.bx),
+        x1: Math.max(w.ax, w.bx),
+        y0: Math.min(w.ay, w.by),
+        y1: Math.max(w.ay, w.by),
+      };
+    };
     for (const w of walls) {
-      minX = Math.min(minX, w.ax, w.bx);
-      minY = Math.min(minY, w.ay, w.by);
-      maxX = Math.max(maxX, w.ax, w.bx);
-      maxY = Math.max(maxY, w.ay, w.by);
+      const b = reach(w);
+      minX = Math.min(minX, b.x0);
+      minY = Math.min(minY, b.y0);
+      maxX = Math.max(maxX, b.x1);
+      maxY = Math.max(maxY, b.y1);
     }
     for (const p of sim.path) {
       minX = Math.min(minX, p.x);
@@ -542,23 +593,44 @@ function ReplayStage({
     const tx = (wx: number) => wx * scale + offX;
     const ty = (wy: number) => wy * scale + offY;
 
-    // Walls.
-    ctx.lineCap = "round";
-    for (const w of walls) {
-      const style = WALL_STYLE[w.type] ?? WALL_STYLE.normal;
-      ctx.strokeStyle = w.type === "finish" ? style.stroke : "rgba(100,116,139,0.35)";
-      ctx.lineWidth = style.width;
-      ctx.beginPath();
-      ctx.moveTo(tx(w.ax), ty(w.ay));
-      ctx.lineTo(tx(w.bx), ty(w.by));
-      ctx.stroke();
-    }
-
     if (sim.path.length === 0) return;
     const safeFrame = Number.isFinite(frame) ? Math.floor(frame) : 0;
     const upto = Math.max(0, Math.min(safeFrame, sim.path.length - 1));
+    // Walls, each rotated to the pose the engine has it in at this frame.
+    // One 60Hz frame is four 240Hz ticks, matching `simulateRun`'s sampling.
+    const tick = upto * 4;
+    ctx.lineCap = "round";
+    for (const w of walls) {
+      let ax = w.ax;
+      let ay = w.ay;
+      let bx = w.bx;
+      let by = w.by;
+      if (w.pivot && w.rotationSpeed) {
+        const ang = w.rotationSpeed * tick;
+        const cosA = Math.cos(ang);
+        const sinA = Math.sin(ang);
+        const rotate = (px: number, py: number) => {
+          const dx = px - w.pivot!.x;
+          const dy = py - w.pivot!.y;
+          return { x: w.pivot!.x + dx * cosA - dy * sinA, y: w.pivot!.y + dx * sinA + dy * cosA };
+        };
+        const a = rotate(ax, ay);
+        const b = rotate(bx, by);
+        ax = a.x;
+        ay = a.y;
+        bx = b.x;
+        by = b.y;
+      }
+      ctx.strokeStyle = wallStroke(w.type);
+      ctx.lineWidth = wallWidth(w.type);
+      ctx.beginPath();
+      ctx.moveTo(tx(ax), ty(ay));
+      ctx.lineTo(tx(bx), ty(by));
+      ctx.stroke();
+    }
+
     // Travelled path.
-    ctx.strokeStyle = "rgba(56,189,248,0.55)";
+    ctx.strokeStyle = `hsl(${arrowHue} 85% 62% / 0.5)`;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i <= upto; i++) {
@@ -580,7 +652,7 @@ function ReplayStage({
     const leftY = ty(point.y) + cos * wid - sin * wid;
     const rightX = tx(point.x) + sin * wid - cos * wid;
     const rightY = ty(point.y) - cos * wid - sin * wid;
-    ctx.fillStyle = "#38bdf8";
+    ctx.fillStyle = `hsl(${arrowHue} 90% 62%)`;
     ctx.beginPath();
     ctx.moveTo(tipX, tipY);
     ctx.lineTo(leftX, leftY);
@@ -593,7 +665,7 @@ function ReplayStage({
       ctx.font = "bold 11px monospace";
       ctx.fillText("FINISH", 8, 16);
     }
-  }, [sim, walls, frame]);
+  }, [sim, walls, frame, arrowHue]);
 
   const maxFrame = Math.max(1, sim.path.length - 1);
   return (

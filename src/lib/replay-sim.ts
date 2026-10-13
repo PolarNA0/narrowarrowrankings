@@ -103,6 +103,10 @@ export interface SimWall {
   by: number;
   type: string;
   thickness: number;
+  /** Pivot the segment spins around, in world units. */
+  pivot?: { x: number; y: number };
+  /** Rotation rate in radians per 240Hz tick; absent when the wall is static. */
+  rotationSpeed?: number;
 }
 
 export interface SimResult {
@@ -147,7 +151,19 @@ export function levelWalls(data: RawLevelData | null | undefined): SimWall[] {
       const a = pts[i];
       const b = pts[i + 1];
       if (a?.x == null || a?.y == null || b?.x == null || b?.y == null) continue;
-      walls.push({ ax: a.x, ay: a.y, bx: b.x, by: b.y, type, thickness });
+      walls.push({
+        ax: a.x,
+        ay: a.y,
+        bx: b.x,
+        by: b.y,
+        type,
+        thickness,
+        pivot:
+          obstacle.rotation_pivot?.x != null && obstacle.rotation_pivot?.y != null
+            ? { x: obstacle.rotation_pivot.x, y: obstacle.rotation_pivot.y }
+            : undefined,
+        rotationSpeed: obstacle.rotation_speed ?? undefined,
+      });
     }
   }
   return walls;
