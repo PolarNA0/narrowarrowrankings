@@ -25,6 +25,7 @@ import { Route as ApiPacksSlugRouteImport } from './routes/api/packs.$slug'
 import { Route as ApiPublicCategoryWrCheckRouteImport } from './routes/api/public/category-wr-check'
 import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
 import { Route as ApiSkinsSplatRouteImport } from './routes/api/skins.$'
+import { Route as ApiTasLeaderboardLevelRouteImport } from './routes/api/tas-leaderboard.$level'
 import { Route as ApiUserUsernameRouteImport } from './routes/api/user.$username'
 
 const IndexRoute = IndexRouteImport.update({
@@ -108,6 +109,11 @@ const ApiSkinsSplatRoute = ApiSkinsSplatRouteImport.update({
   path: '/api/skins/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTasLeaderboardLevelRoute = ApiTasLeaderboardLevelRouteImport.update({
+  id: '/api/tas-leaderboard/$level',
+  path: '/api/tas-leaderboard/$level',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiUserUsernameRoute = ApiUserUsernameRouteImport.update({
   id: '/api/user/$username',
   path: '/api/user/$username',
@@ -130,6 +136,7 @@ export interface FileRoutesByFullPath {
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
+  '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs/': typeof ApiPacksIndexRoute
 }
@@ -149,6 +156,7 @@ export interface FileRoutesByTo {
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
+  '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs': typeof ApiPacksIndexRoute
 }
@@ -169,6 +177,7 @@ export interface FileRoutesById {
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
+  '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs/': typeof ApiPacksIndexRoute
 }
@@ -190,6 +199,7 @@ export interface FileRouteTypes {
     | '/api/public/category-wr-check'
     | '/api/runs/$runId'
     | '/api/skins/$'
+    | '/api/tas-leaderboard/$level'
     | '/api/user/$username'
     | '/api/packs/'
   fileRoutesByTo: FileRoutesByTo
@@ -209,6 +219,7 @@ export interface FileRouteTypes {
     | '/api/public/category-wr-check'
     | '/api/runs/$runId'
     | '/api/skins/$'
+    | '/api/tas-leaderboard/$level'
     | '/api/user/$username'
     | '/api/packs'
   id:
@@ -228,6 +239,7 @@ export interface FileRouteTypes {
     | '/api/public/category-wr-check'
     | '/api/runs/$runId'
     | '/api/skins/$'
+    | '/api/tas-leaderboard/$level'
     | '/api/user/$username'
     | '/api/packs/'
   fileRoutesById: FileRoutesById
@@ -248,6 +260,7 @@ export interface RootRouteChildren {
   ApiPublicCategoryWrCheckRoute: typeof ApiPublicCategoryWrCheckRoute
   ApiRunsRunIdRoute: typeof ApiRunsRunIdRoute
   ApiSkinsSplatRoute: typeof ApiSkinsSplatRoute
+  ApiTasLeaderboardLevelRoute: typeof ApiTasLeaderboardLevelRoute
   ApiUserUsernameRoute: typeof ApiUserUsernameRoute
   ApiPacksIndexRoute: typeof ApiPacksIndexRoute
 }
@@ -366,6 +379,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSkinsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/tas-leaderboard/$level': {
+      id: '/api/tas-leaderboard/$level'
+      path: '/api/tas-leaderboard/$level'
+      fullPath: '/api/tas-leaderboard/$level'
+      preLoaderRoute: typeof ApiTasLeaderboardLevelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/user/$username': {
       id: '/api/user/$username'
       path: '/api/user/$username'
@@ -392,6 +412,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicCategoryWrCheckRoute: ApiPublicCategoryWrCheckRoute,
   ApiRunsRunIdRoute: ApiRunsRunIdRoute,
   ApiSkinsSplatRoute: ApiSkinsSplatRoute,
+  ApiTasLeaderboardLevelRoute: ApiTasLeaderboardLevelRoute,
   ApiUserUsernameRoute: ApiUserUsernameRoute,
   ApiPacksIndexRoute: ApiPacksIndexRoute,
 }

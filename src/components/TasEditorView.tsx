@@ -7,6 +7,8 @@ import {
   Download,
   Plus,
   Minus,
+  Send,
+  Medal,
   Trophy,
   RefreshCw,
 } from "lucide-react";
@@ -44,6 +46,8 @@ import {
 } from "@/lib/replay-sim";
 import { arrowKind, type ArrowKind } from "@/lib/arrow-sprites";
 import { ReplayStage } from "@/components/ReplayViewer";
+import { TasSubmitDialog } from "@/components/TasSubmitDialog";
+import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
 
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
 /** Inputs between saved engine snapshots, trading memory for rewind speed. */
@@ -98,6 +102,9 @@ export function TasEditorView() {
   const [boardOpen, setBoardOpen] = React.useState(false);
   const [boardEntries, setBoardEntries] = React.useState<LeaderboardEntry[]>([]);
   const [boardLoading, setBoardLoading] = React.useState(false);
+  // Community TAS board for the loaded level, plus the submit dialog state.
+  const [tasEntries, setTasEntries] = React.useState<TasEntry[]>([]);
+  const [tasOpen, setTasOpen] = React.useState(false);
 
   const engineRef = React.useRef<ReplayEngine | null>(null);
   const symbolsRef = React.useRef<number[]>([]);
@@ -264,6 +271,21 @@ export function TasEditorView() {
 
   /** Load the run whose id is typed into the Run ID field. */
   const loadRun = () => loadRunById(runId);
+
+  /** Refresh the community TAS board for the loaded level. */
+  const refreshTas = React.useCallback(async (id: string) => {
+    if (!id) return;
+    try {
+      setTasEntries(await fetchTasBoard(id));
+    } catch {
+      setTasEntries([]);
+    }
+  }, []);
+
+  // Load the TAS board whenever a new level is opened.
+  React.useEffect(() => {
+    if (loaded) void refreshTas(levelId);
+  }, [loaded, levelId, refreshTas]);
 
   /** Fetch the selected level's leaderboard so a run can be picked by name. */
   const openBoard = async (open: boolean) => {
@@ -644,6 +666,19 @@ export function TasEditorView() {
                 <div className="ml-auto flex items-center gap-2">
                   <Button
                     size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setTasOpen(true)}
+                    disabled={finishTick === null || symbols.length === 0}
+                    title={
+                      finishTick === null
+                        ? "Finish the run before submitting"
+                        : "Submit this TAS time"
+                    }
+                  >
+                    <Send className="w-3.5 h-3.5 mr-1" /> Submit TAS
+                  </Button>
+                  <Button
+                    size="sm"
                     variant="outline"
                     className="h-8 text-xs"
                     onClick={exportInputs}
@@ -815,8 +850,62 @@ export function TasEditorView() {
                 ))}
               </div>
             </div>
+
+            {/* Community TAS board */}
+            <div className="pt-2 border-t border-white/5 space-y-2">
+              <div className="flex items-center gap-2">
+                <Medal className="w-3.5 h-3.5 text-[var(--app-accent)]" />
+                <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                  TAS leaderboard
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 text-slate-400 ml-auto"
+                  onClick={() => void refreshTas(levelId)}
+                  aria-label="Refresh TAS board"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              {tasEntries.length === 0 ? (
+                <div className="text-slate-500 text-[11px] px-1">
+                  No TAS times yet. Finish a run and hit “Submit TAS” to set the first.
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {tasEntries.slice(0, 8).map((entry, i) => (
+                    <div key={entry.id} className="flex items-center gap-2 px-1 py-0.5">
+                      <span className="w-4 text-right font-mono text-[11px] text-slate-500">
+                        {i + 1}
+                      </span>
+                      <span className="flex-1 truncate text-[11px] text-slate-200">
+                        {entry.username}
+                      </span>
+                      <span className="font-mono text-[11px] text-[var(--app-accent)]">
+                        {(entry.timeMs / 1000).toFixed(3)}s
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
+      )}
+
+      {loaded && finishTick !== null && (
+        <TasSubmitDialog
+          open={tasOpen}
+          onOpenChange={setTasOpen}
+          levelId={levelId}
+          levelName={loaded.mapName}
+          arrowName={loaded.arrowName}
+          timeMs={finishTick * SIM_TICK_MS}
+          inputs={encodeInputSymbols(symbolsRef.current)}
+          inputCount={symbols.length}
+          onSubmitted={() => void refreshTas(levelId)}
+        />
       )}
     </div>
   );
