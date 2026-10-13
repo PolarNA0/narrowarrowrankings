@@ -17,10 +17,22 @@ export interface RatingSummary {
 /** Community 1-10 ratings for official levels. Writes go through a server fn. */
 export function useLevelRatings(userId?: string | null) {
   const [rows, setRows] = useState<RatingRow[]>([]);
+  const [summaries, setSummaries] = useState<Record<string, RatingSummary>>({});
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.from("level_ratings").select("id, user_id, level_id, rating");
+    const { data: agg, error: aggError } = await supabase.rpc("get_rating_summaries");
+    if (aggError) console.error("Rating summaries failed:", aggError.message);
+    const map: Record<string, RatingSummary> = {};
+    for (const r of (agg ?? []) as { level_id: string; average: number; count: number }[]) {
+      map[r.level_id] = { average: Number(r.average), count: Number(r.count) };
+    }
+    setSummaries(map);
+    if (!userId) { setRows([]); setLoading(false); return; }
+    const { data, error } = await supabase
+      .from("level_ratings")
+      .select("id, user_id, level_id, rating")
+      .eq("user_id", userId);
     if (error) {
       console.error("Rating load failed:", error.message);
       setLoading(false);
@@ -28,25 +40,11 @@ export function useLevelRatings(userId?: string | null) {
     }
     setRows((data ?? []) as unknown as RatingRow[]);
     setLoading(false);
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     void load();
   }, [load]);
-
-  const summaries = useMemo(() => {
-    const map: Record<string, RatingSummary> = {};
-    const sums: Record<string, { total: number; count: number }> = {};
-    for (const row of rows) {
-      const entry = (sums[row.level_id] ??= { total: 0, count: 0 });
-      entry.total += row.rating;
-      entry.count += 1;
-    }
-    for (const [levelId, entry] of Object.entries(sums)) {
-      map[levelId] = { average: entry.total / entry.count, count: entry.count };
-    }
-    return map;
-  }, [rows]);
 
   const myRatings = useMemo(() => {
     const map: Record<string, number> = {};
@@ -58,10 +56,10 @@ export function useLevelRatings(userId?: string | null) {
   const rate = useCallback(
     async (levelId: string, rating: number) => {
       if (!userId) throw new Error("Sign in to rate levels.");
-      const saved = (await rateLevelFn({ data: { levelId, rating } })) as unknown as RatingRow;
-      setRows((prev) => [...prev.filter((r) => r.id !== saved.id), saved]);
+      await rateLevelFn({ data: { levelId, rating } });
+      await load();
     },
-    [userId],
+    [userId, load],
   );
 
   const clearRating = useCallback(
@@ -71,9 +69,9 @@ export function useLevelRatings(userId?: string | null) {
       if (!existing) return;
       const { error } = await supabase.from("level_ratings").delete().eq("id", existing.id);
       if (error) throw new Error(error.message);
-      setRows((prev) => prev.filter((r) => r.id !== existing.id));
+      await load();
     },
-    [rows, userId],
+    [rows, userId, load],
   );
 
   return { summaries, myRatings, loading, reload: load, rate, clearRating };

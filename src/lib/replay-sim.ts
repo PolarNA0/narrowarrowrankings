@@ -1,3 +1,4 @@
+import type { ApiMap } from "./physics/rust";
 /**
  * Replay trajectory reconstruction.
  *
@@ -269,7 +270,7 @@ export async function simulateRun(
   try {
     engine = new mod.GameMechanicsEngine({
       player,
-      map,
+      map: map as unknown as ApiMap,
       ticks: 0,
       effects: base.effects,
     });
