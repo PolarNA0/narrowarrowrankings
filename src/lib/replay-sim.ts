@@ -1,3 +1,4 @@
+import type { ApiMap } from "./physics/rust";
 /**
  * Replay trajectory reconstruction.
  *
