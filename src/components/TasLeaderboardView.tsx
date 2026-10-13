@@ -1,5 +1,6 @@
 import * as React from "react";
-import { Loader2, Medal, RefreshCw, Trophy } from "lucide-react";
+import { Loader2, Medal, Pencil, RefreshCw, Trophy, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -10,18 +11,33 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { LEVELS } from "@/constants";
-import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
+import { fetchTasBoard, removeTasRun, type TasEntry } from "@/lib/tas-leaderboard";
+import { TasReplayViewer } from "@/components/ReplayViewer";
+
+/** A TAS entry handed to the editor so it can be edited like any other run. */
+export interface TasLoadRequest {
+  levelId: string;
+  arrowName: string;
+  inputs: string;
+  inputCount: number;
+}
+
+interface TasLeaderboardViewProps {
+  isAdmin?: boolean;
+  onLoadRun?: (request: TasLoadRequest) => void;
+}
 
 /**
  * The community TAS leaderboard. Unlike the real game board, these are
  * tool-assisted runs posted by players, so they live on their own board and
  * never touch the official rankings.
  */
-export function TasLeaderboardView() {
+export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewProps) {
   const [levelId, setLevelId] = React.useState(LEVELS[0]?.id ?? "");
   const [entries, setEntries] = React.useState<TasEntry[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [removingId, setRemovingId] = React.useState<string | null>(null);
 
   const load = React.useCallback(async (id: string) => {
     if (!id) return;
@@ -40,6 +56,24 @@ export function TasLeaderboardView() {
   React.useEffect(() => {
     void load(levelId);
   }, [levelId, load]);
+
+  const remove = async (entry: TasEntry) => {
+    if (
+      !window.confirm(
+        `Remove ${entry.username}'s ${(entry.timeMs / 1000).toFixed(3)}s run from the TAS board?`,
+      )
+    )
+      return;
+    setRemovingId(entry.id);
+    try {
+      setEntries(await removeTasRun(levelId, entry.id));
+      toast.success(`Removed ${entry.username}'s run`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove run.");
+    } finally {
+      setRemovingId(null);
+    }
+  };
 
   const levelName = LEVELS.find((l) => l.id === levelId)?.name ?? levelId;
 
@@ -122,13 +156,21 @@ export function TasLeaderboardView() {
                 <th className="text-right font-bold px-3 py-2">Time</th>
                 <th className="text-right font-bold px-3 py-2 hidden sm:table-cell">Inputs</th>
                 <th className="text-right font-bold px-3 py-2 hidden md:table-cell">Date</th>
+                <th className="text-right font-bold px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
               {entries.map((entry, i) => (
                 <tr key={entry.id} className="border-t border-white/5 hover:bg-white/[0.03]">
                   <td className="px-3 py-2 font-mono text-slate-500">
-                    {i === 0 ? <Trophy className="w-3.5 h-3.5 text-[var(--app-accent)]" /> : i + 1}
+                    {i === 0 ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Trophy className="w-3.5 h-3.5 text-[var(--app-accent)]" />
+                        <span className="text-[9px] font-bold text-[var(--app-accent)]">WR</span>
+                      </span>
+                    ) : (
+                      i + 1
+                    )}
                   </td>
                   <td className="px-3 py-2 text-slate-200 truncate max-w-[12rem]">
                     {entry.username}
@@ -147,6 +189,53 @@ export function TasLeaderboardView() {
                   </td>
                   <td className="px-3 py-2 text-right text-slate-500 hidden md:table-cell">
                     {new Date(entry.createdAt).toLocaleDateString()}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center justify-end gap-0.5">
+                      <TasReplayViewer
+                        levelId={levelId}
+                        levelName={levelName}
+                        username={entry.username}
+                        arrowName={entry.arrowName}
+                        inputs={entry.inputs}
+                        inputCount={entry.inputCount}
+                        timeMs={entry.timeMs}
+                      />
+                      {onLoadRun && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Load into the TAS editor"
+                          onClick={() =>
+                            onLoadRun({
+                              levelId,
+                              arrowName: entry.arrowName,
+                              inputs: entry.inputs,
+                              inputCount: entry.inputCount,
+                            })
+                          }
+                          className="text-slate-500 hover:text-[var(--app-accent)] hover:bg-[var(--app-accent)]/10 h-8 w-8"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                      )}
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Remove run from TAS board"
+                          disabled={removingId === entry.id}
+                          onClick={() => void remove(entry)}
+                          className="text-slate-600 hover:text-red-400 hover:bg-red-500/10 h-8 w-8"
+                        >
+                          {removingId === entry.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <X className="w-4 h-4" />
+                          )}
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -122,7 +122,8 @@ import { InGameMedalsPopover } from "@/components/InGameMedalsPopover";
 import { ReplayViewer } from "@/components/ReplayViewer";
 import { SkinsView } from "@/components/SkinsView";
 import { TasEditorView } from "@/components/TasEditorView";
-import { TasLeaderboardView } from "@/components/TasLeaderboardView";
+import { TasLeaderboardView, type TasLoadRequest } from "@/components/TasLeaderboardView";
+import { fetchBestTasTime } from "@/lib/tas-leaderboard";
 import { useInGameMedals } from "@/hooks/useInGameMedals";
 import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
 
@@ -362,6 +363,8 @@ export default function App() {
 
 
   const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries' | 'fame' | 'targets' | 'clubs' | 'medal-ease' | 'skins' | 'tas' | 'tas-board'>('leaderboard');
+  /** A TAS entry the leaderboard asked the editor to open. */
+  const [tasLoad, setTasLoad] = useState<TasLoadRequest | null>(null);
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<'wrs' | 'hof' | 'history' | 'arrows'>('wrs');
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -387,8 +390,8 @@ export default function App() {
   const [allRankConfigs, setAllRankConfigs] = useState<Record<string, LevelRankConfig>>({});
   const [globalRankConfig, setGlobalRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
   const [activeLevelData, setActiveLevelData] = useState<LevelRankConfig | null>(null);
-  const [theoreticalMax, setTheoreticalMax] = useState<number | null>(null);
-  const [humanLimit, setHumanLimit] = useState<number | null>(null);
+  /** The level's best community TAS time (ms), or null when none exists. */
+  const [tasBestTime, setTasBestTime] = useState<number | null>(null);
   const [overallRankConfig, setOverallRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_OVERALL_RANKS);
   const [allPackOverallConfigs, setAllPackOverallConfigs] = useState<Record<string, Record<string, RankInfo>>>({});
   const [allMapsPlayedFilter, setAllMapsPlayedFilter] = useState(false);
@@ -517,8 +520,6 @@ export default function App() {
   useEffect(() => {
     if (!selectedLevel) {
       setActiveLevelData(null);
-      setTheoreticalMax(null);
-      setHumanLimit(null);
       return;
     }
 
@@ -526,8 +527,6 @@ export default function App() {
     const unsubscribe = onSnapshot(levelRef, (levelSnap) => {
       const levelData = levelSnap.exists() ? (levelSnap.data() as LevelRankConfig) : null;
       setActiveLevelData(levelData);
-      setTheoreticalMax(levelData?.theoreticalMax ?? null);
-      setHumanLimit(levelData?.humanLimit ?? null);
     }, (err) => {
       handleFirestoreError(err, OperationType.GET, `levelConfigs/${selectedLevel}`);
     });
@@ -536,6 +535,28 @@ export default function App() {
       unsubscribe();
     };
   }, [selectedLevel]);
+
+  // Show the level's community TAS time alongside the real leaderboard. It has
+  // nothing to do with the official board, so it is fetched separately and
+  // falls back to "N/A" when the level has no TAS submissions.
+  useEffect(() => {
+    if (!selectedLevel) {
+      setTasBestTime(null);
+      return;
+    }
+    let cancelled = false;
+    setTasBestTime(null);
+    fetchBestTasTime(selectedLevel)
+      .then((time) => {
+        if (!cancelled) setTasBestTime(time);
+      })
+      .catch(() => {
+        if (!cancelled) setTasBestTime(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLevel, view]);
 
   // Rank cutoffs follow the selected arrow board when per-arrow times exist.
   const hasLevelRanks = React.useMemo(
@@ -2042,9 +2063,15 @@ export default function App() {
         ) : view === 'skins' ? (
           <SkinsView />
         ) : view === 'tas' ? (
-          <TasEditorView />
+          <TasEditorView loadRequest={tasLoad} />
         ) : view === 'tas-board' ? (
-          <TasLeaderboardView />
+          <TasLeaderboardView
+            isAdmin={isAdmin}
+            onLoadRun={(request) => {
+              setTasLoad(request);
+              navigateView('tas');
+            }}
+          />
         ) : view === 'score' ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
@@ -2231,17 +2258,11 @@ export default function App() {
             </div>
 
             <div className="relative z-10 w-full md:w-auto flex flex-col sm:flex-row md:flex-col gap-4 bg-white/[0.02] border border-white/10 rounded-xl p-4 backdrop-blur-md shrink-0">
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6">
                 <div>
-                  <p className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">Theoretical Max</p>
-                  <p className="text-sm font-mono font-bold text-red-400">
-                    {theoreticalMax !== null ? formatTime(theoreticalMax, 'seconds') : "---"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">Human Limit</p>
-                  <p className="text-sm font-mono font-bold text-blue-400">
-                    {humanLimit !== null ? formatTime(humanLimit, 'seconds') : "---"}
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">TAS Time</p>
+                  <p className="text-sm font-mono font-bold text-[var(--app-accent)]">
+                    {tasBestTime !== null ? formatTime(tasBestTime / 1000, 'seconds') : "N/A"}
                   </p>
                 </div>
               </div>
@@ -2332,25 +2353,19 @@ export default function App() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {!loading && (theoreticalMax !== null || humanLimit !== null) && (
+            {!loading && (
               <div className="p-4 border-b border-white/10 bg-white/[0.01] flex flex-wrap gap-4 items-center justify-between">
                 <div className="flex flex-wrap gap-6">
-                  {theoreticalMax !== null && (
-                    <div className="flex items-center gap-3">
-                      <div className="px-2 py-0.5 rounded bg-red-500/20 border border-red-500/30 text-red-400 text-[10px] font-bold uppercase tracking-tighter">Theoretical Max</div>
-                      <span className="text-sm font-mono font-bold text-red-400">{formatTime(theoreticalMax, 'seconds')}</span>
-                    </div>
-                  )}
-                  {humanLimit !== null && (
-                    <div className="flex items-center gap-3">
-                      <div className="px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/30 text-blue-400 text-[10px] font-bold uppercase tracking-tighter">Human Limit</div>
-                      <span className="text-sm font-mono font-bold text-blue-400">{formatTime(humanLimit, 'seconds')}</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="px-2 py-0.5 rounded bg-[var(--app-accent)]/20 border border-[var(--app-accent)]/30 text-[var(--app-accent)] text-[10px] font-bold uppercase tracking-tighter">TAS Time</div>
+                    <span className="text-sm font-mono font-bold text-[var(--app-accent)]">
+                      {tasBestTime !== null ? formatTime(tasBestTime / 1000, 'seconds') : "N/A"}
+                    </span>
+                  </div>
                 </div>
                 <div className="text-[9px] text-slate-600 italic flex items-center gap-1">
                   <Info className="w-3 h-3" />
-                  Note: These values are estimations.
+                  Best tool-assisted time on the community TAS board.
                 </div>
               </div>
             )}

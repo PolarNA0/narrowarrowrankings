@@ -47,3 +47,25 @@ export async function submitTasRun(payload: {
   if (!res.ok) throw new Error(data.error ?? `Submit failed (${res.status})`);
   return data;
 }
+
+export async function removeTasRun(levelId: string, id: string): Promise<TasEntry[]> {
+  const { supabase } = await import("@/integrations/supabase/client");
+  const token = (await supabase.auth.getSession()).data.session?.access_token;
+  const res = await fetch(
+    `/api/tas-leaderboard/${encodeURIComponent(levelId)}?id=${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+      headers: token ? { authorization: `Bearer ${token}` } : undefined,
+      signal: AbortSignal.timeout(15000),
+    },
+  );
+  const data = (await res.json()) as { entries?: TasEntry[]; error?: string };
+  if (!res.ok) throw new Error(data.error ?? `Remove failed (${res.status})`);
+  return data.entries ?? [];
+}
+
+/** The level's fastest TAS time in ms, or null when the board is empty. */
+export async function fetchBestTasTime(levelId: string): Promise<number | null> {
+  const entries = await fetchTasBoard(levelId);
+  return entries.length > 0 ? Math.min(...entries.map((e) => e.timeMs)) : null;
+}

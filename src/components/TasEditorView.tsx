@@ -48,6 +48,8 @@ import { arrowKind, type ArrowKind } from "@/lib/arrow-sprites";
 import { ReplayStage } from "@/components/ReplayViewer";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
+import { TasReplayViewer } from "@/components/ReplayViewer";
+import type { TasLoadRequest } from "@/components/TasLeaderboardView";
 
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
 /** Inputs between saved engine snapshots, trading memory for rewind speed. */
@@ -83,7 +85,7 @@ function lengthOf(symbols: number[], index: number): number {
  * the finish — rather than tick by tick. Each row's +/- grows or shrinks that
  * hold by one tick; the real game engine re-simulates the result live.
  */
-export function TasEditorView() {
+export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | null }) {
   const [levelId, setLevelId] = React.useState(LEVELS[0]?.id ?? "");
   const [arrowName, setArrowName] = React.useState(ARROWS[0]);
   const [runId, setRunId] = React.useState("");
@@ -271,6 +273,43 @@ export function TasEditorView() {
 
   /** Load the run whose id is typed into the Run ID field. */
   const loadRun = () => loadRunById(runId);
+
+  /** Load a community TAS entry (level + arrow + its input string) into the editor. */
+  const loadTasEntry = React.useCallback(
+    async (request: TasLoadRequest) => {
+      setLoading(true);
+      setError(null);
+      setStatus(null);
+      try {
+        const info = await loadLevel(request.levelId, request.arrowName);
+        if (!info) return;
+        setLoaded(info);
+        setLevelId(request.levelId);
+        setArrowName(request.arrowName);
+        setRunId("");
+        const decoded = decodeInputSymbols(request.inputs, request.inputCount);
+        applySymbols(decoded);
+        setFrame(0);
+        setStatus(
+          `Loaded TAS run — ${decoded.length} inputs, ${((decoded.length * REPLAY_TICK_MS) / 1000).toFixed(2)}s. Edit it to make it your own before submitting.`,
+        );
+        setBoardOpen(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loadLevel, applySymbols],
+  );
+
+  // Pull in a run handed over from the TAS leaderboard (its "load" action).
+  const appliedRequestRef = React.useRef<TasLoadRequest | null>(null);
+  React.useEffect(() => {
+    if (!loadRequest || appliedRequestRef.current === loadRequest) return;
+    appliedRequestRef.current = loadRequest;
+    void loadTasEntry(loadRequest);
+  }, [loadRequest, loadTasEntry]);
 
   /** Refresh the community TAS board for the loaded level. */
   const refreshTas = React.useCallback(async (id: string) => {
@@ -877,7 +916,7 @@ export function TasEditorView() {
                   {tasEntries.slice(0, 8).map((entry, i) => (
                     <div key={entry.id} className="flex items-center gap-2 px-1 py-0.5">
                       <span className="w-4 text-right font-mono text-[11px] text-slate-500">
-                        {i + 1}
+                        {i === 0 ? <Trophy className="w-3 h-3 text-[var(--app-accent)]" /> : i + 1}
                       </span>
                       <span className="flex-1 truncate text-[11px] text-slate-200">
                         {entry.username}
@@ -885,6 +924,16 @@ export function TasEditorView() {
                       <span className="font-mono text-[11px] text-[var(--app-accent)]">
                         {(entry.timeMs / 1000).toFixed(3)}s
                       </span>
+                      <TasReplayViewer
+                        levelId={levelId}
+                        levelName={loaded?.mapName}
+                        username={entry.username}
+                        arrowName={entry.arrowName}
+                        inputs={entry.inputs}
+                        inputCount={entry.inputCount}
+                        timeMs={entry.timeMs}
+                        className="h-6 w-6"
+                      />
                     </div>
                   ))}
                 </div>

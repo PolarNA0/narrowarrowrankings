@@ -46,6 +46,63 @@ export function isNewTasRecord(entries: TasEntry[], timeMs: number): boolean {
   return best === null || timeMs < best;
 }
 
+/**
+ * A submission must be a distinct run. Copying an existing entry's exact input
+ * string — most obviously the WR — would let everyone post the same run, so it
+ * is rejected. Compared on the raw string to keep it exact.
+ */
+export function hasDuplicateInputs(entries: TasEntry[], inputs: string): boolean {
+  return entries.some((e) => e.inputs === inputs);
+}
+
+/**
+ * Removing a run is destructive and must not be reachable by anyone who can
+ * guess an id, so the API re-checks the caller's admin role server-side rather
+ * than trusting the client that hid the button.
+ */
+export async function verifyAdminRequest(request: Request): Promise<boolean> {
+  // The dev in-memory board is process-local and there is no admin login in
+  // local dev (no service role key), so removal can't be gated there.
+  if (memoryStoreEnabled()) return true;
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  if (!token) return false;
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !data.user) return false;
+    const { data: role } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", data.user.id)
+      .eq("role", "admin")
+      .maybeSingle();
+    return !!role;
+  } catch {
+    return false;
+  }
+}
+
+/** Remove one entry by id and return the re-sorted board. */
+export async function removeTasEntry(levelId: string, id: string): Promise<TasEntry[]> {
+  const entries = sortTasEntries((await readTasBoard(levelId)).filter((e) => e.id !== id));
+  if (memoryStoreEnabled()) {
+    memoryBoards.set(levelId, entries);
+    return entries;
+  }
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error } = await supabaseAdmin.from("app_docs").upsert(
+    {
+      collection: COLLECTION,
+      doc_id: levelId,
+      data: { levelId, entries } as never,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "collection,doc_id" },
+  );
+  if (error) throw new Error(error.message);
+  return entries;
+}
+
 /** Read one level's TAS board (empty when it has never been submitted to). */
 export async function readTasBoard(levelId: string): Promise<TasEntry[]> {
   if (memoryStoreEnabled()) return memoryBoards.get(levelId) ?? [];

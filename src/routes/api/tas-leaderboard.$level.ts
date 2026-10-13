@@ -2,10 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { decodeInputSymbols } from "@/lib/replay";
 import {
   addTasEntry,
+  hasDuplicateInputs,
   isNewTasRecord,
   readTasBoard,
   readTasBoardPublic,
+  removeTasEntry,
   sortTasEntries,
+  verifyAdminRequest,
   type TasEntry,
 } from "@/lib/tas-board.server";
 
@@ -53,6 +56,15 @@ export const Route = createFileRoute("/api/tas-leaderboard/$level")({
         }
 
         const existing = await readTasBoard(params.level);
+        // Each entry has to be a distinct run — otherwise everyone would just
+        // load the WR and re-submit the same inputs.
+        if (hasDuplicateInputs(existing, inputs)) {
+          return Response.json(
+            { error: "This exact run is already on the board. Tweak it before submitting." },
+            { status: 409 },
+          );
+        }
+
         const entry: TasEntry = {
           id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
           username,
@@ -76,6 +88,23 @@ export const Route = createFileRoute("/api/tas-leaderboard/$level")({
           rank: sorted.findIndex((e) => e.id === entry.id) + 1,
           entries: sorted,
         });
+      },
+      DELETE: async ({ params, request }) => {
+        const url = new URL(request.url);
+        const id = url.searchParams.get("id");
+        if (!id) return Response.json({ error: "Missing entry id" }, { status: 400 });
+
+        if (!(await verifyAdminRequest(request))) {
+          return Response.json({ error: "Only admins can remove TAS runs." }, { status: 403 });
+        }
+
+        let entries: TasEntry[];
+        try {
+          entries = await removeTasEntry(params.level, id);
+        } catch {
+          return Response.json({ error: "Could not remove that run." }, { status: 500 });
+        }
+        return Response.json({ entries: sortTasEntries(entries) });
       },
     },
   },

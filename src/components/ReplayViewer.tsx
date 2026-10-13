@@ -916,3 +916,202 @@ function ReplayLegend({ geometry }: { geometry: SimGeometry }) {
     </div>
   );
 }
+
+interface TasReplayViewerProps {
+  levelId: string;
+  levelName?: string;
+  username?: string;
+  arrowName?: string;
+  inputs: string;
+  inputCount?: number;
+  timeMs?: number;
+  className?: string;
+}
+
+/**
+ * Plays a community TAS entry straight from its stored input string, so a run
+ * on the TAS board can be watched without it existing as an upstream run id.
+ */
+export function TasReplayViewer({
+  levelId,
+  levelName,
+  username,
+  arrowName,
+  inputs,
+  inputCount,
+  timeMs,
+  className,
+}: TasReplayViewerProps) {
+  const [open, setOpen] = React.useState(false);
+  const [state, setState] = React.useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [geometry, setGeometry] = React.useState<SimGeometry>({
+    walls: [],
+    zones: [],
+    portals: [],
+  });
+  const [sim, setSim] = React.useState<SimResult | null>(null);
+  const [playing, setPlaying] = React.useState(true);
+  const [frame, setFrame] = React.useState(0);
+  const [speed, setSpeed] = React.useState(1);
+  const [attempt, setAttempt] = React.useState(0);
+  const loadedRef = React.useRef<string | null>(null);
+
+  const arrow = arrowKind(arrowName);
+  const arrowRadius = arrowConstants(arrowName).radius ?? 16;
+  const pathLength = sim?.path.length ?? 0;
+  const summary = React.useMemo(() => summariseReplay(inputs, inputCount), [inputs, inputCount]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const key = `${levelId}:${inputs.length}:${attempt}`;
+    if (loadedRef.current === key && attempt === 0) return;
+    loadedRef.current = key;
+    let cancelled = false;
+    setState("loading");
+    setSim(null);
+    setFrame(0);
+    setPlaying(true);
+
+    (async () => {
+      try {
+        const levelRes = await fetch(`/api/level-details/${encodeURIComponent(levelId)}`, {
+          signal: AbortSignal.timeout(20000),
+        });
+        if (!levelRes.ok) throw new Error(String(levelRes.status));
+        const payload = (await levelRes.json()) as { levelInfo?: { data?: RawLevelData } };
+        const levelData = payload.levelInfo?.data ?? null;
+        if (!levelData) throw new Error("no geometry");
+        if (cancelled) return;
+        setGeometry(levelGeometry(levelData));
+        const result = await simulateRun(inputs, inputCount, levelData, {}, arrowName);
+        if (cancelled) return;
+        setSim(result);
+        setState("ready");
+      } catch {
+        if (cancelled) return;
+        if (loadedRef.current === key) loadedRef.current = null;
+        setState("error");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, levelId, inputs, inputCount, arrowName, attempt]);
+
+  React.useEffect(() => {
+    if (!open || !playing || !sim || pathLength === 0) return;
+    let raf = 0;
+    let last = performance.now();
+    const step = (now: number) => {
+      const elapsed = now - last;
+      last = now;
+      setFrame((f) => {
+        const next = f + (elapsed / SIM_TICK_MS) * speed;
+        if (next >= pathLength - 1) {
+          setPlaying(false);
+          return pathLength - 1;
+        }
+        return next;
+      });
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [open, playing, sim, pathLength, speed]);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Watch this TAS run"
+          onClick={(e) => e.stopPropagation()}
+          className={cn(
+            "text-slate-500 hover:text-[var(--app-accent)] hover:bg-[var(--app-accent)]/10 h-8 w-8",
+            className,
+          )}
+        >
+          <Play className="w-4 h-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-[#0d0d10] border-white/10 text-slate-200 max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Gamepad2 className="w-4 h-4 text-[var(--app-accent)]" />
+            TAS replay
+            {username && <span className="text-slate-400 font-normal">· {username}</span>}
+          </DialogTitle>
+        </DialogHeader>
+
+        {state === "loading" && (
+          <div className="flex items-center justify-center gap-2 py-16 text-slate-500 text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading replay…
+          </div>
+        )}
+
+        {state === "error" && (
+          <div className="py-16 text-center text-sm">
+            <p className="text-slate-500 italic mb-4">Replay couldn't be loaded.</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                loadedRef.current = null;
+                setAttempt((n) => n + 1);
+              }}
+            >
+              Retry
+            </Button>
+          </div>
+        )}
+
+        {state === "ready" && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+              <span>{levelName ?? levelId}</span>
+              <span className="text-slate-700">•</span>
+              <span className="font-mono">{arrowName ?? "Arrow"}</span>
+              <span className="text-slate-700">•</span>
+              <span className="font-mono">{summary.tickCount} inputs</span>
+              <span className="text-slate-700">•</span>
+              <span className="font-mono">
+                {((timeMs ?? summary.durationMs) / 1000).toFixed(3)}s
+              </span>
+            </div>
+
+            {sim && pathLength > 0 ? (
+              <ReplayStage
+                sim={sim}
+                geometry={geometry}
+                frame={frame}
+                playing={playing}
+                speed={speed}
+                bodyColor={themeColor(null)}
+                trail={trailColor(null)}
+                thrust={thrustColor(null)}
+                arrow={arrow}
+                arrowRadius={arrowRadius}
+                replayTimeMs={frame * SIM_TICK_MS}
+                onTogglePlay={() => {
+                  if (frame >= pathLength - 1) setFrame(0);
+                  setPlaying((p) => !p);
+                }}
+                onScrub={(value) => {
+                  setPlaying(false);
+                  setFrame(value);
+                }}
+                onSpeed={setSpeed}
+              />
+            ) : (
+              <div className="rounded-lg border border-white/5 bg-black/30 py-10 text-center text-slate-500 text-xs italic">
+                Level geometry unavailable — this run can't be animated.
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
