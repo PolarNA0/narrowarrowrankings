@@ -1,5 +1,14 @@
 import * as React from "react";
-import { Play, Pause, Loader2, Gamepad2, Info, RotateCcw, ChevronDown } from "lucide-react";
+import {
+  Play,
+  Pause,
+  Loader2,
+  Gamepad2,
+  Info,
+  RotateCcw,
+  ChevronDown,
+  GitCompareArrows,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -47,6 +56,8 @@ import {
   type SkinConfig,
 } from "@/lib/replay-visuals";
 import { arrowKind, drawArrowSprite, type ArrowKind } from "@/lib/arrow-sprites";
+import { ghostColor } from "@/lib/compare-ghosts";
+import { Checkbox } from "@/components/ui/checkbox";
 import bounceIcon from "@/assets/game/bounce.svg";
 import skullIcon from "@/assets/game/skull.svg";
 import finishIcon from "@/assets/game/finish_line_icon.svg";
@@ -517,6 +528,19 @@ interface StageProps {
   onSpeed: (value: number) => void;
   /** Hide the built-in transport bar (the TAS editor provides its own). */
   hideControls?: boolean;
+  /** Extra runs drawn under the main arrow so attempts can be compared. */
+  overlays?: ReplayOverlay[];
+}
+
+/** Another run replayed on the same stage as the primary one. */
+export interface ReplayOverlay {
+  id: string;
+  sim: SimResult;
+  color: string;
+  arrow: ArrowKind;
+  arrowRadius: number;
+  /** Label drawn beside the ghost arrow, e.g. "Ch4mpY_TAS · 13.825s". */
+  label?: string;
 }
 
 export function ReplayStage({
@@ -535,6 +559,7 @@ export function ReplayStage({
   onScrub,
   onSpeed,
   hideControls,
+  overlays = [],
 }: StageProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
@@ -599,6 +624,15 @@ export function ReplayStage({
       minY = Math.min(minY, p.y);
       maxX = Math.max(maxX, p.x);
       maxY = Math.max(maxY, p.y);
+    }
+    // Ghost paths share the level but can wander further, so bound them too.
+    for (const o of overlays) {
+      for (const p of o.sim.path) {
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      }
     }
     if (!Number.isFinite(minX)) return;
     const pad = 40;
@@ -688,6 +722,44 @@ export function ReplayStage({
       ctx.stroke();
     }
 
+    // Ghost runs first so the primary run's trail and arrow stay on top.
+    for (const o of overlays) {
+      const gp = o.sim.path;
+      if (gp.length === 0) continue;
+      const gUpto = Math.max(0, Math.min(upto, gp.length - 1));
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = withAlpha(o.color, 0.5);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i <= gUpto; i++) {
+        const p = gp[i];
+        if (i === 0) ctx.moveTo(tx(p.x), ty(p.y));
+        else ctx.lineTo(tx(p.x), ty(p.y));
+      }
+      ctx.stroke();
+      const gp2 = gp[gUpto];
+      ctx.save();
+      ctx.globalAlpha = 0.6;
+      drawArrowSprite(
+        ctx,
+        o.arrow,
+        tx(gp2.x),
+        ty(gp2.y),
+        gp2.rot,
+        scale,
+        o.arrowRadius,
+        o.color,
+        o.color,
+      );
+      ctx.restore();
+      if (o.label) {
+        ctx.font = "bold 10px ui-monospace, monospace";
+        ctx.fillStyle = o.color;
+        ctx.fillText(o.label, tx(gp2.x) + 9, ty(gp2.y) - 9);
+      }
+    }
+
     // Travelled path: a soft glow under a bright core, in the run's trail colour.
     if (upto > 0) {
       ctx.lineCap = "round";
@@ -738,9 +810,11 @@ export function ReplayStage({
       ctx.font = "bold 11px ui-monospace, monospace";
       ctx.fillText("FINISH", 10, 18);
     }
-  }, [sim, geometry, frame, bodyColor, trail, thrust, arrow, arrowRadius]);
+  }, [sim, geometry, frame, bodyColor, trail, thrust, arrow, arrowRadius, overlays]);
 
-  const maxFrame = Math.max(1, sim.path.length - 1);
+  // Ghosts may run past the primary run's finish; keep the scrubber covering
+  // the longest run so a slower ghost can still be watched to its end.
+  const maxFrame = Math.max(1, sim.path.length - 1, ...overlays.map((o) => o.sim.path.length - 1));
   return (
     <div className="space-y-2">
       <div className="rounded-lg overflow-hidden border border-white/10 bg-[#07070b]">
@@ -926,11 +1000,24 @@ interface TasReplayViewerProps {
   inputCount?: number;
   timeMs?: number;
   className?: string;
+  /** Other runs on this level's board, offered as ghosts to compare against. */
+  boardEntries?: TasCompareCandidate[];
+}
+
+/** A TAS board entry the viewer can replay as a ghost. */
+export interface TasCompareCandidate {
+  id: string;
+  username: string;
+  inputs: string;
+  inputCount: number;
+  arrowName: string;
+  timeMs: number;
 }
 
 /**
  * Plays a community TAS entry straight from its stored input string, so a run
  * on the TAS board can be watched without it existing as an upstream run id.
+ * Other entries on the same board can be ticked to replay as ghost overlays.
  */
 export function TasReplayViewer({
   levelId,
@@ -941,6 +1028,7 @@ export function TasReplayViewer({
   inputCount,
   timeMs,
   className,
+  boardEntries,
 }: TasReplayViewerProps) {
   const [open, setOpen] = React.useState(false);
   const [state, setState] = React.useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -956,6 +1044,13 @@ export function TasReplayViewer({
   const [attempt, setAttempt] = React.useState(0);
   const loadedRef = React.useRef<string | null>(null);
 
+  // Ghost compare state: the level geometry is cached so each ticked run only
+  // costs one simulation, not another geometry fetch.
+  const [levelData, setLevelData] = React.useState<RawLevelData | null>(null);
+  const [selectedGhostIds, setSelectedGhostIds] = React.useState<string[]>([]);
+  const [ghostSims, setGhostSims] = React.useState<Record<string, SimResult>>({});
+
+  const candidates = React.useMemo(() => boardEntries ?? [], [boardEntries]);
   const arrow = arrowKind(arrowName);
   const arrowRadius = arrowConstants(arrowName).radius ?? 16;
   const pathLength = sim?.path.length ?? 0;
@@ -969,6 +1064,9 @@ export function TasReplayViewer({
     let cancelled = false;
     setState("loading");
     setSim(null);
+    setLevelData(null);
+    setSelectedGhostIds([]);
+    setGhostSims({});
     setFrame(0);
     setPlaying(true);
 
@@ -979,11 +1077,12 @@ export function TasReplayViewer({
         });
         if (!levelRes.ok) throw new Error(String(levelRes.status));
         const payload = (await levelRes.json()) as { levelInfo?: { data?: RawLevelData } };
-        const levelData = payload.levelInfo?.data ?? null;
-        if (!levelData) throw new Error("no geometry");
+        const data = payload.levelInfo?.data ?? null;
+        if (!data) throw new Error("no geometry");
         if (cancelled) return;
-        setGeometry(levelGeometry(levelData));
-        const result = await simulateRun(inputs, inputCount, levelData, {}, arrowName);
+        setGeometry(levelGeometry(data));
+        setLevelData(data);
+        const result = await simulateRun(inputs, inputCount, data, {}, arrowName);
         if (cancelled) return;
         setSim(result);
         setState("ready");
@@ -1019,6 +1118,59 @@ export function TasReplayViewer({
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [open, playing, sim, pathLength, speed]);
+
+  // Re-simulate every ticked ghost against the cached geometry. Each ghost's
+  // own arrow name drives its hitbox and sprite, exactly like the primary run.
+  React.useEffect(() => {
+    if (!open || !levelData) return;
+    let cancelled = false;
+    (async () => {
+      const next: Record<string, SimResult> = {};
+      for (const id of selectedGhostIds) {
+        const entry = candidates.find((c) => c.id === id);
+        if (!entry) continue;
+        try {
+          next[id] = await simulateRun(
+            entry.inputs,
+            entry.inputCount,
+            levelData,
+            {},
+            entry.arrowName,
+          );
+        } catch {
+          /* a ghost that won't simulate is simply left off the stage */
+        }
+      }
+      if (!cancelled) setGhostSims(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, levelData, selectedGhostIds, candidates]);
+
+  const overlays = React.useMemo<ReplayOverlay[]>(
+    () =>
+      selectedGhostIds.flatMap((id) => {
+        const entry = candidates.find((c) => c.id === id);
+        const ghostSim = ghostSims[id];
+        if (!entry || !ghostSim || ghostSim.path.length === 0) return [];
+        const index = candidates.findIndex((c) => c.id === id);
+        return [
+          {
+            id,
+            sim: ghostSim,
+            color: ghostColor(index),
+            arrow: arrowKind(entry.arrowName),
+            arrowRadius: arrowConstants(entry.arrowName).radius ?? 16,
+            label: `${entry.username} · ${(entry.timeMs / 1000).toFixed(3)}s`,
+          },
+        ];
+      }),
+    [selectedGhostIds, candidates, ghostSims],
+  );
+
+  const toggleGhost = (id: string) =>
+    setSelectedGhostIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -1103,10 +1255,66 @@ export function TasReplayViewer({
                   setFrame(value);
                 }}
                 onSpeed={setSpeed}
+                overlays={overlays}
               />
             ) : (
               <div className="rounded-lg border border-white/5 bg-black/30 py-10 text-center text-slate-500 text-xs italic">
                 Level geometry unavailable — this run can't be animated.
+              </div>
+            )}
+
+            {candidates.length > 0 && pathLength > 0 && (
+              <div className="rounded-lg border border-white/5 bg-black/20 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <GitCompareArrows className="w-3.5 h-3.5 text-[var(--app-accent)]" />
+                  <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500">
+                    Compare ghosts
+                  </span>
+                  {selectedGhostIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedGhostIds([])}
+                      className="ml-auto text-[10px] text-slate-500 hover:text-slate-300"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  {candidates.map((entry) => {
+                    const index = candidates.findIndex((c) => c.id === entry.id);
+                    const checked = selectedGhostIds.includes(entry.id);
+                    return (
+                      <label
+                        key={entry.id}
+                        className="flex items-center gap-2 cursor-pointer rounded px-1 py-0.5 hover:bg-white/[0.03]"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={() => toggleGhost(entry.id)}
+                          aria-label={`Compare ${entry.username}`}
+                        />
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: ghostColor(index) }}
+                        />
+                        <span className="text-xs text-slate-200 truncate">{entry.username}</span>
+                        <span className="text-[11px] text-slate-500 truncate hidden sm:inline">
+                          {entry.arrowName}
+                        </span>
+                        <span className="ml-auto font-mono text-[11px] text-slate-400">
+                          {(entry.timeMs / 1000).toFixed(3)}s
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {overlays.length > 0 && (
+                  <p className="text-[10px] text-slate-600">
+                    Ghosts are drawn as tinted trails with a matching arrow; the primary run stays
+                    on top.
+                  </p>
+                )}
               </div>
             )}
           </div>

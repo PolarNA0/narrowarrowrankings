@@ -933,6 +933,7 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
                         inputCount={entry.inputCount}
                         timeMs={entry.timeMs}
                         className="h-6 w-6"
+                        boardEntries={tasEntries.filter((e) => e.id !== entry.id)}
                       />
                     </div>
                   ))}

@@ -201,6 +201,7 @@ export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewPro
                           inputs={entry.inputs}
                           inputCount={entry.inputCount}
                           timeMs={entry.timeMs}
+                          boardEntries={entries.filter((e) => e.id !== entry.id)}
                         />
                         {onLoadRun && (
                           <Button
