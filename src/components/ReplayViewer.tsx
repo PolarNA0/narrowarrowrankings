@@ -599,11 +599,12 @@ export function ReplayStage({
         );
         return { x0: w.pivot.x - r, x1: w.pivot.x + r, y0: w.pivot.y - r, y1: w.pivot.y + r };
       }
+      const half = w.thickness / 2;
       return {
-        x0: Math.min(w.ax, w.bx),
-        x1: Math.max(w.ax, w.bx),
-        y0: Math.min(w.ay, w.by),
-        y1: Math.max(w.ay, w.by),
+        x0: Math.min(w.ax, w.bx) - half,
+        x1: Math.max(w.ax, w.bx) + half,
+        y0: Math.min(w.ay, w.by) - half,
+        y1: Math.max(w.ay, w.by) + half,
       };
     };
     for (const w of geometry.walls) {
@@ -704,20 +705,40 @@ export function ReplayStage({
       const X1 = tx(bx);
       const Y1 = ty(by);
       if (visual.kind === "finish") {
-        drawFinish(ctx, X0, Y0, X1, Y1);
+        drawFinish(ctx, X0, Y0, X1, Y1, w.thickness, scale);
+        continue;
+      }
+      // Draw at the wall's real thickness, in world units. The engine collides
+      // at `arrowRadius + thickness / 2`, so a wall drawn thinner than it
+      // collides reads as the arrow bonking against nothing. A small floor
+      // keeps the thinnest walls visible at the replay's zoom.
+      const core = Math.max(1.5, w.thickness * scale);
+      const X = X0;
+      const Y = Y0;
+      if (ax === bx && ay === by) {
+        // A single-point wall: the engine collides with it as a zero-length
+        // segment, so draw the dot it really is.
+        ctx.fillStyle = withAlpha(visual.color, 0.16);
+        ctx.beginPath();
+        ctx.arc(X, Y, core * 1.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = visual.color;
+        ctx.beginPath();
+        ctx.arc(X, Y, core / 2, 0, Math.PI * 2);
+        ctx.fill();
         continue;
       }
       // A faint wide pass under a crisp core reads as the game's neon walls.
       ctx.strokeStyle = withAlpha(visual.color, 0.16);
-      ctx.lineWidth = Math.max(3, visual.width * 3);
+      ctx.lineWidth = Math.max(3, core * 2.4);
       ctx.beginPath();
-      ctx.moveTo(X0, Y0);
+      ctx.moveTo(X, Y);
       ctx.lineTo(X1, Y1);
       ctx.stroke();
       ctx.strokeStyle = visual.color;
-      ctx.lineWidth = visual.width;
+      ctx.lineWidth = core;
       ctx.beginPath();
-      ctx.moveTo(X0, Y0);
+      ctx.moveTo(X, Y);
       ctx.lineTo(X1, Y1);
       ctx.stroke();
     }
@@ -911,12 +932,20 @@ function drawPortal(
 }
 
 /** The finish line: a white strip with a black chequer, like the game's grid. */
-function drawFinish(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number) {
+function drawFinish(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  worldThickness: number,
+  scale: number,
+) {
   const len = Math.hypot(x1 - x0, y1 - y0);
   const ang = Math.atan2(y1 - y0, x1 - x0);
   const cells = Math.max(4, Math.round(len / 12));
   const cell = len / cells;
-  const thick = 10;
+  const thick = Math.max(6, worldThickness * scale);
   ctx.save();
   ctx.translate(x0, y0);
   ctx.rotate(ang);
