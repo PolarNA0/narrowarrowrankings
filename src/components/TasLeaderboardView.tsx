@@ -147,100 +147,102 @@ export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewPro
             set the first.
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-widest text-slate-500">
-                <th className="text-left font-bold px-3 py-2 w-12">#</th>
-                <th className="text-left font-bold px-3 py-2">Player</th>
-                <th className="text-left font-bold px-3 py-2">Arrow</th>
-                <th className="text-right font-bold px-3 py-2">Time</th>
-                <th className="text-right font-bold px-3 py-2 hidden sm:table-cell">Inputs</th>
-                <th className="text-right font-bold px-3 py-2 hidden md:table-cell">Date</th>
-                <th className="text-right font-bold px-3 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry, i) => (
-                <tr key={entry.id} className="border-t border-white/5 hover:bg-white/[0.03]">
-                  <td className="px-3 py-2 font-mono text-slate-500">
-                    {i === 0 ? (
-                      <span className="inline-flex items-center gap-1">
-                        <Trophy className="w-3.5 h-3.5 text-[var(--app-accent)]" />
-                        <span className="text-[9px] font-bold text-[var(--app-accent)]">WR</span>
-                      </span>
-                    ) : (
-                      i + 1
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-slate-200 truncate max-w-[12rem]">
-                    {entry.username}
-                  </td>
-                  <td className="px-3 py-2 text-slate-400">{entry.arrowName}</td>
-                  <td
-                    className={cn(
-                      "px-3 py-2 text-right font-mono",
-                      i === 0 ? "text-[var(--app-accent)] font-bold" : "text-slate-200",
-                    )}
-                  >
-                    {(entry.timeMs / 1000).toFixed(3)}s
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-slate-500 hidden sm:table-cell">
-                    {entry.inputCount}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-500 hidden md:table-cell">
-                    {new Date(entry.createdAt).toLocaleDateString()}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center justify-end gap-0.5">
-                      <TasReplayViewer
-                        levelId={levelId}
-                        levelName={levelName}
-                        username={entry.username}
-                        arrowName={entry.arrowName}
-                        inputs={entry.inputs}
-                        inputCount={entry.inputCount}
-                        timeMs={entry.timeMs}
-                      />
-                      {onLoadRun && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Load into the TAS editor"
-                          onClick={() =>
-                            onLoadRun({
-                              levelId,
-                              arrowName: entry.arrowName,
-                              inputs: entry.inputs,
-                              inputCount: entry.inputCount,
-                            })
-                          }
-                          className="text-slate-500 hover:text-[var(--app-accent)] hover:bg-[var(--app-accent)]/10 h-8 w-8"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {isAdmin && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Remove run from TAS board"
-                          disabled={removingId === entry.id}
-                          onClick={() => void remove(entry)}
-                          className="text-slate-600 hover:text-red-400 hover:bg-red-500/10 h-8 w-8"
-                        >
-                          {removingId === entry.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <X className="w-4 h-4" />
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-widest text-slate-500">
+                  <th className="text-left font-bold px-3 py-2 w-12">#</th>
+                  <th className="text-left font-bold px-3 py-2">Player</th>
+                  <th className="text-left font-bold px-3 py-2">Arrow</th>
+                  <th className="text-right font-bold px-3 py-2">Time</th>
+                  <th className="text-right font-bold px-3 py-2 hidden sm:table-cell">Inputs</th>
+                  <th className="text-right font-bold px-3 py-2 hidden md:table-cell">Date</th>
+                  <th className="text-right font-bold px-3 py-2">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {entries.map((entry, i) => (
+                  <tr key={entry.id} className="border-t border-white/5 hover:bg-white/[0.03]">
+                    <td className="px-3 py-2 font-mono text-slate-500">
+                      {i === 0 ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Trophy className="w-3.5 h-3.5 text-[var(--app-accent)]" />
+                          <span className="text-[9px] font-bold text-[var(--app-accent)]">WR</span>
+                        </span>
+                      ) : (
+                        i + 1
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-slate-200 truncate max-w-[12rem]">
+                      {entry.username}
+                    </td>
+                    <td className="px-3 py-2 text-slate-400">{entry.arrowName}</td>
+                    <td
+                      className={cn(
+                        "px-3 py-2 text-right font-mono",
+                        i === 0 ? "text-[var(--app-accent)] font-bold" : "text-slate-200",
+                      )}
+                    >
+                      {(entry.timeMs / 1000).toFixed(3)}s
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-slate-500 hidden sm:table-cell">
+                      {entry.inputCount}
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-500 hidden md:table-cell">
+                      {new Date(entry.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <TasReplayViewer
+                          levelId={levelId}
+                          levelName={levelName}
+                          username={entry.username}
+                          arrowName={entry.arrowName}
+                          inputs={entry.inputs}
+                          inputCount={entry.inputCount}
+                          timeMs={entry.timeMs}
+                        />
+                        {onLoadRun && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Load into the TAS editor"
+                            onClick={() =>
+                              onLoadRun({
+                                levelId,
+                                arrowName: entry.arrowName,
+                                inputs: entry.inputs,
+                                inputCount: entry.inputCount,
+                              })
+                            }
+                            className="text-slate-500 hover:text-[var(--app-accent)] hover:bg-[var(--app-accent)]/10 h-8 w-8"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Remove run from TAS board"
+                            disabled={removingId === entry.id}
+                            onClick={() => void remove(entry)}
+                            className="text-slate-600 hover:text-red-400 hover:bg-red-500/10 h-8 w-8"
+                          >
+                            {removingId === entry.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <X className="w-4 h-4" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
