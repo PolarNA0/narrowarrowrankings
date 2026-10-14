@@ -466,6 +466,7 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
         : undefined;
       const targetLevel = parsed.levelId ?? namedLevel;
       const targetArrow = parsed.arrowName ?? arrowName;
+      let where = ` · ${targetArrow}`;
       if (targetLevel && (targetLevel !== levelId || targetArrow !== arrowName)) {
         const info = await loadLevel(targetLevel, targetArrow);
         if (!info) return;
@@ -473,6 +474,9 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
         setLevelId(targetLevel);
         setArrowName(targetArrow);
         setRunId("");
+        where = ` for ${info.mapName} · ${targetArrow}`;
+      } else if (!targetLevel && (parsed.mapName || parsed.levelId)) {
+        where = " (level not in the catalog — kept the current level)";
       }
 
       applySymbols(parsed.symbols);
@@ -480,7 +484,7 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
         parsed.finishTick != null
           ? `, finish ${((parsed.finishTick * SIM_TICK_MS) / 1000).toFixed(3)}s`
           : "";
-      setStatus(`Imported ${parsed.symbols.length} inputs${finish}.`);
+      setStatus(`Imported ${parsed.symbols.length} inputs${where}${finish}.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
