@@ -123,6 +123,7 @@ import { ReplayViewer } from "@/components/ReplayViewer";
 import { SkinsView } from "@/components/SkinsView";
 import { TasEditorView } from "@/components/TasEditorView";
 import { TasLeaderboardView, type TasLoadRequest } from "@/components/TasLeaderboardView";
+import { BruteView } from "@/components/BruteView";
 import { fetchBestTasTime } from "@/lib/tas-leaderboard";
 import { useInGameMedals } from "@/hooks/useInGameMedals";
 import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
@@ -362,7 +363,7 @@ export default function App() {
   const { byUsername: playerProfiles, reload: reloadProfiles, myProfile: myLinkedProfile, saveMyProfile } = usePlayerProfiles(adminUser?.id);
 
 
-  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries' | 'fame' | 'targets' | 'clubs' | 'medal-ease' | 'skins' | 'tas' | 'tas-board'>('leaderboard');
+  const [view, setView] = useState<'leaderboard' | 'profile' | 'compare' | 'average' | 'wrs' | 'random' | 'customs' | 'score' | 'completions' | 'tracker' | 'points' | 'voting' | 'rating' | 'position' | 'insights' | 'rivalries' | 'fame' | 'targets' | 'clubs' | 'medal-ease' | 'skins' | 'tas' | 'tas-board' | 'brute'>('leaderboard');
   /** A TAS entry the leaderboard asked the editor to open. */
   const [tasLoad, setTasLoad] = useState<TasLoadRequest | null>(null);
   const [showRankLegend, setShowRankLegend] = useState(false);
@@ -1200,7 +1201,7 @@ export default function App() {
 
   const navigateView = (next: NavigableView) => {
     setView(next);
-    if (!["leaderboard", "customs", "random", "completions", "voting", "rating", "tas", "tas-board"].includes(next)) void fetchAllLevels();
+    if (!["leaderboard", "customs", "random", "completions", "voting", "rating", "tas", "tas-board", "brute"].includes(next)) void fetchAllLevels();
   };
 
   return (
@@ -2072,6 +2073,8 @@ export default function App() {
               navigateView('tas');
             }}
           />
+        ) : view === 'brute' ? (
+          <BruteView isAdmin={isAdmin} />
         ) : view === 'score' ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">

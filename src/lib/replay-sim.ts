@@ -292,6 +292,12 @@ function loadEngine(): Promise<EngineModule> {
 export interface ReplayEngine {
   /** Step the engine with one input symbol, returning the resulting sample. */
   step(symbol: number): SimPoint;
+  /**
+   * Step the engine and return its cheap terminal-state code: 0 playing,
+   * 1 finish, 2 dead. Avoids the full-state JSON `step` parses, so a search
+   * looping over thousands of candidate runs stays fast.
+   */
+  stepCode(symbol: number): number;
   /** Reset to the spawn pose (engine rebuild) and return the initial sample. */
   reset(): SimPoint;
   /** Serialize the full engine state so a later `restore` can resume exactly. */
@@ -352,6 +358,10 @@ export async function createReplayEngine(
     step(symbol) {
       engine.process_ticks([symbolToInput(symbol)]);
       return read(engine);
+    },
+    stepCode(symbol) {
+      engine.process_ticks([symbolToInput(symbol)]);
+      return engine.player_state_code();
     },
     reset() {
       engine.free();
