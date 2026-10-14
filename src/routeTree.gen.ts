@@ -23,6 +23,7 @@ import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-d
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
 import { Route as ApiPacksSlugRouteImport } from './routes/api/packs.$slug'
 import { Route as ApiPublicCategoryWrCheckRouteImport } from './routes/api/public/category-wr-check'
+import { Route as ApiPublicTasWrCheckRouteImport } from './routes/api/public/tas-wr-check'
 import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
 import { Route as ApiSkinsSplatRouteImport } from './routes/api/skins.$'
 import { Route as ApiTasLeaderboardLevelRouteImport } from './routes/api/tas-leaderboard.$level'
@@ -99,6 +100,11 @@ const ApiPublicCategoryWrCheckRoute =
     path: '/api/public/category-wr-check',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicTasWrCheckRoute = ApiPublicTasWrCheckRouteImport.update({
+  id: '/api/public/tas-wr-check',
+  path: '/api/public/tas-wr-check',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRunsRunIdRoute = ApiRunsRunIdRouteImport.update({
   id: '/api/runs/$runId',
   path: '/api/runs/$runId',
@@ -134,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
+  '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
   '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
@@ -154,6 +161,7 @@ export interface FileRoutesByTo {
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
+  '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
   '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
@@ -175,6 +183,7 @@ export interface FileRoutesById {
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
+  '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
   '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
@@ -197,6 +206,7 @@ export interface FileRouteTypes {
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
+    | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
     | '/api/skins/$'
     | '/api/tas-leaderboard/$level'
@@ -217,6 +227,7 @@ export interface FileRouteTypes {
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
+    | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
     | '/api/skins/$'
     | '/api/tas-leaderboard/$level'
@@ -237,6 +248,7 @@ export interface FileRouteTypes {
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
+    | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
     | '/api/skins/$'
     | '/api/tas-leaderboard/$level'
@@ -258,6 +270,7 @@ export interface RootRouteChildren {
   ApiLevelDetailsLevelIdRoute: typeof ApiLevelDetailsLevelIdRoute
   ApiPacksSlugRoute: typeof ApiPacksSlugRoute
   ApiPublicCategoryWrCheckRoute: typeof ApiPublicCategoryWrCheckRoute
+  ApiPublicTasWrCheckRoute: typeof ApiPublicTasWrCheckRoute
   ApiRunsRunIdRoute: typeof ApiRunsRunIdRoute
   ApiSkinsSplatRoute: typeof ApiSkinsSplatRoute
   ApiTasLeaderboardLevelRoute: typeof ApiTasLeaderboardLevelRoute
@@ -365,6 +378,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicCategoryWrCheckRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/tas-wr-check': {
+      id: '/api/public/tas-wr-check'
+      path: '/api/public/tas-wr-check'
+      fullPath: '/api/public/tas-wr-check'
+      preLoaderRoute: typeof ApiPublicTasWrCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/runs/$runId': {
       id: '/api/runs/$runId'
       path: '/api/runs/$runId'
@@ -410,6 +430,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLevelDetailsLevelIdRoute: ApiLevelDetailsLevelIdRoute,
   ApiPacksSlugRoute: ApiPacksSlugRoute,
   ApiPublicCategoryWrCheckRoute: ApiPublicCategoryWrCheckRoute,
+  ApiPublicTasWrCheckRoute: ApiPublicTasWrCheckRoute,
   ApiRunsRunIdRoute: ApiRunsRunIdRoute,
   ApiSkinsSplatRoute: ApiSkinsSplatRoute,
   ApiTasLeaderboardLevelRoute: ApiTasLeaderboardLevelRoute,

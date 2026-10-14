@@ -27,15 +27,31 @@ const DEFAULT_TEMPLATES: Record<Slot, string> = {
 
 const DEFAULT_EMOJIS: Record<Slot, string> = { narrow: "🏹", speedy: "💨", energy: "⚡" };
 
-/** Admin controls for the Discord category-record notifier. */
+const DEFAULT_TAS_TEMPLATES: Record<Slot, string> = {
+  narrow:
+    "{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR -{wrDiff}] [TAS -{catDiff}]",
+  speedy:
+    "{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR -{wrDiff}] [TAS -{catDiff}]",
+  energy:
+    "{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR -{wrDiff}] [TAS -{catDiff}]",
+};
+
+/** Admin controls for the Discord record notifiers (real + TAS). */
 export function AdminDiscordTracker() {
   const [webhookUrl, setWebhookUrl] = React.useState("");
   const [enabled, setEnabled] = React.useState(true);
   const [intervalMinutes, setIntervalMinutes] = React.useState(5);
   const [templates, setTemplates] = React.useState<Record<Slot, string>>(DEFAULT_TEMPLATES);
   const [emojis, setEmojis] = React.useState<Record<Slot, string>>(DEFAULT_EMOJIS);
+  const [tasEnabled, setTasEnabled] = React.useState(true);
+  const [tasIntervalMinutes, setTasIntervalMinutes] = React.useState(5);
+  const [tasTemplates, setTasTemplates] =
+    React.useState<Record<Slot, string>>(DEFAULT_TAS_TEMPLATES);
+  const [tasEmojis, setTasEmojis] = React.useState<Record<Slot, string>>(DEFAULT_EMOJIS);
+  const [tasWebhookUrl, setTasWebhookUrl] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [checking, setChecking] = React.useState(false);
+  const [tasChecking, setTasChecking] = React.useState(false);
 
   React.useEffect(() => {
     (async () => {
@@ -48,6 +64,11 @@ export function AdminDiscordTracker() {
         setIntervalMinutes(Number(data.intervalMinutes) || 5);
         setTemplates({ ...DEFAULT_TEMPLATES, ...(data.templates || {}) });
         setEmojis({ ...DEFAULT_EMOJIS, ...(data.emojis || {}) });
+        setTasEnabled(data.tasEnabled !== false);
+        setTasIntervalMinutes(Number(data.tasIntervalMinutes) || Number(data.intervalMinutes) || 5);
+        setTasTemplates({ ...DEFAULT_TAS_TEMPLATES, ...(data.tasTemplates || {}) });
+        setTasEmojis({ ...DEFAULT_EMOJIS, ...(data.tasEmojis || {}) });
+        setTasWebhookUrl(data.tasWebhookUrl || "");
       } catch {
         /* first-time setup */
       }
@@ -63,8 +84,13 @@ export function AdminDiscordTracker() {
         intervalMinutes: Math.max(5, Number(intervalMinutes) || 5),
         templates,
         emojis,
+        tasEnabled,
+        tasIntervalMinutes: Math.max(5, Number(tasIntervalMinutes) || 5),
+        tasTemplates,
+        tasEmojis,
+        tasWebhookUrl: tasWebhookUrl.trim(),
       });
-      toast.success("Discord tracker saved");
+      toast.success("Discord trackers saved");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save");
     } finally {
@@ -104,16 +130,49 @@ export function AdminDiscordTracker() {
     }
   };
 
+  const sendTasTest = async () => {
+    try {
+      const res = await fetch("/api/public/tas-wr-check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ webhookUrl: (tasWebhookUrl || webhookUrl).trim() }),
+      });
+      const payload = await res.json();
+      if (payload.ok) toast.success("TAS test message sent to Discord");
+      else toast.error(payload.error || `Discord replied ${payload.status}`);
+    } catch {
+      toast.error("Could not reach the webhook");
+    }
+  };
+
+  const runTasCheck = async () => {
+    setTasChecking(true);
+    try {
+      const res = await fetch("/api/public/tas-wr-check?force=1");
+      const payload = await res.json();
+      toast.success(
+        payload.baseline
+          ? `Baseline saved for ${payload.tracked} TAS records`
+          : `${payload.newRecords} new TAS records, ${payload.sent} sent`,
+      );
+    } catch {
+      toast.error("TAS record check failed");
+    } finally {
+      setTasChecking(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="bg-white/5 border-white/10">
         <CardHeader className="border-b border-white/10 pb-4">
           <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
-            <Webhook className="w-4 h-4 text-[var(--app-accent)]" /> Discord Webhook
+            <Webhook className="w-4 h-4 text-[var(--app-accent)]" /> WR Webhook
           </CardTitle>
           <CardDescription>
-            Paste a Discord webhook URL — category world records (non-overall arrow records) are announced there.
-            Records are checked automatically every 5 minutes.
+            Paste a Discord webhook URL — real-game category world records (non-overall arrow
+            records) are announced there. Records are checked automatically every 5 minutes. The TAS
+            tracker below shares this webhook.
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-6 space-y-4">
@@ -141,11 +200,21 @@ export function AdminDiscordTracker() {
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={sendTest} variant="outline" className="border-white/10 hover:bg-white/5">
+            <Button
+              onClick={sendTest}
+              variant="outline"
+              className="border-white/10 hover:bg-white/5"
+            >
               <Send className="w-4 h-4 mr-2" /> Send test
             </Button>
-            <Button onClick={runCheck} disabled={checking} variant="outline" className="border-white/10 hover:bg-white/5">
-              <RefreshCw className={checking ? "w-4 h-4 mr-2 animate-spin" : "w-4 h-4 mr-2"} /> Check records now
+            <Button
+              onClick={runCheck}
+              disabled={checking}
+              variant="outline"
+              className="border-white/10 hover:bg-white/5"
+            >
+              <RefreshCw className={checking ? "w-4 h-4 mr-2 animate-spin" : "w-4 h-4 mr-2"} />{" "}
+              Check records now
             </Button>
           </div>
         </CardContent>
@@ -153,7 +222,9 @@ export function AdminDiscordTracker() {
 
       <Card className="bg-white/5 border-white/10">
         <CardHeader className="border-b border-white/10 pb-4">
-          <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-400">Messages</CardTitle>
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-400">
+            Messages
+          </CardTitle>
           <CardDescription>
             Tags: {"{emoji} {player} {level} {time} {wrDiff} {catDiff} {previous} {arrow}"}
           </CardDescription>
@@ -162,7 +233,9 @@ export function AdminDiscordTracker() {
           {SLOTS.map(({ key, label }) => (
             <div key={key} className="space-y-2">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">{label}</span>
+                <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                  {label}
+                </span>
                 <Input
                   value={emojis[key]}
                   onChange={(e) => setEmojis((prev) => ({ ...prev, [key]: e.target.value }))}
@@ -178,7 +251,109 @@ export function AdminDiscordTracker() {
               />
             </div>
           ))}
-          <Button onClick={save} disabled={saving} className="bg-[var(--app-accent)] text-slate-950 font-bold hover:bg-[var(--app-accent)]/80">
+          <Button
+            onClick={save}
+            disabled={saving}
+            className="bg-[var(--app-accent)] text-slate-950 font-bold hover:bg-[var(--app-accent)]/80"
+          >
+            <Save className="w-4 h-4 mr-2" /> {saving ? "Saving..." : "Save settings"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-white/5 border-white/10">
+        <CardHeader className="border-b border-white/10 pb-4">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
+            <Webhook className="w-4 h-4 text-[var(--app-accent)]" /> TAS Webhook
+          </CardTitle>
+          <CardDescription>
+            Announces TAS world records only — the fastest tool-assisted run per level and arrow.
+            Uses the same webhook above unless you paste a separate one here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6 space-y-4">
+          <Input
+            value={tasWebhookUrl}
+            onChange={(e) => setTasWebhookUrl(e.target.value)}
+            placeholder="Leave blank to reuse the webhook above"
+            className="bg-black/40 border-white/10 font-mono text-xs"
+          />
+          <div className="flex items-center gap-3">
+            <Switch checked={tasEnabled} onCheckedChange={setTasEnabled} />
+            <span className="text-xs text-slate-400">TAS announcements enabled</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Input
+              type="number"
+              min={5}
+              step={5}
+              value={tasIntervalMinutes}
+              onChange={(e) => setTasIntervalMinutes(Number(e.target.value))}
+              className="w-24 bg-black/40 border-white/10 text-xs"
+            />
+            <span className="text-xs text-slate-400">
+              Minutes between TAS checks (minimum 5). Save to apply.
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={sendTasTest}
+              variant="outline"
+              className="border-white/10 hover:bg-white/5"
+            >
+              <Send className="w-4 h-4 mr-2" /> Send test
+            </Button>
+            <Button
+              onClick={runTasCheck}
+              disabled={tasChecking}
+              variant="outline"
+              className="border-white/10 hover:bg-white/5"
+            >
+              <RefreshCw className={tasChecking ? "w-4 h-4 mr-2 animate-spin" : "w-4 h-4 mr-2"} />{" "}
+              Check TAS now
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-white/5 border-white/10">
+        <CardHeader className="border-b border-white/10 pb-4">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-400">
+            TAS Messages
+          </CardTitle>
+          <CardDescription>
+            {
+              "Tags: {emoji} {player} {level} {time} {wr} {wrDiff} {catDiff} {previous} {arrow} — {wrDiff} is how far the TAS is ahead of the real WR, {catDiff} the gain over the previous TAS."
+            }
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6 space-y-5">
+          {SLOTS.map(({ key, label }) => (
+            <div key={key} className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                  {label}
+                </span>
+                <Input
+                  value={tasEmojis[key]}
+                  onChange={(e) => setTasEmojis((prev) => ({ ...prev, [key]: e.target.value }))}
+                  className="w-32 bg-black/40 border-white/10 text-xs"
+                  placeholder="emoji"
+                />
+              </div>
+              <Textarea
+                value={tasTemplates[key]}
+                onChange={(e) => setTasTemplates((prev) => ({ ...prev, [key]: e.target.value }))}
+                rows={3}
+                className="bg-black/40 border-white/10 font-mono text-xs"
+              />
+            </div>
+          ))}
+          <Button
+            onClick={save}
+            disabled={saving}
+            className="bg-[var(--app-accent)] text-slate-950 font-bold hover:bg-[var(--app-accent)]/80"
+          >
             <Save className="w-4 h-4 mr-2" /> {saving ? "Saving..." : "Save settings"}
           </Button>
         </CardContent>
