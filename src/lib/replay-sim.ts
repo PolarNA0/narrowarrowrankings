@@ -204,10 +204,25 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
 
     const type = obstacle.wall_type ?? "normal";
     const thickness = obstacle.wall_thickness ?? 8;
-    for (let i = 0; i + 1 < pts.length; i++) {
-      const a = pts[i];
-      const b = pts[i + 1];
-      if (a?.x == null || a?.y == null || b?.x == null || b?.y == null) continue;
+    const pivot =
+      obstacle.rotation_pivot?.x != null && obstacle.rotation_pivot?.y != null
+        ? { x: obstacle.rotation_pivot.x, y: obstacle.rotation_pivot.y }
+        : undefined;
+    const rotationSpeed = obstacle.rotation_speed ?? undefined;
+
+    // Some obstacles carry a single point, not a polyline: the editor lets you
+    // drop a wall as a dot, and the engine still collides with it (a
+    // zero-length segment with the same thickness). Rendering it as a dot keeps
+    // those collisions visible instead of reading as a bonk against nothing.
+    const valid = pts.filter((p): p is { x: number; y: number } => p?.x != null && p?.y != null);
+    if (valid.length === 1) {
+      const p = valid[0];
+      walls.push({ ax: p.x, ay: p.y, bx: p.x, by: p.y, type, thickness, pivot, rotationSpeed });
+      continue;
+    }
+    for (let i = 0; i + 1 < valid.length; i++) {
+      const a = valid[i];
+      const b = valid[i + 1];
       walls.push({
         ax: a.x,
         ay: a.y,
@@ -215,11 +230,8 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
         by: b.y,
         type,
         thickness,
-        pivot:
-          obstacle.rotation_pivot?.x != null && obstacle.rotation_pivot?.y != null
-            ? { x: obstacle.rotation_pivot.x, y: obstacle.rotation_pivot.y }
-            : undefined,
-        rotationSpeed: obstacle.rotation_speed ?? undefined,
+        pivot,
+        rotationSpeed,
       });
     }
   }
