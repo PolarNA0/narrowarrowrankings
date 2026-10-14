@@ -128,6 +128,20 @@ const SYMBOL_BY_NAME: Record<string, number> = {
   both: 3,
 };
 
+/**
+ * Map a loose arrow label to a canonical name. External files spell it
+ * differently — "speedy", "Energy Arrow", the game's "speedy arrow" — so match
+ * on the substring the engine keys off rather than an exact string.
+ */
+function normaliseArrowName(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const n = value.toLowerCase();
+  if (n.includes("speedy")) return "Speedy Arrow";
+  if (n.includes("energy")) return "Energy Arrow";
+  if (n.includes("narrow")) return "Narrow Arrow";
+  return undefined;
+}
+
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -181,10 +195,30 @@ export function parseTasFile(text: string): ParsedTasFile {
     throw new Error("That file is not valid JSON.");
   }
   const obj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  // Some exporters nest the level under a `level` object; flatten it so the
+  // same lookup works whether the fields are top-level or nested.
+  const levelObj = (
+    obj.level && typeof obj.level === "object" ? obj.level : {}
+  ) as Record<string, unknown>;
   const meta = {
-    arrowName: asString(obj.arrow_name) ?? asString(obj.arrowName) ?? asString(obj.arrow),
-    levelId: asString(obj.level_id) ?? asString(obj.levelId),
-    mapName: asString(obj.map_name) ?? asString(obj.mapName),
+    arrowName: normaliseArrowName(
+      asString(obj.arrow_name) ??
+        asString(obj.arrowName) ??
+        asString(obj.arrow) ??
+        asString(levelObj.arrow),
+    ),
+    levelId:
+      asString(obj.level_id) ??
+      asString(obj.levelId) ??
+      asString(levelObj.levelId) ??
+      asString(levelObj.level_id) ??
+      asString(levelObj.id),
+    mapName:
+      asString(obj.map_name) ??
+      asString(obj.mapName) ??
+      asString(levelObj.name) ??
+      asString(levelObj.map_name) ??
+      asString(levelObj.mapName),
     finishTick: asNumber(obj.f) ?? asNumber(obj.finish_tick) ?? asNumber(obj.finishTick),
   };
 
