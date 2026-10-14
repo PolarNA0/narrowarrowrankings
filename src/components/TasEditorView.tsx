@@ -50,6 +50,7 @@ import { ReplayStage } from "@/components/ReplayViewer";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
 import { TasReplayViewer } from "@/components/ReplayViewer";
+import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 import type { TasLoadRequest } from "@/components/TasLeaderboardView";
 
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
@@ -108,6 +109,32 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
   // Community TAS board for the loaded level, plus the submit dialog state.
   const [tasEntries, setTasEntries] = React.useState<TasEntry[]>([]);
   const [tasOpen, setTasOpen] = React.useState(false);
+  // Compare ghosts for the TAS board below: the level's real-game runs and its
+  // other TAS entries, so a TAS run can be watched against either.
+  const compareCandidates = React.useMemo<CompareCandidate[]>(() => {
+    const human: CompareCandidate[] = boardEntries
+      .filter((e) => !e.isLegacy && e.run_id > 0)
+      .map((e) => ({
+        id: `run-${e.run_id}`,
+        runId: e.run_id,
+        username: e.username,
+        inputs: "",
+        inputCount: 0,
+        arrowName: e.arrow_name,
+        timeMs: Math.round(e.completion_time * 1000),
+        kind: "human" as const,
+      }));
+    const tas: CompareCandidate[] = tasEntries.map((e) => ({
+      id: `tas-${e.id}`,
+      username: e.username,
+      inputs: e.inputs,
+      inputCount: e.inputCount,
+      arrowName: e.arrowName,
+      timeMs: e.timeMs,
+      kind: "tas" as const,
+    }));
+    return [...human, ...tas];
+  }, [boardEntries, tasEntries]);
 
   const engineRef = React.useRef<ReplayEngine | null>(null);
   const symbolsRef = React.useRef<number[]>([]);
@@ -953,7 +980,7 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
                         inputCount={entry.inputCount}
                         timeMs={entry.timeMs}
                         className="h-6 w-6"
-                        boardEntries={tasEntries.filter((e) => e.id !== entry.id)}
+                        boardEntries={compareCandidates.filter((c) => c.id !== `tas-${entry.id}`)}
                       />
                     </div>
                   ))}
