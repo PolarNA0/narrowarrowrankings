@@ -31,6 +31,7 @@ import {
   REPLAY_TICK_MS,
   decodeInputSymbols,
   encodeInputSymbols,
+  parseTasFile,
   summariseReplay,
   type ReplaySymbolKey,
 } from "@/lib/replay";
@@ -454,13 +455,32 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
   };
 
   const importInputs = async (file: File) => {
+    setError(null);
+    setStatus(null);
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text) as { inputs?: string; input_count?: number };
-      if (!parsed.inputs) throw new Error("File has no `inputs` field");
-      const decoded = decodeInputSymbols(parsed.inputs, parsed.input_count);
-      applySymbols(decoded);
-      setStatus(`Imported ${decoded.length} inputs.`);
+      const parsed = parseTasFile(await file.text());
+
+      // A file that names its level/arrow can be opened straight into the editor.
+      const namedLevel = parsed.mapName
+        ? LEVELS.find((l) => l.name.toLowerCase() === parsed.mapName!.toLowerCase())?.id
+        : undefined;
+      const targetLevel = parsed.levelId ?? namedLevel;
+      const targetArrow = parsed.arrowName ?? arrowName;
+      if (targetLevel && (targetLevel !== levelId || targetArrow !== arrowName)) {
+        const info = await loadLevel(targetLevel, targetArrow);
+        if (!info) return;
+        setLoaded(info);
+        setLevelId(targetLevel);
+        setArrowName(targetArrow);
+        setRunId("");
+      }
+
+      applySymbols(parsed.symbols);
+      const finish =
+        parsed.finishTick != null
+          ? `, finish ${((parsed.finishTick * SIM_TICK_MS) / 1000).toFixed(3)}s`
+          : "";
+      setStatus(`Imported ${parsed.symbols.length} inputs${finish}.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -728,7 +748,7 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
                   <label className="cursor-pointer">
                     <input
                       type="file"
-                      accept="application/json"
+                      accept=".json,.txt,application/json,text/plain"
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];

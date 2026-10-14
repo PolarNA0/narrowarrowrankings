@@ -101,6 +101,117 @@ export function encodeInputSymbols(symbols: number[]): string {
 }
 
 /**
+ * A TAS file in the wild comes in a few shapes: the editor's own export
+ * (`{inputs, input_count}`), the offline optimiser's output (`{syms, arrow}`),
+ * or a run-length list (`{segments:[{key,length}]}`). This normalises all of
+ * them to the raw symbol stream so any of them can be imported.
+ */
+export interface ParsedTasFile {
+  symbols: number[];
+  arrowName?: string;
+  levelId?: string;
+  mapName?: string;
+  finishTick?: number;
+}
+
+const SYMBOL_BY_NAME: Record<string, number> = {
+  n: 0,
+  neutral: 0,
+  coast: 0,
+  none: 0,
+  r: 1,
+  right: 1,
+  l: 2,
+  left: 2,
+  b: 3,
+  brake: 3,
+  both: 3,
+};
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/** Decode a symbol list: plain 0-3 values, names ("right"), or run-length rows. */
+function symbolsFromList(value: unknown): number[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const out: number[] = [];
+  for (const item of value) {
+    if (typeof item === "number") {
+      if (item < 0 || item > 3 || !Number.isInteger(item)) return null;
+      out.push(item);
+      continue;
+    }
+    if (typeof item === "string") {
+      const sym = SYMBOL_BY_NAME[item.trim().toLowerCase()];
+      if (sym === undefined) return null;
+      out.push(sym);
+      continue;
+    }
+    if (item && typeof item === "object") {
+      const row = item as Record<string, unknown>;
+      const name = asString(row.key) ?? asString(row.short) ?? asString(row.input);
+      const sym =
+        typeof row.symbol === "number"
+          ? row.symbol & 3
+          : name
+            ? SYMBOL_BY_NAME[name.toLowerCase()]
+            : undefined;
+      if (sym === undefined) return null;
+      const length = Number(row.length ?? row.count ?? row.ticks ?? row.hold ?? 1);
+      const n = Number.isFinite(length) && length > 0 ? Math.floor(length) : 1;
+      for (let i = 0; i < n; i++) out.push(sym);
+      continue;
+    }
+    return null;
+  }
+  return out.length ? out : null;
+}
+
+/** Parse a TAS file (JSON, whatever shape) into the raw symbol stream. */
+export function parseTasFile(text: string): ParsedTasFile {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new Error("That file is not valid JSON.");
+  }
+  const obj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const meta = {
+    arrowName: asString(obj.arrow_name) ?? asString(obj.arrowName) ?? asString(obj.arrow),
+    levelId: asString(obj.level_id) ?? asString(obj.levelId),
+    mapName: asString(obj.map_name) ?? asString(obj.mapName),
+    finishTick: asNumber(obj.f) ?? asNumber(obj.finish_tick) ?? asNumber(obj.finishTick),
+  };
+
+  const inputs = asString(obj.inputs);
+  if (inputs) {
+    const count = asNumber(obj.input_count) ?? asNumber(obj.inputCount);
+    const symbols = decodeInputSymbols(inputs, count);
+    if (!symbols.length) throw new Error("The file's `inputs` field decoded to nothing.");
+    return { symbols, ...meta };
+  }
+
+  const symbols =
+    symbolsFromList(
+      obj.syms ??
+        obj.symbols ??
+        obj.segments ??
+        obj.input_list ??
+        obj.inputs_list ??
+        obj.sequence ??
+        (Array.isArray(obj.inputs) ? obj.inputs : undefined),
+    ) ?? symbolsFromList(raw);
+  if (symbols) return { symbols, ...meta };
+
+  throw new Error("Unrecognised TAS file — expected `inputs` (base64) or a symbol list.");
+}
+
+/**
  * Collapse the raw symbol stream into held-input segments, e.g. "right 72ms".
  * Ported to milliseconds using the 240Hz tick rate.
  */
