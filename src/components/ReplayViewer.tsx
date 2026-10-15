@@ -578,6 +578,9 @@ interface StageProps {
   overlays?: ReplayOverlay[];
 }
 
+/** Stable empty list so `overlays = []` never re-fires the draw effect. */
+const NO_OVERLAYS: ReplayOverlay[] = [];
+
 /** Another run replayed on the same stage as the primary one. */
 export interface ReplayOverlay {
   id: string;
@@ -587,6 +590,8 @@ export interface ReplayOverlay {
   arrowRadius: number;
   /** Label drawn beside the ghost arrow, e.g. "Ch4mpY_TAS · 13.825s". */
   label?: string;
+  /** Last tick the ghost's trail layer was painted at (internal draw cache). */
+  cachedKey?: string;
 }
 
 export function ReplayStage({
@@ -605,34 +610,40 @@ export function ReplayStage({
   onScrub,
   onSpeed,
   hideControls,
-  overlays = [],
+  overlays = NO_OVERLAYS,
 }: StageProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  // The animation loop and the resize listener both call this so a new frame or
+  // a relayout repaints without the draw effect re-running (and without React
+  // re-rendering the whole stage 60 times a second).
+  const drawRef = React.useRef<() => void>(() => {});
+  // The draw effect deliberately omits `frame`, so `draw` reads the current
+  // frame through this ref instead of a stale closure.
+  const frameRef = React.useRef(frame);
+  frameRef.current = frame;
 
   React.useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const parent = canvas.parentElement;
     if (!parent) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const width = parent.clientWidth;
-    const height = 340;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-    // The game paints on a dark field, not pure black.
-    ctx.fillStyle = "#07070b";
-    ctx.fillRect(0, 0, width, height);
 
-    // World bounds: the level plus the simulated path. Rotating walls sweep a
-    // circle around their pivot, so bound them by that circle (not just their
-    // start pose) to keep the whole animation in frame.
+    const HEIGHT = 340;
+    let width = 0;
+    let dpr = 1;
+    let scale = 1;
+    let offX = 0;
+    let offY = 0;
+    let tx = (x: number) => x;
+    let ty = (y: number) => y;
+    let base: HTMLCanvasElement | null = null;
+    const ghostTrails = new Map<string, HTMLCanvasElement>();
+    let lastUpto = -1;
+
+    // World bounds only depend on the level and the runs, not the current frame,
+    // so they are computed once here instead of on every repaint.
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
@@ -689,195 +700,318 @@ export function ReplayStage({
     maxY += pad;
     const spanX = Math.max(1, maxX - minX);
     const spanY = Math.max(1, maxY - minY);
-    const scale = Math.min(width / spanX, height / spanY);
-    const offX = (width - spanX * scale) / 2 - minX * scale;
-    const offY = (height - spanY * scale) / 2 - minY * scale;
-    const tx = (wx: number) => wx * scale + offX;
-    const ty = (wy: number) => wy * scale + offY;
+    const levelScale = (w: number, h: number) => Math.min(w / spanX, h / spanY);
+    scale = levelScale(width || parent.clientWidth, HEIGHT);
 
-    if (sim.path.length === 0) return;
-    const safeFrame = Number.isFinite(frame) ? Math.floor(frame) : 0;
-    const upto = Math.max(0, Math.min(safeFrame, sim.path.length - 1));
-    // One sample per 240Hz tick, matching `simulateRun`'s sampling.
-    const tick = upto;
+    // Rotating walls move every frame, so they are drawn live on top of the
+    // cached static layer; the rest are painted once.
+    const rotatingWalls = geometry.walls.filter((w) => w.pivot && w.rotationSpeed);
+    const staticWalls = geometry.walls.filter((w) => !(w.pivot && w.rotationSpeed));
 
-    // Zones first: filled areas the arrow passes through (boost/ice/nosteer/…).
-    for (const z of geometry.zones) {
-      const visual = wallVisual(z.type);
-      const x = tx(Math.min(z.x0, z.x1));
-      const y = ty(Math.min(z.y0, z.y1));
-      const w = Math.abs(tx(z.x1) - tx(z.x0));
-      const h = Math.abs(ty(z.y1) - ty(z.y0));
-      ctx.fillStyle = withAlpha(visual.color, 0.14);
-      ctx.fillRect(x, y, w, h);
-      ctx.strokeStyle = withAlpha(visual.color, 0.55);
-      ctx.lineWidth = 1;
-      ctx.setLineDash([6, 4]);
-      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-      ctx.setLineDash([]);
-    }
-
-    // Portals: a dashed segment with a chevron showing the travel direction.
-    for (const p of geometry.portals) {
-      drawPortal(ctx, p, tx, ty);
-    }
-
-    // Walls, each rotated to the pose the engine has it in at this frame.
-    ctx.lineCap = "round";
-    for (const w of geometry.walls) {
-      let ax = w.ax;
-      let ay = w.ay;
-      let bx = w.bx;
-      let by = w.by;
-      if (w.pivot && w.rotationSpeed) {
-        const ang = w.rotationSpeed * tick;
-        const cosA = Math.cos(ang);
-        const sinA = Math.sin(ang);
-        const rotate = (px: number, py: number) => {
-          const dx = px - w.pivot!.x;
-          const dy = py - w.pivot!.y;
-          return { x: w.pivot!.x + dx * cosA - dy * sinA, y: w.pivot!.y + dx * sinA + dy * cosA };
-        };
-        const a = rotate(ax, ay);
-        const b = rotate(bx, by);
-        ax = a.x;
-        ay = a.y;
-        bx = b.x;
-        by = b.y;
+    /** Paint walls (rotated to `tick` when they spin) onto a 2D context. */
+    const paintWalls = (g: CanvasRenderingContext2D, walls: SimWall[], tick: number) => {
+      g.lineCap = "round";
+      for (const w of walls) {
+        let ax = w.ax;
+        let ay = w.ay;
+        let bx = w.bx;
+        let by = w.by;
+        if (w.pivot && w.rotationSpeed) {
+          const ang = w.rotationSpeed * tick;
+          const cosA = Math.cos(ang);
+          const sinA = Math.sin(ang);
+          const rotate = (px: number, py: number) => {
+            const dx = px - w.pivot!.x;
+            const dy = py - w.pivot!.y;
+            return { x: w.pivot!.x + dx * cosA - dy * sinA, y: w.pivot!.y + dx * sinA + dy * cosA };
+          };
+          const a = rotate(ax, ay);
+          const b = rotate(bx, by);
+          ax = a.x;
+          ay = a.y;
+          bx = b.x;
+          by = b.y;
+        }
+        const visual = wallVisual(w.type);
+        const X0 = tx(ax);
+        const Y0 = ty(ay);
+        const X1 = tx(bx);
+        const Y1 = ty(by);
+        if (visual.kind === "finish") {
+          drawFinish(g, X0, Y0, X1, Y1, w.thickness, scale);
+          continue;
+        }
+        // Draw at the wall's real thickness, in world units. The engine collides
+        // at `arrowRadius + thickness / 2`, so a wall drawn thinner than it
+        // collides reads as the arrow bonking against nothing. A small floor
+        // keeps the thinnest walls visible at the replay's zoom.
+        const core = Math.max(1.5, w.thickness * scale);
+        const X = X0;
+        const Y = Y0;
+        if (ax === bx && ay === by) {
+          // A single-point wall: the engine collides with it as a zero-length
+          // segment, so draw the dot it really is.
+          g.fillStyle = withAlpha(visual.color, 0.16);
+          g.beginPath();
+          g.arc(X, Y, core * 1.8, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = visual.color;
+          g.beginPath();
+          g.arc(X, Y, core / 2, 0, Math.PI * 2);
+          g.fill();
+          continue;
+        }
+        // A faint wide pass under a crisp core reads as the game's neon walls.
+        g.strokeStyle = withAlpha(visual.color, 0.16);
+        g.lineWidth = Math.max(3, core * 2.4);
+        g.beginPath();
+        g.moveTo(X, Y);
+        g.lineTo(X1, Y1);
+        g.stroke();
+        g.strokeStyle = visual.color;
+        g.lineWidth = core;
+        g.beginPath();
+        g.moveTo(X, Y);
+        g.lineTo(X1, Y1);
+        g.stroke();
       }
-      const visual = wallVisual(w.type);
-      const X0 = tx(ax);
-      const Y0 = ty(ay);
-      const X1 = tx(bx);
-      const Y1 = ty(by);
-      if (visual.kind === "finish") {
-        drawFinish(ctx, X0, Y0, X1, Y1, w.thickness, scale);
-        continue;
-      }
-      // Draw at the wall's real thickness, in world units. The engine collides
-      // at `arrowRadius + thickness / 2`, so a wall drawn thinner than it
-      // collides reads as the arrow bonking against nothing. A small floor
-      // keeps the thinnest walls visible at the replay's zoom.
-      const core = Math.max(1.5, w.thickness * scale);
-      const X = X0;
-      const Y = Y0;
-      if (ax === bx && ay === by) {
-        // A single-point wall: the engine collides with it as a zero-length
-        // segment, so draw the dot it really is.
-        ctx.fillStyle = withAlpha(visual.color, 0.16);
-        ctx.beginPath();
-        ctx.arc(X, Y, core * 1.8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = visual.color;
-        ctx.beginPath();
-        ctx.arc(X, Y, core / 2, 0, Math.PI * 2);
-        ctx.fill();
-        continue;
-      }
-      // A faint wide pass under a crisp core reads as the game's neon walls.
-      ctx.strokeStyle = withAlpha(visual.color, 0.16);
-      ctx.lineWidth = Math.max(3, core * 2.4);
-      ctx.beginPath();
-      ctx.moveTo(X, Y);
-      ctx.lineTo(X1, Y1);
-      ctx.stroke();
-      ctx.strokeStyle = visual.color;
-      ctx.lineWidth = core;
-      ctx.beginPath();
-      ctx.moveTo(X, Y);
-      ctx.lineTo(X1, Y1);
-      ctx.stroke();
-    }
+    };
 
-    // Ghost runs first so the primary run's trail and arrow stay on top.
-    for (const o of overlays) {
+    /** Paint everything that never changes as the frame advances onto an offscreen layer. */
+    const paintBase = () => {
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(width * dpr));
+      c.height = Math.max(1, Math.round(HEIGHT * dpr));
+      const g = c.getContext("2d");
+      if (!g) return c;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.fillStyle = "#07070b";
+      g.fillRect(0, 0, width, HEIGHT);
+
+      // Zones first: filled areas the arrow passes through (boost/ice/nosteer/…).
+      for (const z of geometry.zones) {
+        const visual = wallVisual(z.type);
+        const x = tx(Math.min(z.x0, z.x1));
+        const y = ty(Math.min(z.y0, z.y1));
+        const w = Math.abs(tx(z.x1) - tx(z.x0));
+        const h = Math.abs(ty(z.y1) - ty(z.y0));
+        g.fillStyle = withAlpha(visual.color, 0.14);
+        g.fillRect(x, y, w, h);
+        g.strokeStyle = withAlpha(visual.color, 0.55);
+        g.lineWidth = 1;
+        g.setLineDash([6, 4]);
+        g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        g.setLineDash([]);
+      }
+
+      // Portals: a dashed segment with a chevron showing the travel direction.
+      for (const p of geometry.portals) {
+        drawPortal(g, p, tx, ty);
+      }
+
+      // Static walls are baked; rotating ones are drawn live in `draw`.
+      paintWalls(g, staticWalls, 0);
+      return c;
+    };
+
+    /** A ghost's trail up to `upto`, on its own layer so it is stroked once. */
+    const paintGhost = (o: ReplayOverlay, upto: number) => {
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(width * dpr));
+      c.height = Math.max(1, Math.round(HEIGHT * dpr));
+      const g = c.getContext("2d");
+      if (!g) return c;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.lineCap = "round";
+      g.lineJoin = "round";
+      g.strokeStyle = withAlpha(o.color, 0.5);
+      g.lineWidth = 2;
+      g.beginPath();
       const gp = o.sim.path;
-      if (gp.length === 0) continue;
-      const gUpto = Math.max(0, Math.min(upto, gp.length - 1));
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.strokeStyle = withAlpha(o.color, 0.5);
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      for (let i = 0; i <= gUpto; i++) {
+      for (let i = 0; i <= upto; i++) {
         const p = gp[i];
-        if (i === 0) ctx.moveTo(tx(p.x), ty(p.y));
-        else ctx.lineTo(tx(p.x), ty(p.y));
+        if (i === 0) g.moveTo(tx(p.x), ty(p.y));
+        else g.lineTo(tx(p.x), ty(p.y));
       }
-      ctx.stroke();
-      const gp2 = gp[gUpto];
-      ctx.save();
-      ctx.globalAlpha = 0.6;
+      g.stroke();
+      return c;
+    };
+
+    const draw = () => {
+      if (!width) return;
+      if (!base) base = paintBase();
+      const f = frameRef.current;
+      const safeFrame = Number.isFinite(f) ? Math.floor(f) : 0;
+      const upto = Math.max(0, Math.min(safeFrame, sim.path.length - 1));
+      // All offscreen layers are full-size (device px), so compositing needs the
+      // identity transform; vector drawing is done in CSS px via `dpr`.
+      const composite = (layer: HTMLCanvasElement) => {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(layer, 0, 0);
+      };
+      const vector = () => ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      composite(base);
+      // Rotating walls sit above the baked layer and move with the frame.
+      if (rotatingWalls.length > 0) {
+        vector();
+        paintWalls(ctx, rotatingWalls, upto);
+      }
+
+      // Ghost trails, each cached at its own current tick and only re-stroked
+      // when that tick advances.
+      for (const o of overlays) {
+        const gp = o.sim.path;
+        if (gp.length === 0) continue;
+        const gUpto = Math.max(0, Math.min(upto, gp.length - 1));
+        const key = `${o.id}:${gUpto}`;
+        if (key !== o.cachedKey) {
+          o.cachedKey = key;
+          ghostTrails.set(o.id, paintGhost(o, gUpto));
+        }
+        const layer = ghostTrails.get(o.id);
+        if (layer) composite(layer);
+        const gp2 = gp[gUpto];
+        vector();
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        drawArrowSprite(
+          ctx,
+          o.arrow,
+          tx(gp2.x),
+          ty(gp2.y),
+          gp2.rot,
+          scale,
+          o.arrowRadius,
+          o.color,
+          o.color,
+        );
+        ctx.restore();
+        if (o.label) {
+          ctx.font = "bold 10px ui-monospace, monospace";
+          ctx.fillStyle = o.color;
+          ctx.fillText(o.label, tx(gp2.x) + 9, ty(gp2.y) - 9);
+        }
+      }
+
+      // Travelled path: a soft glow under a bright core, in the run's trail
+      // colour. The already-drawn portion is cached, so only the new segment is
+      // stroked each frame — re-stroking the whole path every frame is what made
+      // the replay crawl on long runs.
+      if (upto > 0) {
+        // A scrub back invalidates the cache; it is rebuilt forward from 0.
+        if (upto < lastUpto) {
+          trailLayer = null;
+          lastUpto = -1;
+        }
+        if (!trailLayer) {
+          trailLayer = document.createElement("canvas");
+          trailLayer.width = Math.max(1, Math.round(width * dpr));
+          trailLayer.height = Math.max(1, Math.round(HEIGHT * dpr));
+          lastUpto = 0;
+        }
+        if (upto > lastUpto) {
+          const tg = trailLayer.getContext("2d");
+          if (tg) {
+            tg.setTransform(dpr, 0, 0, dpr, 0, 0);
+            tg.lineCap = "round";
+            tg.lineJoin = "round";
+            const start = Math.max(0, lastUpto);
+            for (const [w, a] of [
+              [7, 0.12],
+              [3.5, 0.3],
+            ] as const) {
+              tg.strokeStyle = withAlpha(trail, a);
+              tg.lineWidth = w;
+              tg.beginPath();
+              const s0 = sim.path[start];
+              tg.moveTo(tx(s0.x), ty(s0.y));
+              for (let i = start + 1; i <= upto; i++) {
+                const p = sim.path[i];
+                tg.lineTo(tx(p.x), ty(p.y));
+              }
+              tg.stroke();
+            }
+            tg.strokeStyle = lighten(trail, 0.35);
+            tg.lineWidth = 1.4;
+            tg.beginPath();
+            const s0 = sim.path[start];
+            tg.moveTo(tx(s0.x), ty(s0.y));
+            for (let i = start + 1; i <= upto; i++) {
+              const p = sim.path[i];
+              tg.lineTo(tx(p.x), ty(p.y));
+            }
+            tg.stroke();
+          }
+          lastUpto = upto;
+        }
+        composite(trailLayer);
+      }
+
+      // Arrow at the current position, drawn as the game's two-tone sprite and
+      // facing the engine's recorded rotation, so spins animate even when the
+      // arrow is pinned against a wall.
+      const point = sim.path[upto];
+      vector();
       drawArrowSprite(
         ctx,
-        o.arrow,
-        tx(gp2.x),
-        ty(gp2.y),
-        gp2.rot,
+        arrow,
+        tx(point.x),
+        ty(point.y),
+        point.rot,
         scale,
-        o.arrowRadius,
-        o.color,
-        o.color,
+        arrowRadius,
+        bodyColor,
+        thrust,
       );
-      ctx.restore();
-      if (o.label) {
-        ctx.font = "bold 10px ui-monospace, monospace";
-        ctx.fillStyle = o.color;
-        ctx.fillText(o.label, tx(gp2.x) + 9, ty(gp2.y) - 9);
-      }
-    }
 
-    // Travelled path: a soft glow under a bright core, in the run's trail colour.
-    if (upto > 0) {
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      for (const [w, a] of [
-        [7, 0.12],
-        [3.5, 0.3],
-      ] as const) {
-        ctx.strokeStyle = withAlpha(trail, a);
-        ctx.lineWidth = w;
-        ctx.beginPath();
-        for (let i = 0; i <= upto; i++) {
-          const p = sim.path[i];
-          if (i === 0) ctx.moveTo(tx(p.x), ty(p.y));
-          else ctx.lineTo(tx(p.x), ty(p.y));
-        }
-        ctx.stroke();
+      if (sim.finishTick !== null && upto >= sim.finishTick) {
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 11px ui-monospace, monospace";
+        ctx.fillText("FINISH", 10, 18);
       }
-      ctx.strokeStyle = lighten(trail, 0.35);
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      for (let i = 0; i <= upto; i++) {
-        const p = sim.path[i];
-        if (i === 0) ctx.moveTo(tx(p.x), ty(p.y));
-        else ctx.lineTo(tx(p.x), ty(p.y));
-      }
-      ctx.stroke();
-    }
+    };
 
-    // Arrow at the current position, drawn as the game's two-tone sprite and
-    // facing the engine's recorded rotation, so spins animate even when the
-    // arrow is pinned against a wall.
-    const point = sim.path[upto];
-    drawArrowSprite(
-      ctx,
-      arrow,
-      tx(point.x),
-      ty(point.y),
-      point.rot,
-      scale,
-      arrowRadius,
-      bodyColor,
-      thrust,
-    );
+    let trailLayer: HTMLCanvasElement | null = null;
 
-    if (sim.finishTick !== null && upto >= sim.finishTick) {
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 11px ui-monospace, monospace";
-      ctx.fillText("FINISH", 10, 18);
-    }
-  }, [sim, geometry, frame, bodyColor, trail, thrust, arrow, arrowRadius, overlays]);
+    /** Fit the canvas to its parent, rebuild the static layer, then repaint. */
+    const resize = () => {
+      width = parent.clientWidth;
+      if (!width) return;
+      dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(HEIGHT * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${HEIGHT}px`;
+      scale = levelScale(width, HEIGHT);
+      offX = (width - spanX * scale) / 2 - minX * scale;
+      offY = (HEIGHT - spanY * scale) / 2 - minY * scale;
+      tx = (wx: number) => wx * scale + offX;
+      ty = (wy: number) => wy * scale + offY;
+      base = null;
+      trailLayer = null;
+      lastUpto = -1;
+      ghostTrails.clear();
+      for (const o of overlays) o.cachedKey = undefined;
+      draw();
+    };
+
+    drawRef.current = draw;
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(parent);
+    return () => ro.disconnect();
+    // `frame` is not a dependency: `draw` reads it through `frameRef` so the
+    // static layer and world bounds are not rebuilt on every frame.
+  }, [sim, geometry, bodyColor, trail, thrust, arrow, arrowRadius, overlays]);
+
+  // Repaint on every frame change. Kept out of the effect above so the world
+  // bounds and the static wall layer are not rebuilt 60 times a second.
+  React.useEffect(() => {
+    drawRef.current();
+  }, [frame]);
 
   // Ghosts may run past the primary run's finish; keep the scrubber covering
   // the longest run so a slower ghost can still be watched to its end.

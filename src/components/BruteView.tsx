@@ -469,11 +469,7 @@ export function BruteRunner() {
               <Square className="w-3.5 h-3.5 mr-1" /> Stop
             </Button>
           ) : (
-            <Button
-              className="h-9 w-full text-xs"
-              onClick={() => void start()}
-              disabled={!canSeed}
-            >
+            <Button className="h-9 w-full text-xs" onClick={() => void start()} disabled={!canSeed}>
               <Sparkles className="w-3.5 h-3.5 mr-1" /> Optimize
             </Button>
           )}
