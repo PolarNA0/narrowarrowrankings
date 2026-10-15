@@ -94,6 +94,8 @@ export interface SimPoint {
   rot: number;
   /** True once the arrow has crossed the finish line at this sample. */
   finished?: boolean;
+  /** Engine thrust level at this sample (0..1); drives the flame in game mode. */
+  thrustPower?: number;
 }
 
 export interface SimWall {
@@ -280,6 +282,8 @@ interface EnginePlayerState {
     translation: { x: number; y: number };
     rotation: number;
     state?: string;
+    /** Engine's current thrust level (0..1); drives the flame length. */
+    thrust_power?: number;
   };
 }
 
@@ -356,6 +360,7 @@ export async function createReplayEngine(
       y: s.player.translation.y,
       rot: s.player.rotation - Math.PI / 2,
       finished: s.player.state === "finish",
+      thrustPower: s.player.thrust_power ?? 0,
     };
   };
 

@@ -1,5 +1,14 @@
 import * as React from "react";
-import { Play, Pause, Loader2, Gamepad2, Info, RotateCcw, ChevronDown } from "lucide-react";
+import {
+  Play,
+  Pause,
+  Loader2,
+  Gamepad2,
+  Info,
+  RotateCcw,
+  ChevronDown,
+  SlidersHorizontal,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -47,6 +56,22 @@ import {
   type SkinConfig,
 } from "@/lib/replay-visuals";
 import { arrowKind, drawArrowSprite, type ArrowKind } from "@/lib/arrow-sprites";
+import {
+  CAMERA_PRESETS,
+  DEFAULT_CAMERA,
+  FollowCamera,
+  GAME_COLLISION_COLOR,
+  GAME_FINISH_THICKNESS,
+  GAME_PORTAL_COLORS,
+  GAME_THRUST_COLORS,
+  GAME_WALL_THICKNESS,
+  cameraPreset,
+  checkerAt,
+  gameWallColor,
+  gameZoneColor,
+  type CameraPreset,
+  type CameraSettings,
+} from "@/lib/replay-render";
 import { ghostColor } from "@/lib/compare-ghosts";
 import { GhostPicker } from "@/components/CompareGhosts";
 import { ghostLabel, useCompareGhosts, type CompareCandidate } from "@/hooks/useCompareGhosts";
@@ -578,6 +603,9 @@ interface StageProps {
   overlays?: ReplayOverlay[];
 }
 
+/** "lines" is the schematic stroke look; "game" mirrors the real game's render. */
+export type ReplayRenderMode = "lines" | "game";
+
 /** Stable empty list so `overlays = []` never re-fires the draw effect. */
 const NO_OVERLAYS: ReplayOverlay[] = [];
 
@@ -613,6 +641,16 @@ export function ReplayStage({
   overlays = NO_OVERLAYS,
 }: StageProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  // How the stage draws: the schematic line look, or a render matching the game.
+  const [mode, setMode] = React.useState<ReplayRenderMode>("lines");
+  // Camera state for "game" mode; a ref so the draw effect reads it without
+  // re-running on every settings change (the frame effect repaints anyway).
+  const [cameraSettings, setCameraSettings] = React.useState<CameraSettings>(DEFAULT_CAMERA);
+  const [showCamera, setShowCamera] = React.useState(false);
+  const cameraRef = React.useRef(new FollowCamera(DEFAULT_CAMERA));
+  const settingsRef = React.useRef(cameraSettings);
+  settingsRef.current = cameraSettings;
+  cameraRef.current.settings = cameraSettings;
   // The animation loop and the resize listener both call this so a new frame or
   // a relayout repaints without the draw effect re-running (and without React
   // re-rendering the whole stage 60 times a second).
@@ -708,6 +746,118 @@ export function ReplayStage({
     const rotatingWalls = geometry.walls.filter((w) => w.pivot && w.rotationSpeed);
     const staticWalls = geometry.walls.filter((w) => !(w.pivot && w.rotationSpeed));
 
+    // Palette: the schematic look keeps the sampled colours from
+    // `replay-visuals`; "game" mode uses the game's own colours (which differ —
+    // e.g. death walls are orange and the boost zone is green).
+    const wallColorFor = (type: string) =>
+      mode === "game" ? gameWallColor(type) : wallVisual(type).color;
+    const zoneColorFor = (type: string) =>
+      mode === "game" ? gameZoneColor(type) : wallVisual(type).color;
+
+    /** Point the world→px transform at the fitted level (lines) or the camera (game). */
+    const updateTransform = (cam: { x: number; y: number; zoom: number } | null) => {
+      if (mode === "game" && cam) {
+        scale = cam.zoom;
+        offX = width / 2 - cam.x * scale;
+        offY = HEIGHT / 2 - cam.y * scale;
+      } else {
+        scale = levelScale(width, HEIGHT);
+        offX = (width - spanX * scale) / 2 - minX * scale;
+        offY = (HEIGHT - spanY * scale) / 2 - minY * scale;
+      }
+      tx = (wx: number) => wx * scale + offX;
+      ty = (wy: number) => wy * scale + offY;
+    };
+
+    /** Zones and portals, drawn under the walls in both modes. */
+    const paintZones = (g: CanvasRenderingContext2D) => {
+      for (const z of geometry.zones) {
+        const color = zoneColorFor(z.type);
+        const x = tx(Math.min(z.x0, z.x1));
+        const y = ty(Math.min(z.y0, z.y1));
+        const w = Math.abs(tx(z.x1) - tx(z.x0));
+        const h = Math.abs(ty(z.y1) - ty(z.y0));
+        if (mode === "game") {
+          g.fillStyle = withAlpha(color, 0.22);
+          g.fillRect(x, y, w, h);
+        } else {
+          g.fillStyle = withAlpha(color, 0.14);
+          g.fillRect(x, y, w, h);
+          g.strokeStyle = withAlpha(color, 0.55);
+          g.lineWidth = 1;
+          g.setLineDash([6, 4]);
+          g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+          g.setLineDash([]);
+        }
+      }
+      for (const p of geometry.portals) {
+        drawPortal(g, p, tx, ty, mode === "game");
+      }
+    };
+
+    /** Stroke a run's trail in full at the current transform (game mode). */
+    const strokeTrail = (
+      g: CanvasRenderingContext2D,
+      path: SimResult["path"],
+      upto: number,
+      color: string,
+      glow: boolean,
+    ) => {
+      if (upto < 1) return;
+      g.lineCap = "round";
+      g.lineJoin = "round";
+      if (glow) {
+        for (const [w, a] of [
+          [7, 0.12],
+          [3.5, 0.3],
+        ] as const) {
+          g.strokeStyle = withAlpha(color, a);
+          g.lineWidth = w;
+          g.beginPath();
+          g.moveTo(tx(path[0].x), ty(path[0].y));
+          for (let i = 1; i <= upto; i++) g.lineTo(tx(path[i].x), ty(path[i].y));
+          g.stroke();
+        }
+      }
+      g.strokeStyle = glow ? lighten(color, 0.35) : color;
+      g.lineWidth = glow ? 1.4 : 2;
+      g.beginPath();
+      g.moveTo(tx(path[0].x), ty(path[0].y));
+      for (let i = 1; i <= upto; i++) g.lineTo(tx(path[i].x), ty(path[i].y));
+      g.stroke();
+    };
+
+    /** The game's layered thrust flame, trailing behind the arrow. */
+    const drawGameThrust = (
+      g: CanvasRenderingContext2D,
+      kind: ArrowKind,
+      x: number,
+      y: number,
+      rot: number,
+      radius: number,
+    ) => {
+      const [outer, inner] = GAME_THRUST_COLORS[kind];
+      const len = radius * 3.2;
+      const halfW = radius * 1.05;
+      g.save();
+      g.translate(tx(x), ty(y));
+      g.rotate(rot + Math.PI);
+      for (const [color, f] of [
+        [outer, 1],
+        [inner, 0.6],
+      ] as const) {
+        g.fillStyle = color;
+        g.globalAlpha = 0.85;
+        g.beginPath();
+        g.moveTo(0, -halfW * f);
+        g.lineTo(len * f, 0);
+        g.lineTo(0, halfW * f);
+        g.closePath();
+        g.fill();
+      }
+      g.restore();
+    };
+
     /** Paint walls (rotated to `tick` when they spin) onto a 2D context. */
     const paintWalls = (g: CanvasRenderingContext2D, walls: SimWall[], tick: number) => {
       g.lineCap = "round";
@@ -732,11 +882,37 @@ export function ReplayStage({
           bx = b.x;
           by = b.y;
         }
-        const visual = wallVisual(w.type);
+        const isFinish = w.type === "finish";
+        const color = isFinish ? "#ffffff" : wallColorFor(w.type);
         const X0 = tx(ax);
         const Y0 = ty(ay);
         const X1 = tx(bx);
         const Y1 = ty(by);
+
+        if (mode === "game") {
+          const thickness = isFinish ? GAME_FINISH_THICKNESS : w.thickness || GAME_WALL_THICKNESS;
+          const core = Math.max(2, thickness * scale);
+          if (isFinish) {
+            drawFinish(g, X0, Y0, X1, Y1, thickness, scale);
+            continue;
+          }
+          if (ax === bx && ay === by) {
+            g.fillStyle = color;
+            g.beginPath();
+            g.arc(X0, Y0, core / 2, 0, Math.PI * 2);
+            g.fill();
+            continue;
+          }
+          g.strokeStyle = color;
+          g.lineWidth = core;
+          g.beginPath();
+          g.moveTo(X0, Y0);
+          g.lineTo(X1, Y1);
+          g.stroke();
+          continue;
+        }
+
+        const visual = wallVisual(w.type);
         if (visual.kind === "finish") {
           drawFinish(g, X0, Y0, X1, Y1, w.thickness, scale);
           continue;
@@ -788,28 +964,8 @@ export function ReplayStage({
       g.fillStyle = "#07070b";
       g.fillRect(0, 0, width, HEIGHT);
 
-      // Zones first: filled areas the arrow passes through (boost/ice/nosteer/…).
-      for (const z of geometry.zones) {
-        const visual = wallVisual(z.type);
-        const x = tx(Math.min(z.x0, z.x1));
-        const y = ty(Math.min(z.y0, z.y1));
-        const w = Math.abs(tx(z.x1) - tx(z.x0));
-        const h = Math.abs(ty(z.y1) - ty(z.y0));
-        g.fillStyle = withAlpha(visual.color, 0.14);
-        g.fillRect(x, y, w, h);
-        g.strokeStyle = withAlpha(visual.color, 0.55);
-        g.lineWidth = 1;
-        g.setLineDash([6, 4]);
-        g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-        g.setLineDash([]);
-      }
-
-      // Portals: a dashed segment with a chevron showing the travel direction.
-      for (const p of geometry.portals) {
-        drawPortal(g, p, tx, ty);
-      }
-
-      // Static walls are baked; rotating ones are drawn live in `draw`.
+      // Zones and portals first, then the walls that are baked once.
+      paintZones(g);
       paintWalls(g, staticWalls, 0);
       return c;
     };
@@ -839,10 +995,20 @@ export function ReplayStage({
 
     const draw = () => {
       if (!width) return;
-      if (!base) base = paintBase();
       const f = frameRef.current;
       const safeFrame = Number.isFinite(f) ? Math.floor(f) : 0;
       const upto = Math.max(0, Math.min(safeFrame, sim.path.length - 1));
+      const camera = cameraRef.current;
+      if (mode === "game") {
+        // Drive the follow camera to the current frame before the transform is
+        // built, so the whole scene moves with the arrow.
+        const p = sim.path[upto];
+        const prev = sim.path[Math.max(0, upto - 1)];
+        const vx = (p.x - prev.x) / (SIM_TICK_MS / 1000);
+        const vy = (p.y - prev.y) / (SIM_TICK_MS / 1000);
+        camera.follow(p.x, p.y, vx, vy, upto === 0 ? 1 : SIM_TICK_MS / 1000);
+        updateTransform(camera);
+      }
       // All offscreen layers are full-size (device px), so compositing needs the
       // identity transform; vector drawing is done in CSS px via `dpr`.
       const composite = (layer: HTMLCanvasElement) => {
@@ -853,7 +1019,84 @@ export function ReplayStage({
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      composite(base);
+      // The "lines" level layer is baked at the fit transform; only "game" mode
+      // uses a moving camera, so it never needs this layer.
+      if (mode === "lines") {
+        if (!base) base = paintBase();
+        composite(base);
+      }
+      if (mode === "game") {
+        // The camera moves every frame, so the scene is drawn live rather than
+        // composited from the static level layer.
+        vector();
+        ctx.fillStyle = "#07070b";
+        ctx.fillRect(0, 0, width, HEIGHT);
+        paintZones(ctx);
+        paintWalls(ctx, geometry.walls, upto);
+        for (const o of overlays) {
+          const gp = o.sim.path;
+          if (gp.length < 2) continue;
+          const gUpto = Math.max(0, Math.min(upto, gp.length - 1));
+          ctx.save();
+          ctx.globalAlpha = 0.5;
+          strokeTrail(ctx, gp, gUpto, o.color, false);
+          ctx.restore();
+          const gp2 = gp[gUpto];
+          ctx.save();
+          ctx.globalAlpha = 0.6;
+          drawArrowSprite(
+            ctx,
+            o.arrow,
+            tx(gp2.x),
+            ty(gp2.y),
+            gp2.rot,
+            scale,
+            o.arrowRadius,
+            o.color,
+            o.color,
+          );
+          ctx.restore();
+          if (o.label) {
+            ctx.font = "bold 10px ui-monospace, monospace";
+            ctx.fillStyle = o.color;
+            ctx.fillText(o.label, tx(gp2.x) + 9, ty(gp2.y) - 9);
+          }
+        }
+        strokeTrail(ctx, sim.path, upto, trail, true);
+        const point = sim.path[upto];
+        if ((point.thrustPower ?? 0) > 0.05) {
+          drawGameThrust(ctx, arrow, point.x, point.y, point.rot, arrowRadius);
+        }
+        ctx.save();
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = GAME_COLLISION_COLOR;
+        ctx.beginPath();
+        ctx.arc(tx(point.x), ty(point.y), Math.max(2, arrowRadius * scale), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = GAME_COLLISION_COLOR;
+        ctx.lineWidth = Math.max(1.2, scale * 0.9);
+        ctx.stroke();
+        ctx.restore();
+        drawArrowSprite(
+          ctx,
+          arrow,
+          tx(point.x),
+          ty(point.y),
+          point.rot,
+          scale,
+          arrowRadius,
+          bodyColor,
+          thrust,
+        );
+        if (sim.finishTick !== null && upto >= sim.finishTick) {
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 11px ui-monospace, monospace";
+          ctx.fillText("FINISH", 10, 18);
+        }
+        return;
+      }
+
       // Rotating walls sit above the baked layer and move with the frame.
       if (rotatingWalls.length > 0) {
         vector();
@@ -985,11 +1228,7 @@ export function ReplayStage({
       canvas.height = Math.round(HEIGHT * dpr);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${HEIGHT}px`;
-      scale = levelScale(width, HEIGHT);
-      offX = (width - spanX * scale) / 2 - minX * scale;
-      offY = (HEIGHT - spanY * scale) / 2 - minY * scale;
-      tx = (wx: number) => wx * scale + offX;
-      ty = (wy: number) => wy * scale + offY;
+      updateTransform(null);
       base = null;
       trailLayer = null;
       lastUpto = -1;
@@ -1005,7 +1244,7 @@ export function ReplayStage({
     return () => ro.disconnect();
     // `frame` is not a dependency: `draw` reads it through `frameRef` so the
     // static layer and world bounds are not rebuilt on every frame.
-  }, [sim, geometry, bodyColor, trail, thrust, arrow, arrowRadius, overlays]);
+  }, [sim, geometry, bodyColor, trail, thrust, arrow, arrowRadius, overlays, mode]);
 
   // Repaint on every frame change. Kept out of the effect above so the world
   // bounds and the static wall layer are not rebuilt 60 times a second.
@@ -1013,15 +1252,108 @@ export function ReplayStage({
     drawRef.current();
   }, [frame]);
 
+  // Camera changes (a new preset or a slider) only need a repaint.
+  React.useEffect(() => {
+    drawRef.current();
+  }, [cameraSettings]);
+
+  // A new run or level resets the follow camera to the spawn point.
+  React.useEffect(() => {
+    const p = sim.path[0];
+    if (p) cameraRef.current.reset(p.x, p.y);
+    drawRef.current();
+  }, [sim, mode]);
+
   // Ghosts may run past the primary run's finish; keep the scrubber covering
   // the longest run so a slower ghost can still be watched to its end.
   const maxFrame = Math.max(1, sim.path.length - 1, ...overlays.map((o) => o.sim.path.length - 1));
   return (
     <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wide text-slate-500">Render</span>
+          <Select value={mode} onValueChange={(v) => setMode(v as ReplayRenderMode)}>
+            <SelectTrigger className="h-7 w-28 bg-black/30 border-white/10 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-[#0d0d10] border-white/10 text-slate-200">
+              <SelectItem value="lines" className="text-xs">
+                Simple lines
+              </SelectItem>
+              <SelectItem value="game" className="text-xs">
+                Game
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {mode === "game" && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 text-xs text-slate-300 hover:text-slate-100"
+            onClick={() => setShowCamera((v) => !v)}
+            aria-expanded={showCamera}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Camera
+          </Button>
+        )}
+      </div>
+      {mode === "game" && showCamera && (
+        <div className="rounded-lg border border-white/10 bg-black/30 p-3 space-y-2.5">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 w-28">Preset</span>
+            <div className="flex gap-1">
+              {(Object.keys(CAMERA_PRESETS) as CameraPreset[]).map((p) => (
+                <Button
+                  key={p}
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "h-6 px-2 text-[11px] capitalize",
+                    cameraSettings.preset === p ? "bg-white/15 text-slate-100" : "text-slate-400",
+                  )}
+                  onClick={() => setCameraSettings(cameraPreset(p))}
+                >
+                  {p}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {(
+            [
+              ["Zoom", "zoom", 0.4, 5, 0.05],
+              ["Dynamic Zoom", "dynamicZoom", 0, 1.2, 0.05],
+              ["Zoom Smoothness", "zoomSmoothness", 4, 10, 0.5],
+              ["Move Ahead", "moveAhead", 0, 6, 0.1],
+              ["Movement Smoothness", "movementSmoothness", 2, 7, 0.5],
+            ] as const
+          ).map(([label, key, min, max, step]) => (
+            <label key={key} className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400 w-28">{label}</span>
+              <input
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={cameraSettings[key]}
+                onChange={(e) =>
+                  setCameraSettings((s) => ({ ...s, [key]: Number(e.target.value) }))
+                }
+                className="flex-1 accent-[var(--app-accent)]"
+                aria-label={label}
+              />
+              <span className="font-mono text-[10px] text-slate-400 w-8 text-right">
+                {cameraSettings[key].toFixed(2)}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
       <div className="rounded-lg overflow-hidden border border-white/10 bg-[#07070b]">
         <canvas ref={canvasRef} />
       </div>
-      <ReplayLegend geometry={geometry} />
+      {mode === "lines" && <ReplayLegend geometry={geometry} />}
       {!hideControls && (
         <div className="flex items-center gap-3">
           <Button
@@ -1082,11 +1414,31 @@ function drawPortal(
   p: SimPortal,
   tx: (x: number) => number,
   ty: (y: number) => number,
+  game = false,
 ) {
   const x0 = tx(p.ax);
   const y0 = ty(p.ay);
   const x1 = tx(p.bx);
   const y1 = ty(p.by);
+  if (game) {
+    // The game's portal: a bright particle band along the segment.
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.strokeStyle = withAlpha(GAME_PORTAL_COLORS.a, 0.5);
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+    ctx.strokeStyle = GAME_PORTAL_COLORS.a;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
   const visual = wallVisual("portal");
   ctx.save();
   ctx.strokeStyle = withAlpha(visual.color, 0.7);
@@ -1129,12 +1481,11 @@ function drawFinish(
   ctx.save();
   ctx.translate(x0, y0);
   ctx.rotate(ang);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, -thick / 2, len, thick);
-  ctx.fillStyle = "#111114";
   for (let i = 0; i < cells; i++) {
-    const onTop = i % 2 === 0;
-    ctx.fillRect(i * cell, onTop ? -thick / 2 : 0, cell, thick / 2);
+    for (let j = 0; j < 2; j++) {
+      ctx.fillStyle = checkerAt(i, j, 1) ? "#ffffff" : "#111114";
+      ctx.fillRect(i * cell, -thick / 2 + (j * thick) / 2, cell, thick / 2);
+    }
   }
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 1;
