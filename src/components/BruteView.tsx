@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Cpu, Loader2, Send, Sparkles, Square, Timer, Trophy } from "lucide-react";
+import { Check, Cpu, Loader2, Send, Sparkles, Square, Timer, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -39,6 +39,13 @@ const BUDGETS = [
   { label: "10min", ms: 600000 },
 ];
 
+/** Annealing start temperature presets, matching the reference tool. */
+const INTENSITIES = [
+  { label: "Focused", t0: 2.5, hint: "stays near the seed" },
+  { label: "Balanced", t0: 6, hint: "the default" },
+  { label: "Exploratory", t0: 12, hint: "roams further, slower to settle" },
+];
+
 const fmt = (tick: number | null) =>
   tick === null ? "—" : `${((tick * SIM_TICK_MS) / 1000).toFixed(3)}s`;
 
@@ -74,6 +81,8 @@ export function BruteView({ isAdmin }: { isAdmin?: boolean }) {
 export function BruteRunner() {
   const [levelId, setLevelId] = React.useState(LEVELS[0]?.id ?? "");
   const [budgetMs, setBudgetMs] = React.useState(BUDGETS[1].ms);
+  const [t0, setT0] = React.useState(6);
+  const [refine, setRefine] = React.useState(true);
   const [entries, setEntries] = React.useState<TasEntry[]>([]);
   const [seedId, setSeedId] = React.useState<string>("auto");
 
@@ -264,6 +273,8 @@ export function BruteRunner() {
               levelData,
               arrowName: seedEntry.arrowName,
               budgetMs,
+              t0,
+              refine,
               rngSeed: (Date.now() ^ ((i + 1) * 0x9e3779b9)) & 0x7fffffff,
             },
           });
@@ -352,6 +363,35 @@ export function BruteRunner() {
               ))}
             </SelectContent>
           </Select>
+        </Field>
+
+        <Field label="Intensity">
+          <Select value={String(t0)} onValueChange={(v) => setT0(Number(v))}>
+            <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200">
+              {INTENSITIES.map((i) => (
+                <SelectItem key={i.t0} value={String(i.t0)} className="text-xs">
+                  {i.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field label="Refine (1-tick polish)">
+          <Button
+            variant="outline"
+            className={cn(
+              "h-9 w-full text-xs justify-start",
+              refine ? "border-[var(--app-accent)]/40 text-[var(--app-accent)]" : "text-slate-400",
+            )}
+            onClick={() => setRefine((r) => !r)}
+          >
+            <Check className={cn("w-3.5 h-3.5 mr-1", refine ? "opacity-100" : "opacity-0")} />
+            {refine ? "On" : "Off"}
+          </Button>
         </Field>
 
         <div className="flex items-end">

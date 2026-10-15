@@ -79,6 +79,13 @@ export interface BruteOptions {
   shouldStop?: () => boolean;
   /** Deterministic seed for the search; defaults to a time-based value. */
   rngSeed?: number;
+  /**
+   * Annealing start temperature — the "intensity" knob. Low stays near the seed
+   * (Focused), high wanders further before settling (Exploratory). Default 6.
+   */
+  t0?: number;
+  /** Run the 1-tick coordinate-descent polish after annealing. Default true. */
+  refine?: boolean;
 }
 
 const TICK_MS = 1000 / 240;
@@ -428,14 +435,15 @@ export async function optimizeRunLite(options: BruteOptions): Promise<BruteResul
   };
 
   // Anneal for the bulk of the budget, then spend the rest polishing by 1 tick.
-  const refineBudget = Math.max(1500, Math.floor(budgetMs * 0.4));
-  const annealBudget = Math.max(1000, budgetMs - refineBudget);
+  const wantRefine = options.refine !== false;
+  const refineBudget = wantRefine ? Math.max(1500, Math.floor(budgetMs * 0.4)) : 0;
+  const annealBudget = wantRefine ? Math.max(1000, budgetMs - refineBudget) : budgetMs;
 
   const annealed = anneal(
     sim,
     seedSymbols,
     options.rngSeed ?? Date.now() & 0x7fffffff,
-    6.0,
+    options.t0 ?? 6.0,
     annealBudget,
     hooks,
   );
@@ -445,12 +453,14 @@ export async function optimizeRunLite(options: BruteOptions): Promise<BruteResul
     bestFlat = annealed.flat;
   }
 
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (wantRefine) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-  const polished = refine(sim, bestFlat, refineBudget, hooks);
-  if (polished.best < bestScore) {
-    bestScore = polished.best;
-    bestFlat = polished.flat;
+    const polished = refine(sim, bestFlat, refineBudget, hooks);
+    if (polished.best < bestScore) {
+      bestScore = polished.best;
+      bestFlat = polished.flat;
+    }
   }
 
   if (bestScore >= DNF) {
