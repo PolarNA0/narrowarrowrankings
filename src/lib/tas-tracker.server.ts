@@ -77,7 +77,7 @@ export interface TasCheckResult {
  */
 export async function runTasCheck(
   levelIds: string[],
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; announceAll?: boolean } = {},
 ): Promise<TasCheckResult> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
@@ -152,8 +152,13 @@ export async function runTasCheck(
         const prior = previous[key];
         next[key] = { username: best.username, time: timeSec };
 
-        if (isFirstRun || !prior) return;
-        if (timeSec >= prior.time - 0.0005) return;
+        // First run is a silent baseline: it only records the current bests so
+        // later checks have something to compare against. `announceAll` skips
+        // that and also announces records that are already baselined.
+        if (!opts.announceAll) {
+          if (isFirstRun || !prior) return;
+          if (timeSec >= prior.time - 0.0005) return;
+        }
 
         const slot = ARROW_KEY[arrow];
         const template = config.tasTemplates?.[slot] || DEFAULT_TAS_TEMPLATES[slot];
@@ -171,8 +176,8 @@ export async function runTasCheck(
             .replaceAll("{time}", `${timeSec.toFixed(3)}s`)
             .replaceAll("{wr}", overallWr != null ? `${overallWr.toFixed(3)}s` : "—")
             .replaceAll("{wrDiff}", wrDiff)
-            .replaceAll("{catDiff}", (prior.time - timeSec).toFixed(3))
-            .replaceAll("{previous}", prior.username),
+            .replaceAll("{catDiff}", prior ? (prior.time - timeSec).toFixed(3) : "0.000")
+            .replaceAll("{previous}", prior?.username ?? "—"),
         );
       });
     }

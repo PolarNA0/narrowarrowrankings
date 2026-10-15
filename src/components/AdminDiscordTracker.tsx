@@ -167,6 +167,23 @@ export function AdminDiscordTracker() {
     }
   };
 
+  const announceAllTas = async () => {
+    setTasChecking(true);
+    try {
+      const res = await fetch("/api/public/tas-wr-check?force=1&announce=all");
+      const payload = await res.json();
+      toast.success(
+        payload.sent
+          ? `Re-announced ${payload.sent} current TAS record${payload.sent === 1 ? "" : "s"}`
+          : "No TAS records to announce (set a webhook first)",
+      );
+    } catch {
+      toast.error("TAS announcement failed");
+    } finally {
+      setTasChecking(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="bg-white/5 border-white/10">
@@ -327,6 +344,14 @@ export function AdminDiscordTracker() {
             >
               <RefreshCw className={tasChecking ? "w-4 h-4 mr-2 animate-spin" : "w-4 h-4 mr-2"} />{" "}
               Check TAS now
+            </Button>
+            <Button
+              onClick={announceAllTas}
+              disabled={tasChecking}
+              variant="outline"
+              className="border-white/10 hover:bg-white/5"
+            >
+              <Send className="w-4 h-4 mr-2" /> Announce current records
             </Button>
           </div>
         </CardContent>

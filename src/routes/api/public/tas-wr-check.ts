@@ -17,10 +17,14 @@ export const Route = createFileRoute("/api/public/tas-wr-check")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const force = new URL(request.url).searchParams.get("force") === "1";
+        const url = new URL(request.url);
+        const force = url.searchParams.get("force") === "1";
+        // `announce=all` re-announces every level's current best TAS, including
+        // ones already baselined — used to post an existing record on demand.
+        const announceAll = url.searchParams.get("announce") === "all";
         const result = await runTasCheck(
           LEVELS.map((l) => l.id),
-          { force },
+          { force, announceAll },
         );
         return Response.json(result);
       },
