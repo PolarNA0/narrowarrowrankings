@@ -1069,7 +1069,7 @@ export function ReplayStage({
       const safeFrame = Number.isFinite(f) ? Math.floor(f) : 0;
       const upto = Math.max(0, Math.min(safeFrame, sim.path.length - 1));
       const camera = cameraRef.current;
-      if (mode === "game") {
+      if (mode === "game" && sim.path.length > 0) {
         // Drive the follow camera to the current frame before the transform is
         // built, so the whole scene moves with the arrow.
         const p = sim.path[upto];
@@ -1095,7 +1095,7 @@ export function ReplayStage({
         if (!base) base = paintBase();
         composite(base);
       }
-      if (mode === "game") {
+      if (mode === "game" && sim.path.length > 0) {
         // The camera moves every frame, so the scene is drawn live rather than
         // composited from the static level layer.
         vector();
@@ -1265,20 +1265,23 @@ export function ReplayStage({
 
       // Arrow at the current position, drawn as the game's two-tone sprite and
       // facing the engine's recorded rotation, so spins animate even when the
-      // arrow is pinned against a wall.
+      // arrow is pinned against a wall. Skipped when the sim has no path, as on
+      // the draw canvas, where only the traced route is shown.
       const point = sim.path[upto];
-      vector();
-      drawArrowSprite(
-        ctx,
-        arrow,
-        tx(point.x),
-        ty(point.y),
-        point.rot,
-        scale,
-        arrowRadius,
-        bodyColor,
-        thrust,
-      );
+      if (point) {
+        vector();
+        drawArrowSprite(
+          ctx,
+          arrow,
+          tx(point.x),
+          ty(point.y),
+          point.rot,
+          scale,
+          arrowRadius,
+          bodyColor,
+          thrust,
+        );
+      }
 
       if (sim.finishTick !== null && upto >= sim.finishTick) {
         ctx.fillStyle = "#ffffff";
