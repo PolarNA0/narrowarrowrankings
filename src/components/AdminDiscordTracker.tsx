@@ -29,12 +29,14 @@ const DEFAULT_EMOJIS: Record<Slot, string> = { narrow: "🏹", speedy: "💨", e
 
 const DEFAULT_TAS_TEMPLATES: Record<Slot, string> = {
   narrow:
-    "{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR -{wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
   speedy:
-    "{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR -{wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
   energy:
-    "{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR -{wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
 };
+
+const DEFAULT_TAS_CHAMPION = "🏆";
 
 /** Admin controls for the Discord record notifiers (real + TAS). */
 export function AdminDiscordTracker() {
@@ -48,6 +50,7 @@ export function AdminDiscordTracker() {
   const [tasTemplates, setTasTemplates] =
     React.useState<Record<Slot, string>>(DEFAULT_TAS_TEMPLATES);
   const [tasEmojis, setTasEmojis] = React.useState<Record<Slot, string>>(DEFAULT_EMOJIS);
+  const [tasChampion, setTasChampion] = React.useState(DEFAULT_TAS_CHAMPION);
   const [tasWebhookUrl, setTasWebhookUrl] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [checking, setChecking] = React.useState(false);
@@ -68,6 +71,7 @@ export function AdminDiscordTracker() {
         setTasIntervalMinutes(Number(data.tasIntervalMinutes) || Number(data.intervalMinutes) || 5);
         setTasTemplates({ ...DEFAULT_TAS_TEMPLATES, ...(data.tasTemplates || {}) });
         setTasEmojis({ ...DEFAULT_EMOJIS, ...(data.tasEmojis || {}) });
+        setTasChampion(data.tasChampion ?? DEFAULT_TAS_CHAMPION);
         setTasWebhookUrl(data.tasWebhookUrl || "");
       } catch {
         /* first-time setup */
@@ -88,6 +92,7 @@ export function AdminDiscordTracker() {
         tasIntervalMinutes: Math.max(5, Number(tasIntervalMinutes) || 5),
         tasTemplates,
         tasEmojis,
+        tasChampion,
         tasWebhookUrl: tasWebhookUrl.trim(),
       });
       toast.success("Discord trackers saved");
@@ -279,6 +284,17 @@ export function AdminDiscordTracker() {
             className="bg-black/40 border-white/10 font-mono text-xs"
           />
           <div className="flex items-center gap-3">
+            <Input
+              value={tasChampion}
+              onChange={(e) => setTasChampion(e.target.value)}
+              className="w-32 bg-black/40 border-white/10 text-xs"
+              placeholder="🏆"
+            />
+            <span className="text-xs text-slate-400">
+              Champion badge, prefixed before the arrow emoji in every TAS message.
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
             <Switch checked={tasEnabled} onCheckedChange={setTasEnabled} />
             <span className="text-xs text-slate-400">TAS announcements enabled</span>
           </div>
@@ -323,7 +339,7 @@ export function AdminDiscordTracker() {
           </CardTitle>
           <CardDescription>
             {
-              "Tags: {emoji} {player} {level} {time} {wr} {wrDiff} {catDiff} {previous} {arrow} — {wrDiff} is how far the TAS is ahead of the real WR, {catDiff} the gain over the previous TAS."
+              "Tags: {champion} {emoji} {player} {level} {time} {wr} {wrDiff} {catDiff} {previous} {arrow} — {champion} is the champion badge (🏆), {emoji} the arrow, {wrDiff} is how far the TAS is ahead of the real WR, {catDiff} the gain over the previous TAS."
             }
           </CardDescription>
         </CardHeader>

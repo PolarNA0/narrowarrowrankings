@@ -27,12 +27,15 @@ const ARROW_KEY: Record<Arrow, "narrow" | "speedy" | "energy"> = {
 
 export const DEFAULT_TAS_TEMPLATES: Record<"narrow" | "speedy" | "energy", string> = {
   narrow:
-    "{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR -{wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
   speedy:
-    "{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR -{wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
   energy:
-    "{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR -{wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
 };
+
+/** Champion badge shown first, before the per-arrow emoji. */
+export const DEFAULT_TAS_CHAMPION = "🏆";
 
 export const DEFAULT_TAS_EMOJIS: Record<"narrow" | "speedy" | "energy", string> = {
   narrow: "🏹",
@@ -49,6 +52,8 @@ interface TrackerConfig {
   tasIntervalMinutes?: number;
   tasTemplates?: Partial<Record<"narrow" | "speedy" | "energy", string>>;
   tasEmojis?: Partial<Record<"narrow" | "speedy" | "energy", string>>;
+  /** Badge prefixed before the arrow emoji, e.g. 🏆. */
+  tasChampion?: string;
 }
 
 interface TasRecordState {
@@ -153,9 +158,12 @@ export async function runTasCheck(
         const slot = ARROW_KEY[arrow];
         const template = config.tasTemplates?.[slot] || DEFAULT_TAS_TEMPLATES[slot];
         const emoji = config.tasEmojis?.[slot] || DEFAULT_TAS_EMOJIS[slot];
-        const wrDiff = overallWr != null ? Math.max(0, overallWr - timeSec).toFixed(3) : "0.000";
+        const champion = config.tasChampion ?? DEFAULT_TAS_CHAMPION;
+        // TAS run minus the human time: negative means the TAS beats the human WR.
+        const wrDiff = overallWr != null ? (timeSec - overallWr).toFixed(3) : "0.000";
         messages.push(
           template
+            .replaceAll("{champion}", champion)
             .replaceAll("{emoji}", emoji)
             .replaceAll("{player}", best.username)
             .replaceAll("{level}", level.name)
