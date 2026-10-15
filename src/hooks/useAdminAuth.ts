@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
-import { claimAdmin, claimAdminWithPin } from "@/lib/admin.functions";
+import { claimAdmin, adminPinSignIn } from "@/lib/admin.functions";
 
 export const ADMIN_EMAILS = ["sirsamyou@gmail.com", "polarusx@gmail.com"];
 
@@ -92,9 +92,19 @@ export function useAdminAuth(): AdminAuthState {
   const loginWithPin = useCallback(async (pin: string) => {
     setError(null);
     try {
-      const result = await claimAdminWithPin({ data: { pin } });
-      if (!result.isAdmin) {
-        setError("Incorrect PIN");
+      // PIN-only: the server mints a stable admin account, then we sign in as
+      // it. No email or Google account is needed.
+      const minted = await adminPinSignIn({ data: { pin } });
+      if (!minted.ok) {
+        setError(minted.error ?? "Incorrect PIN");
+        return false;
+      }
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: minted.email,
+        password: minted.password,
+      });
+      if (signInError) {
+        setError(signInError.message);
         return false;
       }
       setIsAdmin(true);

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Loader2, Medal, Pencil, RefreshCw, Trophy, X } from "lucide-react";
+import { Loader2, Medal, Pencil, RefreshCw, Tag, Trophy, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { LEVELS } from "@/constants";
-import { fetchTasBoard, removeTasRun, type TasEntry } from "@/lib/tas-leaderboard";
+import { fetchTasBoard, removeTasRun, renameTasRun, type TasEntry } from "@/lib/tas-leaderboard";
 import { TasReplayViewer } from "@/components/ReplayViewer";
 import { fetchLeaderboard } from "@/services/api";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
@@ -41,6 +41,7 @@ export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewPro
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [removingId, setRemovingId] = React.useState<string | null>(null);
+  const [renamingId, setRenamingId] = React.useState<string | null>(null);
   // The level's real-game runs, so a TAS run can be compared against a human one.
   const [humanEntries, setHumanEntries] = React.useState<LeaderboardEntry[]>([]);
 
@@ -119,6 +120,22 @@ export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewPro
       toast.error(e instanceof Error ? e.message : "Failed to remove run.");
     } finally {
       setRemovingId(null);
+    }
+  };
+
+  const rename = async (entry: TasEntry) => {
+    const next = window.prompt(`New name for ${entry.username}'s run:`, entry.username);
+    if (next == null) return;
+    const username = next.trim();
+    if (!username || username === entry.username) return;
+    setRenamingId(entry.id);
+    try {
+      setEntries(await renameTasRun(levelId, entry.id, username));
+      toast.success(`Renamed to ${username}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to rename run.");
+    } finally {
+      setRenamingId(null);
     }
   };
 
@@ -266,6 +283,22 @@ export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewPro
                             className="text-slate-500 hover:text-[var(--app-accent)] hover:bg-[var(--app-accent)]/10 h-8 w-8"
                           >
                             <Pencil className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Rename owner (re-attribute this run)"
+                            disabled={renamingId === entry.id}
+                            onClick={() => void rename(entry)}
+                            className="text-slate-600 hover:text-amber-300 hover:bg-amber-500/10 h-8 w-8"
+                          >
+                            {renamingId === entry.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Tag className="w-4 h-4" />
+                            )}
                           </Button>
                         )}
                         {isAdmin && (

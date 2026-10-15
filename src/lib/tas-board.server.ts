@@ -103,6 +103,33 @@ export async function removeTasEntry(levelId: string, id: string): Promise<TasEn
   return entries;
 }
 
+/** Rename one entry's owner in place and return the re-sorted board. */
+export async function renameTasEntry(
+  levelId: string,
+  id: string,
+  username: string,
+): Promise<TasEntry[]> {
+  const entries = (await readTasBoard(levelId)).map((e) =>
+    e.id === id ? { ...e, username } : e,
+  );
+  if (memoryStoreEnabled()) {
+    memoryBoards.set(levelId, entries);
+    return sortTasEntries(entries);
+  }
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error } = await supabaseAdmin.from("app_docs").upsert(
+    {
+      collection: COLLECTION,
+      doc_id: levelId,
+      data: { levelId, entries } as never,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "collection,doc_id" },
+  );
+  if (error) throw new Error(error.message);
+  return sortTasEntries(entries);
+}
+
 /** Read one level's TAS board (empty when it has never been submitted to). */
 export async function readTasBoard(levelId: string): Promise<TasEntry[]> {
   if (memoryStoreEnabled()) return memoryBoards.get(levelId) ?? [];

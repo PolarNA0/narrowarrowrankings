@@ -64,6 +64,31 @@ export async function removeTasRun(levelId: string, id: string): Promise<TasEntr
   return data.entries ?? [];
 }
 
+/** Admin-only: change the owner name shown for an existing entry. */
+export async function renameTasRun(
+  levelId: string,
+  id: string,
+  username: string,
+): Promise<TasEntry[]> {
+  const { supabase } = await import("@/integrations/supabase/client");
+  const token = (await supabase.auth.getSession()).data.session?.access_token;
+  const res = await fetch(
+    `/api/tas-leaderboard/${encodeURIComponent(levelId)}?id=${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ username }),
+      signal: AbortSignal.timeout(15000),
+    },
+  );
+  const data = (await res.json()) as { entries?: TasEntry[]; error?: string };
+  if (!res.ok) throw new Error(data.error ?? `Rename failed (${res.status})`);
+  return data.entries ?? [];
+}
+
 /** The level's fastest TAS time in ms, or null when the board is empty. */
 export async function fetchBestTasTime(levelId: string): Promise<number | null> {
   const entries = await fetchTasBoard(levelId);

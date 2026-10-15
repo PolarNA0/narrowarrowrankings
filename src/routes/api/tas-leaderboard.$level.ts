@@ -8,6 +8,7 @@ import {
   readTasBoard,
   readTasBoardPublic,
   removeTasEntry,
+  renameTasEntry,
   sortTasEntries,
   verifyAdminRequest,
   type TasEntry,
@@ -101,6 +102,30 @@ export const Route = createFileRoute("/api/tas-leaderboard/$level")({
           rank: sorted.findIndex((e) => e.id === entry.id) + 1,
           entries: sorted,
         });
+      },
+      /** Admin-only: rename the owner of an existing entry (e.g. re-attribute). */
+      PATCH: async ({ params, request }) => {
+        const url = new URL(request.url);
+        const id = url.searchParams.get("id");
+        if (!id) return Response.json({ error: "Missing entry id" }, { status: 400 });
+
+        if (!(await verifyAdminRequest(request))) {
+          return Response.json({ error: "Only admins can rename TAS runs." }, { status: 403 });
+        }
+
+        const body = (await request.json().catch(() => ({}))) as { username?: unknown };
+        const username = String(body.username ?? "").trim();
+        if (!/^[A-Za-z0-9_\-. ]{1,32}$/.test(username)) {
+          return Response.json({ error: "Enter a valid name (1-32 letters)." }, { status: 400 });
+        }
+
+        let entries: TasEntry[];
+        try {
+          entries = await renameTasEntry(params.level, id, username);
+        } catch {
+          return Response.json({ error: "Could not rename that run." }, { status: 500 });
+        }
+        return Response.json({ entries: sortTasEntries(entries) });
       },
       DELETE: async ({ params, request }) => {
         const url = new URL(request.url);
