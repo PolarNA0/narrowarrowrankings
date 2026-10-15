@@ -136,16 +136,10 @@ export function normalise(segs: Segment[]): Segment[] {
   return out.length ? out : [{ symbol: 0, length: 1 }];
 }
 
-/**
- * One random edit to the segment list: boundary shift, symbol swap, insert,
- * delete, split, merge, length reset, or a "move" that shifts one segment's
- * mass into its neighbour. The mix lets the search discover a brake or a
- * counter-steer that no pure resize could.
- */
-export function mutate(segs: Segment[], rnd: () => number): Segment[] {
+/** Apply one simple, local edit in place. Returns the same array. */
+function simpleMutate(s: Segment[], rnd: () => number): Segment[] {
   const r = (n: number) => Math.floor(rnd() * n);
   const pick = (a: number[]) => a[r(a.length)];
-  const s = segs.map((x) => ({ ...x }));
   if (s.length < 2) {
     const m = r(3);
     if (m === 0) s[0].symbol = pick(SYMS.filter((x) => x !== s[0].symbol));
@@ -153,7 +147,7 @@ export function mutate(segs: Segment[], rnd: () => number): Segment[] {
     else s.push({ symbol: pick(SYMS), length: 1 + r(16) });
     return s;
   }
-  const m = r(8);
+  const m = r(10);
   const b = 1 + r(s.length - 1);
   if (m === 0) {
     const dl = (r(2) ? 1 : -1) * (1 + r(16));
@@ -189,18 +183,69 @@ export function mutate(segs: Segment[], rnd: () => number): Segment[] {
     }
   } else if (m === 5) {
     const i = r(s.length - 1);
-    const sym = pick(SYMS);
-    s.splice(i, 2, { symbol: sym, length: s[i].length + s[i + 1].length });
+    s.splice(i, 2, { symbol: pick(SYMS), length: s[i].length + s[i + 1].length });
   } else if (m === 6) {
     const i = r(s.length);
     s[i].length = Math.max(1, 1 + r(48));
-  } else {
+  } else if (m === 7) {
     const i = r(s.length - 1);
     const move = s[i].length;
     s[i].length = 1;
     s[i + 1].length += move - 1;
+  } else if (m === 8) {
+    // A single tick added or removed, for the finest possible nudge.
+    if (r(2)) {
+      s.splice(1 + r(s.length), 0, { symbol: pick(SYMS), length: 1 });
+    } else {
+      const i = r(s.length);
+      if (s[i].length > 1) s[i].length -= 1;
+    }
+  } else {
+    // Widen: lengthen two adjacent opposite holds by the same amount, so the
+    // arrow runs wider into the corner and can carry more speed out of it.
+    const i = r(s.length - 1);
+    if (s[i].symbol !== s[i + 1].symbol) {
+      const d = 1 + r(12);
+      s[i].length += d;
+      s[i + 1].length += d;
+    } else {
+      const j = r(s.length);
+      s[j].length += 1 + r(12);
+    }
   }
-  return normalise(s);
+  return s;
+}
+
+/**
+ * One random edit to the segment list. Mostly simple local edits, but two
+ * compound moves exist because a corner reshape ("run wider in, exit tighter")
+ * is never a single local edit: the intermediate steps cross a wall and DNF, so
+ * a valley of invalid runs sits between the two lines. The block reshape
+ * re-rolls a whole window of holds at once, and the paired move applies two
+ * simple edits together; either can land on the far side of that valley, where
+ * `refine` then polishes the new corner.
+ */
+export function mutate(segs: Segment[], rnd: () => number): Segment[] {
+  const r = (n: number) => Math.floor(rnd() * n);
+  const pick = (a: number[]) => a[r(a.length)];
+  const s = segs.map((x) => ({ ...x }));
+  const m = r(12);
+  if (m === 10 && s.length > 1) {
+    // Block reshape: replace a random window of holds with fresh ones.
+    const i = r(s.length);
+    const w = Math.min(s.length - i, 1 + r(4));
+    const block: Segment[] = [];
+    for (let k = 0; k < w; k++) block.push({ symbol: pick(SYMS), length: 1 + r(24) });
+    s.splice(i, w, ...block);
+    return normalise(s);
+  }
+  if (m === 11) {
+    // Paired: two simple edits at once, to hop the invalid valley between lines.
+    simpleMutate(s, rnd);
+    simpleMutate(s, rnd);
+    return normalise(s);
+  }
+  return normalise(simpleMutate(s, rnd));
 }
 
 export interface SimFn {

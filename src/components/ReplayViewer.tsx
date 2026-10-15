@@ -601,6 +601,16 @@ interface StageProps {
   hideControls?: boolean;
   /** Extra runs drawn under the main arrow so attempts can be compared. */
   overlays?: ReplayOverlay[];
+  /**
+   * When set, the stage becomes a drawing surface: pointer drags over the map
+   * append world-space waypoints and the trace is rendered on top. The camera
+   * and frame controls still work; the stage just also captures the pointer.
+   */
+  onDrawPath?: (points: { x: number; y: number }[]) => void;
+  /** A waypoint trace to render while drawing, in world units. */
+  drawnPath?: { x: number; y: number }[];
+  /** Colour of the drawn trace; defaults to the app accent. */
+  drawColor?: string;
 }
 
 /** "lines" is the schematic stroke look; "game" mirrors the real game's render. */
@@ -639,6 +649,9 @@ export function ReplayStage({
   onSpeed,
   hideControls,
   overlays = NO_OVERLAYS,
+  onDrawPath,
+  drawnPath,
+  drawColor = "var(--app-accent)",
 }: StageProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   // How the stage draws: the schematic line look, or a render matching the game.
@@ -659,6 +672,54 @@ export function ReplayStage({
   // frame through this ref instead of a stale closure.
   const frameRef = React.useRef(frame);
   frameRef.current = frame;
+
+  // Drawing support: pointer→world uses the live transform, which lives inside
+  // the canvas effect, so it is exposed through refs the handlers read.
+  const worldFromEventRef = React.useRef<
+    ((e: React.PointerEvent) => { x: number; y: number }) | null
+  >(null);
+  const drawPathRef = React.useRef(drawnPath);
+  drawPathRef.current = drawnPath;
+  const drawColorRef = React.useRef(drawColor);
+  drawColorRef.current = drawColor;
+  const strokeRef = React.useRef<{ x: number; y: number }[] | null>(null);
+  const drawingRef = React.useRef(false);
+
+  /** Map a pointer event to world coordinates using the canvas' current transform. */
+  const eventToWorld = React.useCallback((e: React.PointerEvent) => {
+    const canvas = canvasRef.current;
+    const map = worldFromEventRef.current;
+    if (!canvas || !map) return null;
+    return map(e);
+  }, []);
+
+  const beginStroke = (e: React.PointerEvent) => {
+    if (!onDrawPath) return;
+    const p = eventToWorld(e);
+    if (!p) return;
+    drawingRef.current = true;
+    strokeRef.current = [p];
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const extendStroke = (e: React.PointerEvent) => {
+    if (!drawingRef.current || !onDrawPath) return;
+    const p = eventToWorld(e);
+    if (!p) return;
+    const s = strokeRef.current!;
+    const last = s[s.length - 1];
+    // Keep the trace fine-grained while dragging; the controller simplifies it.
+    if (Math.hypot(p.x - last.x, p.y - last.y) < 2) return;
+    s.push(p);
+    onDrawPath(s.slice());
+  };
+  const endStroke = (e: React.PointerEvent) => {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    const s = strokeRef.current;
+    strokeRef.current = null;
+    if (s && s.length >= 2) onDrawPath?.(s.slice());
+    (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+  };
 
   React.useEffect(() => {
     const canvas = canvasRef.current;
@@ -767,6 +828,15 @@ export function ReplayStage({
       }
       tx = (wx: number) => wx * scale + offX;
       ty = (wy: number) => wy * scale + offY;
+    };
+
+    // Expose the inverse transform so pointer events can be mapped to world
+    // units (used only while drawing a route).
+    worldFromEventRef.current = (e: React.PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      return { x: (px - offX) / scale, y: (py - offY) / scale };
     };
 
     /** Zones and portals, drawn under the walls in both modes. */
@@ -1215,6 +1285,30 @@ export function ReplayStage({
         ctx.font = "bold 11px ui-monospace, monospace";
         ctx.fillText("FINISH", 10, 18);
       }
+
+      // A drawn route is overlaid last so it sits above the walls and trail.
+      const stroke = drawPathRef.current;
+      if (stroke && stroke.length > 1) {
+        ctx.save();
+        ctx.strokeStyle = drawColorRef.current;
+        ctx.globalAlpha = 0.9;
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(tx(stroke[0].x), ty(stroke[0].y));
+        for (let i = 1; i < stroke.length; i++) ctx.lineTo(tx(stroke[i].x), ty(stroke[i].y));
+        ctx.stroke();
+        // A dot marks each waypoint the controller will aim at.
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = drawColorRef.current;
+        for (const p of stroke) {
+          ctx.beginPath();
+          ctx.arc(tx(p.x), ty(p.y), 1.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
     };
 
     let trailLayer: HTMLCanvasElement | null = null;
@@ -1251,6 +1345,11 @@ export function ReplayStage({
   React.useEffect(() => {
     drawRef.current();
   }, [frame]);
+
+  // Repaint when the drawn route changes so the trace tracks the pointer.
+  React.useEffect(() => {
+    drawRef.current();
+  }, [drawnPath]);
 
   // Camera changes (a new preset or a slider) only need a repaint.
   React.useEffect(() => {
@@ -1351,7 +1450,14 @@ export function ReplayStage({
         </div>
       )}
       <div className="rounded-lg overflow-hidden border border-white/10 bg-[#07070b]">
-        <canvas ref={canvasRef} />
+        <canvas
+          ref={canvasRef}
+          onPointerDown={beginStroke}
+          onPointerMove={extendStroke}
+          onPointerUp={endStroke}
+          onPointerCancel={endStroke}
+          className={onDrawPath ? "cursor-crosshair touch-none" : undefined}
+        />
       </div>
       {mode === "lines" && <ReplayLegend geometry={geometry} />}
       {!hideControls && (

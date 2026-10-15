@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { LEVELS } from "@/constants";
 import { fetchTasBoard, removeTasRun, renameTasRun, type TasEntry } from "@/lib/tas-leaderboard";
 import { TasReplayViewer } from "@/components/ReplayViewer";
+import { LevelPicker } from "@/components/LevelPicker";
 import { fetchLeaderboard } from "@/services/api";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 import type { LeaderboardEntry } from "@/types";
@@ -159,18 +160,7 @@ export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewPro
             <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
               Level
             </label>
-            <Select value={levelId} onValueChange={setLevelId}>
-              <SelectTrigger className="bg-white/5 border-white/10 h-9 text-xs w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 max-h-72">
-                {LEVELS.map((l) => (
-                  <SelectItem key={l.id} value={l.id} className="text-xs">
-                    {l.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <LevelPicker value={levelId} onChange={(l) => setLevelId(l.id)} className="w-48" />
           </div>
           <Button
             size="sm"

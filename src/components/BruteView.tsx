@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Check, Cpu, Loader2, Send, Sparkles, Square, Timer, Trophy } from "lucide-react";
+import { Check, Cpu, Loader2, Pencil, Send, Sparkles, Square, Timer, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -18,10 +18,12 @@ import {
   simulateRun,
   type RawLevelData,
   type SimGeometry,
+  type SimResult,
 } from "@/lib/replay-sim";
 import { arrowKind } from "@/lib/arrow-sprites";
 import { ReplayStage } from "@/components/ReplayViewer";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
+import { LevelPicker } from "@/components/LevelPicker";
 import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
 import { fetchLeaderboard } from "@/services/api";
 import { fetchRunInputs } from "@/hooks/useCompareGhosts";
@@ -34,6 +36,17 @@ import {
 } from "@/lib/tas-brute";
 import { encodeInputSymbols } from "@/lib/replay";
 import { SIM_TICK_MS } from "@/lib/replay-sim";
+import { waypointsToSymbols, simplifyStroke } from "@/lib/path-seed";
+
+/** The three playable arrows, for drawing a line before any run is chosen. */
+const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
+
+/** An empty trajectory for the draw canvas (no run is replayed there). */
+const EMPTY_SIM: SimResult = {
+  path: [],
+  finishTick: null,
+  bounds: { minX: 0, minY: 0, maxX: 0, maxY: 0 },
+};
 
 const BUDGETS = [
   { label: "15s", ms: 15000 },
@@ -85,6 +98,7 @@ export function BruteView({ isAdmin }: { isAdmin?: boolean }) {
  */
 export function BruteRunner() {
   const [levelId, setLevelId] = React.useState(LEVELS[0]?.id ?? "");
+  const [levelName, setLevelName] = React.useState(LEVELS[0]?.name ?? "");
   const [budgetMs, setBudgetMs] = React.useState(BUDGETS[1].ms);
   const [t0, setT0] = React.useState(6);
   const [refine, setRefine] = React.useState(true);
@@ -100,6 +114,25 @@ export function BruteRunner() {
   const [status, setStatus] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [submitOpen, setSubmitOpen] = React.useState(false);
+
+  // Draw-a-line mode: a route sketched on the map becomes the seed run.
+  const [bruteTab, setBruteTab] = React.useState<"optimize" | "draw">("optimize");
+  const [drawOpen, setDrawOpen] = React.useState(false);
+  const [drawnPath, setDrawnPath] = React.useState<{ x: number; y: number }[]>([]);
+  const [drawArrow, setDrawArrow] = React.useState(ARROWS[0]);
+  const [drawLevelData, setDrawLevelData] = React.useState<RawLevelData | null>(null);
+  const [drawGeometry, setDrawGeometry] = React.useState<SimGeometry>({
+    walls: [],
+    zones: [],
+    portals: [],
+  });
+  const [drawError, setDrawError] = React.useState<string | null>(null);
+  // The input stream the drawn line converts to, held until "Use as seed" or a run.
+  const [drawnSeed, setDrawnSeed] = React.useState<{
+    symbols: number[];
+    arrow: string;
+    ms: number | null;
+  } | null>(null);
 
   const workersRef = React.useRef<Worker[]>([]);
   const stopRef = React.useRef(false);
@@ -151,9 +184,66 @@ export function BruteRunner() {
     [humanEntries, seedId],
   );
 
-  const canSeed = entries.length > 0 || humanEntries.length > 0;
+  const canSeed = entries.length > 0 || humanEntries.length > 0 || !!drawnSeed;
 
   const seedTimeMs = seedEntry?.timeMs ?? null;
+
+  // Load the level geometry when the draw panel opens, so the map is visible
+  // to trace over even before any run has been chosen.
+  React.useEffect(() => {
+    if (!drawOpen) return;
+    let cancelled = false;
+    fetch(`/api/level-details/${encodeURIComponent(levelId)}`, {
+      signal: AbortSignal.timeout(20000),
+    })
+      .then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error(`Level request failed (${r.status})`)),
+      )
+      .then((payload: { levelInfo?: { data?: RawLevelData } }) => {
+        if (cancelled) return;
+        const data = payload.levelInfo?.data ?? null;
+        setDrawLevelData(data);
+        setDrawGeometry(data ? levelGeometry(data) : { walls: [], zones: [], portals: [] });
+      })
+      .catch((e) => {
+        if (!cancelled) setDrawError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [drawOpen, levelId]);
+
+  /** Turn the sketched route into an input stream and preview its time. */
+  const convertDraw = async () => {
+    if (!drawLevelData) {
+      setDrawError("Level geometry is still loading.");
+      return;
+    }
+    const waypoints = simplifyStroke(drawnPath, 24);
+    if (waypoints.length < 2) {
+      setDrawError("Draw a longer line first.");
+      return;
+    }
+    setDrawError(null);
+    const symbols = await waypointsToSymbols({
+      waypoints,
+      levelData: drawLevelData,
+      arrowName: drawArrow,
+    });
+    if (!symbols.length) {
+      setDrawError("Could not turn that line into a run.");
+      return;
+    }
+    const sim = await simulateRun(
+      encodeInputSymbols(symbols),
+      symbols.length,
+      drawLevelData,
+      {},
+      drawArrow,
+    );
+    const ms = sim.finishTick !== null ? Math.round(sim.finishTick * SIM_TICK_MS) : null;
+    setDrawnSeed({ symbols, arrow: drawArrow, ms });
+  };
 
   // Terminate a running search and keep whatever best it had reached.
   const stop = React.useCallback(() => {
@@ -206,14 +296,19 @@ export function BruteRunner() {
   );
 
   const start = async () => {
-    // Resolve the seed. A TAS entry carries its inputs; a human run needs its
-    // replay fetched. Human seeding is what lets a level whose TAS board is
-    // still empty be optimized at all.
+    // Resolve the seed. A drawn line wins if one exists; otherwise a TAS entry
+    // carries its inputs, or a human run has its replay fetched. Human seeding
+    // is what lets a level whose TAS board is still empty be optimized at all.
     let seedInputs = "";
     let seedArrow = "";
     let seedCount = 0;
     let seedMs: number | null = null;
-    if (seedEntry) {
+    if (drawnSeed) {
+      seedInputs = encodeInputSymbols(drawnSeed.symbols);
+      seedCount = drawnSeed.symbols.length;
+      seedArrow = drawnSeed.arrow;
+      seedMs = drawnSeed.ms;
+    } else if (seedEntry) {
       seedInputs = seedEntry.inputs;
       seedArrow = seedEntry.arrowName;
       seedCount = seedEntry.inputCount;
@@ -366,112 +461,246 @@ export function BruteRunner() {
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Level">
-          <Select value={levelId} onValueChange={setLevelId}>
-            <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 max-h-72">
-              {LEVELS.map((l) => (
-                <SelectItem key={l.id} value={l.id} className="text-xs">
-                  {l.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label="Seed run">
-          <Select value={seedId} onValueChange={setSeedId} disabled={!canSeed}>
-            <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
-              <SelectValue placeholder={canSeed ? "Fastest" : "No runs"} />
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 max-h-72">
-              {entries.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
-                    TAS board
-                  </SelectLabel>
-                  <SelectItem value="auto" className="text-xs">
-                    Fastest TAS run
-                  </SelectItem>
-                  {entries.map((e) => (
-                    <SelectItem key={e.id} value={e.id} className="text-xs">
-                      {e.username} — {(e.timeMs / 1000).toFixed(3)}s ({e.arrowName})
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              )}
-              {humanEntries.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
-                    Human runs
-                  </SelectLabel>
-                  {humanEntries.slice(0, 25).map((h) => (
-                    <SelectItem key={h.run_id} value={`human-${h.run_id}`} className="text-xs">
-                      {h.username} — {h.completion_time.toFixed(3)}s ({h.arrow_name})
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              )}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label="Time budget">
-          <Select value={String(budgetMs)} onValueChange={(v) => setBudgetMs(Number(v))}>
-            <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200">
-              {BUDGETS.map((b) => (
-                <SelectItem key={b.ms} value={String(b.ms)} className="text-xs">
-                  Search {b.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label="Intensity">
-          <Select value={String(t0)} onValueChange={(v) => setT0(Number(v))}>
-            <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200">
-              {INTENSITIES.map((i) => (
-                <SelectItem key={i.t0} value={String(i.t0)} className="text-xs">
-                  {i.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label="Refine (1-tick polish)">
-          <Button
-            variant="outline"
+      <div className="flex items-center gap-1 border-b border-white/5">
+        {(
+          [
+            ["optimize", "Optimize"],
+            ["draw", "Draw Seed"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
             className={cn(
-              "h-9 w-full text-xs justify-start",
-              refine ? "border-[var(--app-accent)]/40 text-[var(--app-accent)]" : "text-slate-400",
+              "-mb-px border-b-2 px-3 py-2 text-xs font-bold uppercase tracking-widest transition-colors",
+              bruteTab === key
+                ? "border-[var(--app-accent)] text-[var(--app-accent)]"
+                : "border-transparent text-slate-500 hover:text-slate-300",
             )}
-            onClick={() => setRefine((r) => !r)}
+            onClick={() => setBruteTab(key)}
           >
-            <Check className={cn("w-3.5 h-3.5 mr-1", refine ? "opacity-100" : "opacity-0")} />
-            {refine ? "On" : "Off"}
-          </Button>
-        </Field>
+            {label}
+          </button>
+        ))}
+      </div>
 
-        <div className="flex items-end">
-          {running ? (
-            <Button variant="outline" className="h-9 w-full text-xs" onClick={stop}>
-              <Square className="w-3.5 h-3.5 mr-1" /> Stop
+      <div className={cn(bruteTab !== "optimize" && "hidden")}>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Field label="Level">
+            <LevelPicker
+              value={levelId}
+              onChange={(l) => {
+                setLevelId(l.id);
+                setLevelName(l.name);
+              }}
+              className="w-full"
+            />
+          </Field>
+
+          <Field label="Seed run">
+            <Select value={seedId} onValueChange={setSeedId} disabled={!canSeed}>
+              <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
+                <SelectValue placeholder={canSeed ? "Fastest" : "No runs"} />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 max-h-72">
+                {entries.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
+                      TAS board
+                    </SelectLabel>
+                    <SelectItem value="auto" className="text-xs">
+                      Fastest TAS run
+                    </SelectItem>
+                    {entries.map((e) => (
+                      <SelectItem key={e.id} value={e.id} className="text-xs">
+                        {e.username} — {(e.timeMs / 1000).toFixed(3)}s ({e.arrowName})
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {humanEntries.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
+                      Human runs
+                    </SelectLabel>
+                    {humanEntries.slice(0, 25).map((h) => (
+                      <SelectItem key={h.run_id} value={`human-${h.run_id}`} className="text-xs">
+                        {h.username} — {h.completion_time.toFixed(3)}s ({h.arrow_name})
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="Time budget">
+            <Select value={String(budgetMs)} onValueChange={(v) => setBudgetMs(Number(v))}>
+              <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200">
+                {BUDGETS.map((b) => (
+                  <SelectItem key={b.ms} value={String(b.ms)} className="text-xs">
+                    Search {b.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="Intensity">
+            <Select value={String(t0)} onValueChange={(v) => setT0(Number(v))}>
+              <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200">
+                {INTENSITIES.map((i) => (
+                  <SelectItem key={i.t0} value={String(i.t0)} className="text-xs">
+                    {i.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="Refine (1-tick polish)">
+            <Button
+              variant="outline"
+              className={cn(
+                "h-9 w-full text-xs justify-start",
+                refine
+                  ? "border-[var(--app-accent)]/40 text-[var(--app-accent)]"
+                  : "text-slate-400",
+              )}
+              onClick={() => setRefine((r) => !r)}
+            >
+              <Check className={cn("w-3.5 h-3.5 mr-1", refine ? "opacity-100" : "opacity-0")} />
+              {refine ? "On" : "Off"}
             </Button>
-          ) : (
-            <Button className="h-9 w-full text-xs" onClick={() => void start()} disabled={!canSeed}>
-              <Sparkles className="w-3.5 h-3.5 mr-1" /> Optimize
+          </Field>
+
+          <div className="flex items-end">
+            {running ? (
+              <Button variant="outline" className="h-9 w-full text-xs" onClick={stop}>
+                <Square className="w-3.5 h-3.5 mr-1" /> Stop
+              </Button>
+            ) : (
+              <Button
+                className="h-9 w-full text-xs"
+                onClick={() => void start()}
+                disabled={!canSeed}
+              >
+                <Sparkles className="w-3.5 h-3.5 mr-1" /> Optimize
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Draw Seed tab: sketch a line on the map, convert it to inputs, seed the search. */}
+      <div className={cn(bruteTab !== "draw" && "hidden")}>
+        <div className="rounded-lg border border-white/5 bg-black/30 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className={cn(
+                "h-8 text-xs",
+                drawOpen
+                  ? "border-[var(--app-accent)]/40 text-[var(--app-accent)]"
+                  : "text-slate-300",
+              )}
+              onClick={() => setDrawOpen((v) => !v)}
+            >
+              <Pencil className="w-3.5 h-3.5 mr-1.5" />
+              {drawOpen ? "Close drawing" : "Draw a line"}
             </Button>
+            {drawnSeed && (
+              <span className="text-[11px] text-slate-400">
+                Drawn seed:{" "}
+                <span className="font-mono text-[var(--app-accent)]">
+                  {drawnSeed.ms !== null ? `${(drawnSeed.ms / 1000).toFixed(3)}s` : "DNF"}
+                </span>{" "}
+                · {drawnSeed.arrow} · {drawnSeed.symbols.length} inputs — the search will seed from
+                it.
+              </span>
+            )}
+          </div>
+
+          {drawOpen && (
+            <div className="space-y-3">
+              <p className="text-[11px] text-slate-500">
+                Drag over the map to trace the route you want the arrow to take. The engine follows
+                your line with its real physics, turning the sketch into inputs; then the optimizer
+                refines that line. Trace through the level, start to finish.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                  Arrow
+                </span>
+                <Select value={drawArrow} onValueChange={setDrawArrow}>
+                  <SelectTrigger className="h-8 w-40 text-xs bg-white/5 border-white/10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200">
+                    {ARROWS.map((a) => (
+                      <SelectItem key={a} value={a} className="text-xs">
+                        {a}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 text-xs text-slate-400"
+                  onClick={() => {
+                    setDrawnPath([]);
+                    setDrawnSeed(null);
+                    setDrawError(null);
+                  }}
+                  disabled={drawnPath.length === 0}
+                >
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs"
+                  onClick={() => void convertDraw()}
+                  disabled={drawnPath.length < 2}
+                >
+                  Convert to inputs
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => void start()}
+                  disabled={!drawnSeed || running}
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-1" /> Optimize this line
+                </Button>
+              </div>
+              <ReplayStage
+                sim={EMPTY_SIM}
+                geometry={drawGeometry}
+                frame={0}
+                playing={false}
+                speed={1}
+                bodyColor="#8ab4ff"
+                trail="#8ab4ff"
+                thrust="#ffd166"
+                arrow={arrowKind(drawArrow)}
+                arrowRadius={arrowConstants(drawArrow).radius ?? 16}
+                replayTimeMs={0}
+                onTogglePlay={() => {}}
+                onScrub={() => {}}
+                onSpeed={() => {}}
+                hideControls
+                onDrawPath={setDrawnPath}
+                drawnPath={drawnPath}
+              />
+              {drawError && <p className="text-xs text-red-400">{drawError}</p>}
+            </div>
           )}
         </div>
       </div>
@@ -547,7 +776,7 @@ export function BruteRunner() {
           open={submitOpen}
           onOpenChange={setSubmitOpen}
           levelId={levelId}
-          levelName={LEVELS.find((l) => l.id === levelId)?.name ?? levelId}
+          levelName={levelName || levelId}
           arrowName={seedEntry?.arrowName ?? humanSeed?.arrow_name ?? "Narrow Arrow"}
           timeMs={result.timeMs}
           inputs={result.inputs}

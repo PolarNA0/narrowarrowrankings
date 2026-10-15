@@ -11,6 +11,7 @@ import {
   Medal,
   Trophy,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,7 @@ import { ReplayStage } from "@/components/ReplayViewer";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
 import { TasReplayViewer } from "@/components/ReplayViewer";
+import { LevelPicker } from "@/components/LevelPicker";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 import type { TasLoadRequest } from "@/components/TasLeaderboardView";
 
@@ -432,6 +434,26 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
     setFrame(Math.min(start + 1, next.length));
   };
 
+  /**
+   * Insert a brand-new hold of `symbol` (and `length` ticks) beginning at
+   * `at`, shifting everything after it later. This adds a hold in the middle of
+   * the run, not just at the end.
+   */
+  const insertSegment = (at: number, symbol: number, length = 1) => {
+    const next = symbolsRef.current.slice();
+    for (let i = 0; i < length; i++) next.splice(at + i, 0, symbol);
+    commit(next, at);
+    setFrame(Math.min(at + 1, Math.max(0, next.length - 1)));
+  };
+
+  /** Remove the hold beginning at `segStart` (all `length` of its ticks). */
+  const removeSegment = (segStart: number, length: number) => {
+    const next = symbolsRef.current.slice();
+    next.splice(segStart, length);
+    commit(next, Math.min(segStart, next.length));
+    setFrame(Math.min(segStart + 1, Math.max(0, next.length - 1)));
+  };
+
   const segments = React.useMemo<Segment[]>(() => {
     const out: Segment[] = [];
     let i = 0;
@@ -543,18 +565,7 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
           <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
             Level
           </label>
-          <Select value={levelId} onValueChange={setLevelId}>
-            <SelectTrigger className="bg-white/5 border-white/10 h-9 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 max-h-72">
-              {LEVELS.map((l) => (
-                <SelectItem key={l.id} value={l.id} className="text-xs">
-                  {l.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <LevelPicker value={levelId} onChange={(l) => setLevelId(l.id)} className="w-full" />
         </div>
         <div className="space-y-1">
           <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
@@ -885,6 +896,16 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
                     >
                       {showTime ? seconds(seg.start) : `tick ${seg.start}`}
                     </button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-slate-500 hover:text-red-400"
+                      onClick={() => removeSegment(seg.start, seg.length)}
+                      aria-label="Delete this hold"
+                      title="Delete this hold"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
                   </div>
                 );
               })}
@@ -938,6 +959,26 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
                     +{n}n
                   </Button>
                 ))}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                  Insert here
+                </span>
+                {REPLAY_SYMBOLS.map((s) => (
+                  <Button
+                    key={s.key}
+                    size="sm"
+                    variant="outline"
+                    className={cn("h-7 text-[11px] font-mono", symbolTone(s.key))}
+                    onClick={() => insertSegment(currentTick, symbolValue(s.key), 1)}
+                    title={`Insert a 1-tick ${s.label} hold at tick ${currentTick}`}
+                  >
+                    +{s.short}
+                  </Button>
+                ))}
+                <span className="text-[10px] text-slate-600">
+                  adds a new hold at the cursor, shifting the rest later
+                </span>
               </div>
             </div>
 
