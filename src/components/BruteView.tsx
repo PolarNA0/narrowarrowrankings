@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -21,6 +23,9 @@ import { arrowKind } from "@/lib/arrow-sprites";
 import { ReplayStage } from "@/components/ReplayViewer";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
+import { fetchLeaderboard } from "@/services/api";
+import { fetchRunInputs } from "@/hooks/useCompareGhosts";
+import type { LeaderboardEntry } from "@/types";
 import {
   seedFromInputs,
   type BruteProgress,
@@ -85,6 +90,9 @@ export function BruteRunner() {
   const [refine, setRefine] = React.useState(true);
   const [entries, setEntries] = React.useState<TasEntry[]>([]);
   const [seedId, setSeedId] = React.useState<string>("auto");
+  // The level's real-game runs, so the search can seed from a human run when no
+  // TAS submission exists yet.
+  const [humanEntries, setHumanEntries] = React.useState<LeaderboardEntry[]>([]);
 
   const [running, setRunning] = React.useState(false);
   const [progress, setProgress] = React.useState<BruteProgress | null>(null);
@@ -117,6 +125,13 @@ export function BruteRunner() {
       .catch(() => {
         if (!cancelled) setEntries([]);
       });
+    fetchLeaderboard(levelId)
+      .then((list) => {
+        if (!cancelled) setHumanEntries(list);
+      })
+      .catch(() => {
+        if (!cancelled) setHumanEntries([]);
+      });
     setResult(null);
     setProgress(null);
     setSeedId("auto");
@@ -130,6 +145,13 @@ export function BruteRunner() {
     if (seedId === "auto") return entries[0];
     return entries.find((e) => e.id === seedId) ?? entries[0];
   }, [entries, seedId]);
+
+  const humanSeed = React.useMemo(
+    () => humanEntries.find((h) => `human-${h.run_id}` === seedId) ?? null,
+    [humanEntries, seedId],
+  );
+
+  const canSeed = entries.length > 0 || humanEntries.length > 0;
 
   const seedTimeMs = seedEntry?.timeMs ?? null;
 
@@ -184,10 +206,37 @@ export function BruteRunner() {
   );
 
   const start = async () => {
-    if (!seedEntry) {
-      setError("No TAS run to optimize on this level. Add one from the TAS editor first.");
+    // Resolve the seed. A TAS entry carries its inputs; a human run needs its
+    // replay fetched. Human seeding is what lets a level whose TAS board is
+    // still empty be optimized at all.
+    let seedInputs = "";
+    let seedArrow = "";
+    let seedCount = 0;
+    let seedMs: number | null = null;
+    if (seedEntry) {
+      seedInputs = seedEntry.inputs;
+      seedArrow = seedEntry.arrowName;
+      seedCount = seedEntry.inputCount;
+      seedMs = seedEntry.timeMs;
+    } else if (humanSeed) {
+      if (humanSeed.replay_available === 0) {
+        setError("That run has no replay to seed from. Pick another run or add a TAS entry.");
+        return;
+      }
+      const loaded = await fetchRunInputs(humanSeed.run_id);
+      if (!loaded) {
+        setError("Could not load that run's replay.");
+        return;
+      }
+      seedInputs = loaded.inputs;
+      seedCount = loaded.inputCount;
+      seedArrow = loaded.arrowName || humanSeed.arrow_name;
+      seedMs = Math.round(humanSeed.completion_time * 1000);
+    } else {
+      setError("No run to seed from. Pick a run to optimize.");
       return;
     }
+
     setRunning(true);
     setError(null);
     setStatus(null);
@@ -204,9 +253,9 @@ export function BruteRunner() {
       if (!levelData) throw new Error("Level has no geometry");
       setGeometry(levelGeometry(levelData));
       levelDataRef.current = levelData;
-      arrowRef.current = seedEntry.arrowName;
+      arrowRef.current = seedArrow;
 
-      const seedSymbols = seedFromInputs(seedEntry.inputs, seedEntry.inputCount);
+      const seedSymbols = seedFromInputs(seedInputs, seedCount || undefined);
 
       // Fan the search out over several workers, each with its own RNG seed, and
       // keep the best line any of them finds. Independent restarts beat one long
@@ -271,7 +320,7 @@ export function BruteRunner() {
             options: {
               seedSymbols,
               levelData,
-              arrowName: seedEntry.arrowName,
+              arrowName: seedArrow,
               budgetMs,
               t0,
               refine,
@@ -288,10 +337,10 @@ export function BruteRunner() {
         setError("The search could not simulate this level.");
         return;
       }
-      const sim = await simulateRun(out.inputs, out.inputCount, levelData, {}, seedEntry.arrowName);
+      const sim = await simulateRun(out.inputs, out.inputCount, levelData, {}, seedArrow);
       const result: BruteResult = { ...out, sim };
       setResult(result);
-      const delta = seedTimeMs !== null ? seedTimeMs - result.timeMs : null;
+      const delta = seedMs !== null ? seedMs - result.timeMs : null;
       setStatus(
         delta !== null && delta > 0
           ? `Found ${(result.timeMs / 1000).toFixed(3)}s — ${(delta / 1000).toFixed(3)}s faster than the seed (${n}× search).`
@@ -312,7 +361,8 @@ export function BruteRunner() {
         </h2>
         <p className="text-slate-500 text-sm">
           Let the real physics engine hunt for a faster line. It seeds from a run on the level's TAS
-          board, then tries tighter holds, brakes and counter-steers to shave the finish time.
+          board — or any human run when the board is still empty — then tries tighter holds, brakes
+          and counter-steers to shave the finish time.
         </p>
       </div>
 
@@ -333,19 +383,38 @@ export function BruteRunner() {
         </Field>
 
         <Field label="Seed run">
-          <Select value={seedId} onValueChange={setSeedId} disabled={entries.length === 0}>
+          <Select value={seedId} onValueChange={setSeedId} disabled={!canSeed}>
             <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
-              <SelectValue placeholder={entries.length ? "Fastest" : "No TAS runs"} />
+              <SelectValue placeholder={canSeed ? "Fastest" : "No runs"} />
             </SelectTrigger>
             <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 max-h-72">
-              <SelectItem value="auto" className="text-xs">
-                Fastest on the board
-              </SelectItem>
-              {entries.map((e) => (
-                <SelectItem key={e.id} value={e.id} className="text-xs">
-                  {e.username} — {(e.timeMs / 1000).toFixed(3)}s ({e.arrowName})
-                </SelectItem>
-              ))}
+              {entries.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
+                    TAS board
+                  </SelectLabel>
+                  <SelectItem value="auto" className="text-xs">
+                    Fastest TAS run
+                  </SelectItem>
+                  {entries.map((e) => (
+                    <SelectItem key={e.id} value={e.id} className="text-xs">
+                      {e.username} — {(e.timeMs / 1000).toFixed(3)}s ({e.arrowName})
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
+              {humanEntries.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
+                    Human runs
+                  </SelectLabel>
+                  {humanEntries.slice(0, 25).map((h) => (
+                    <SelectItem key={h.run_id} value={`human-${h.run_id}`} className="text-xs">
+                      {h.username} — {h.completion_time.toFixed(3)}s ({h.arrow_name})
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
             </SelectContent>
           </Select>
         </Field>
@@ -403,7 +472,7 @@ export function BruteRunner() {
             <Button
               className="h-9 w-full text-xs"
               onClick={() => void start()}
-              disabled={entries.length === 0}
+              disabled={!canSeed}
             >
               <Sparkles className="w-3.5 h-3.5 mr-1" /> Optimize
             </Button>
@@ -415,8 +484,20 @@ export function BruteRunner() {
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
           <Stat
             label="Seed"
-            value={seedEntry ? `${seedEntry.inputCount} ticks` : "—"}
-            raw={seedTimeMs !== null ? `${(seedTimeMs / 1000).toFixed(3)}s` : "—"}
+            value={
+              seedEntry
+                ? `${seedEntry.inputCount} ticks`
+                : humanSeed
+                  ? `${humanSeed.arrow_name} (human)`
+                  : "—"
+            }
+            raw={
+              seedEntry
+                ? `${(seedEntry.timeMs / 1000).toFixed(3)}s`
+                : humanSeed
+                  ? `${humanSeed.completion_time.toFixed(3)}s`
+                  : "—"
+            }
           />
           <Stat
             label="Best found"
@@ -444,7 +525,7 @@ export function BruteRunner() {
       {result && result.sim.path.length > 1 && (
         <ResultPreview
           result={result}
-          arrowName={seedEntry?.arrowName ?? "Narrow Arrow"}
+          arrowName={seedEntry?.arrowName ?? humanSeed?.arrow_name ?? "Narrow Arrow"}
           geometry={geometry}
         />
       )}
@@ -471,7 +552,7 @@ export function BruteRunner() {
           onOpenChange={setSubmitOpen}
           levelId={levelId}
           levelName={LEVELS.find((l) => l.id === levelId)?.name ?? levelId}
-          arrowName={seedEntry?.arrowName ?? "Narrow Arrow"}
+          arrowName={seedEntry?.arrowName ?? humanSeed?.arrow_name ?? "Narrow Arrow"}
           timeMs={result.timeMs}
           inputs={result.inputs}
           inputCount={result.inputCount}

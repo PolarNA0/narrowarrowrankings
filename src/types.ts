@@ -4,6 +4,7 @@ export interface LeaderboardEntry {
   username: string;
   arrow_name: string;
   created_at: string;
+  replay_available?: number;
   isLegacy?: boolean;
   originalRank?: number;
 }
