@@ -13,6 +13,7 @@ import { LEVELS } from "@/constants";
 import {
   arrowConstants,
   levelGeometry,
+  simulateRun,
   type RawLevelData,
   type SimGeometry,
 } from "@/lib/replay-sim";
@@ -20,7 +21,13 @@ import { arrowKind } from "@/lib/arrow-sprites";
 import { ReplayStage } from "@/components/ReplayViewer";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
-import { optimizeRun, seedFromInputs, type BruteProgress, type BruteResult } from "@/lib/tas-brute";
+import {
+  seedFromInputs,
+  type BruteProgress,
+  type BruteResult,
+  type BruteResultLite,
+} from "@/lib/tas-brute";
+import { encodeInputSymbols } from "@/lib/replay";
 import { SIM_TICK_MS } from "@/lib/replay-sim";
 
 const BUDGETS = [
@@ -28,10 +35,18 @@ const BUDGETS = [
   { label: "30s", ms: 30000 },
   { label: "60s", ms: 60000 },
   { label: "2min", ms: 120000 },
+  { label: "5min", ms: 300000 },
+  { label: "10min", ms: 600000 },
 ];
 
 const fmt = (tick: number | null) =>
   tick === null ? "—" : `${((tick * SIM_TICK_MS) / 1000).toFixed(3)}s`;
+
+/** How many search workers to run in parallel. */
+function workerCount(): number {
+  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
+  return Math.max(1, Math.min(8, cores - 1));
+}
 
 /**
  * Admin-gated entry point for the Brute optimizer. Non-admins see a
@@ -69,7 +84,13 @@ export function BruteRunner() {
   const [error, setError] = React.useState<string | null>(null);
   const [submitOpen, setSubmitOpen] = React.useState(false);
 
+  const workersRef = React.useRef<Worker[]>([]);
   const stopRef = React.useRef(false);
+  /** Resolver for the in-flight search promise, so a Stop can settle it. */
+  const settleRef = React.useRef<((result: BruteResultLite | null) => void) | null>(null);
+  /** Geometry + arrow of the run in flight, so a Stop can rebuild its trajectory. */
+  const levelDataRef = React.useRef<RawLevelData | null>(null);
+  const arrowRef = React.useRef<string>("");
   /** Level geometry of the last run, kept so the preview can draw the map. */
   const [geometry, setGeometry] = React.useState<SimGeometry>({
     walls: [],
@@ -103,6 +124,56 @@ export function BruteRunner() {
 
   const seedTimeMs = seedEntry?.timeMs ?? null;
 
+  // Terminate a running search and keep whatever best it had reached.
+  const stop = React.useCallback(() => {
+    stopRef.current = true;
+    workersRef.current.forEach((w) => w.terminate());
+    workersRef.current = [];
+    settleRef.current?.(null);
+    settleRef.current = null;
+    setRunning(false);
+    const p = progress;
+    if (p?.symbols && p.bestTimeMs !== null && levelDataRef.current) {
+      const symbols = p.symbols;
+      void simulateRun(
+        encodeInputSymbols(symbols),
+        symbols.length,
+        levelDataRef.current,
+        {},
+        arrowRef.current,
+      )
+        .then((sim) => {
+          setResult({
+            symbols,
+            inputs: encodeInputSymbols(symbols),
+            inputCount: symbols.length,
+            timeMs: Math.round(p.bestTimeMs!),
+            sim,
+            improved:
+              p.seedFinishTick === null || (p.bestFinishTick ?? Infinity) < p.seedFinishTick,
+            bestFinishTick: p.bestFinishTick,
+            bestTimeMs: p.bestTimeMs,
+            seedFinishTick: p.seedFinishTick,
+            generations: p.generations,
+            evaluations: p.evaluations,
+          });
+        })
+        .catch(() => {});
+      setStatus(`Stopped at ${(p.bestTimeMs / 1000).toFixed(3)}s — kept the best found.`);
+    } else {
+      setStatus("Stopped.");
+    }
+  }, [progress]);
+
+  // Kill any in-flight workers when the view unmounts.
+  React.useEffect(
+    () => () => {
+      workersRef.current.forEach((w) => w.terminate());
+      workersRef.current = [];
+    },
+    [],
+  );
+
   const start = async () => {
     if (!seedEntry) {
       setError("No TAS run to optimize on this level. Add one from the TAS editor first.");
@@ -123,26 +194,97 @@ export function BruteRunner() {
       const levelData = payload.levelInfo?.data ?? null;
       if (!levelData) throw new Error("Level has no geometry");
       setGeometry(levelGeometry(levelData));
+      levelDataRef.current = levelData;
+      arrowRef.current = seedEntry.arrowName;
 
       const seedSymbols = seedFromInputs(seedEntry.inputs, seedEntry.inputCount);
-      const out = await optimizeRun({
-        seedSymbols,
-        levelData,
-        arrowName: seedEntry.arrowName,
-        budgetMs,
-        onProgress: setProgress,
-        shouldStop: () => stopRef.current,
+
+      // Fan the search out over several workers, each with its own RNG seed, and
+      // keep the best line any of them finds. Independent restarts beat one long
+      // run because the annealer's reheat cycle can stall on a plateau; a fresh
+      // seed escapes it. Every worker runs off-thread, so the page stays live.
+      const n = workerCount();
+      const workers: Worker[] = [];
+      for (let i = 0; i < n; i++) {
+        workers.push(
+          new Worker(new URL("../lib/tas-brute.worker.ts", import.meta.url), { type: "module" }),
+        );
+      }
+      workersRef.current = workers;
+
+      const out = await new Promise<BruteResultLite | null>((resolve, reject) => {
+        settleRef.current = resolve;
+        let remaining = n;
+        let best: BruteResultLite | null = null;
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          settleRef.current = null;
+          resolve(best);
+        };
+        workers.forEach((worker, i) => {
+          worker.onmessage = (
+            ev: MessageEvent<
+              | { type: "progress"; progress: BruteProgress }
+              | { type: "done"; result: BruteResultLite | null }
+              | { type: "error"; message: string }
+            >,
+          ) => {
+            const m = ev.data;
+            if (m.type === "progress") {
+              // Progress streams from every worker; surface the best tick seen.
+              setProgress((prev) => {
+                const bf = m.progress.bestFinishTick;
+                if (bf !== null && (prev?.bestFinishTick == null || bf < prev.bestFinishTick)) {
+                  return m.progress;
+                }
+                return prev ?? m.progress;
+              });
+            } else if (m.type === "done") {
+              if (m.result && (!best || m.result.timeMs < best.timeMs)) best = m.result;
+              if (--remaining === 0) finish();
+            } else if (m.type === "error") {
+              if (--remaining === 0) {
+                if (best) finish();
+                else reject(new Error(m.message));
+              }
+            }
+          };
+          worker.onerror = (ev) => {
+            if (--remaining === 0) {
+              if (best) finish();
+              else reject(new Error(ev.message || "A search worker crashed."));
+            }
+          };
+          worker.postMessage({
+            type: "start",
+            options: {
+              seedSymbols,
+              levelData,
+              arrowName: seedEntry.arrowName,
+              budgetMs,
+              rngSeed: (Date.now() ^ ((i + 1) * 0x9e3779b9)) & 0x7fffffff,
+            },
+          });
+        });
       });
+
+      if (stopRef.current) return;
+      workersRef.current.forEach((w) => w.terminate());
+      workersRef.current = [];
       if (!out) {
         setError("The search could not simulate this level.");
         return;
       }
-      setResult(out);
-      const delta = seedTimeMs !== null ? seedTimeMs - out.timeMs : null;
+      const sim = await simulateRun(out.inputs, out.inputCount, levelData, {}, seedEntry.arrowName);
+      const result: BruteResult = { ...out, sim };
+      setResult(result);
+      const delta = seedTimeMs !== null ? seedTimeMs - result.timeMs : null;
       setStatus(
         delta !== null && delta > 0
-          ? `Found ${(out.timeMs / 1000).toFixed(3)}s — ${(delta / 1000).toFixed(3)}s faster than the seed.`
-          : `No improvement found in ${(out.timeMs / 1000).toFixed(3)}s. Try a longer budget.`,
+          ? `Found ${(result.timeMs / 1000).toFixed(3)}s — ${(delta / 1000).toFixed(3)}s faster than the seed (${n}× search).`
+          : `No improvement found in ${(result.timeMs / 1000).toFixed(3)}s. Try a longer budget.`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -214,13 +356,7 @@ export function BruteRunner() {
 
         <div className="flex items-end">
           {running ? (
-            <Button
-              variant="outline"
-              className="h-9 w-full text-xs"
-              onClick={() => {
-                stopRef.current = true;
-              }}
-            >
+            <Button variant="outline" className="h-9 w-full text-xs" onClick={stop}>
               <Square className="w-3.5 h-3.5 mr-1" /> Stop
             </Button>
           ) : (

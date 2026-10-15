@@ -1,14 +1,5 @@
 import * as React from "react";
-import {
-  Play,
-  Pause,
-  Loader2,
-  Gamepad2,
-  Info,
-  RotateCcw,
-  ChevronDown,
-  GitCompareArrows,
-} from "lucide-react";
+import { Play, Pause, Loader2, Gamepad2, Info, RotateCcw, ChevronDown } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -57,7 +48,8 @@ import {
 } from "@/lib/replay-visuals";
 import { arrowKind, drawArrowSprite, type ArrowKind } from "@/lib/arrow-sprites";
 import { ghostColor } from "@/lib/compare-ghosts";
-import { Checkbox } from "@/components/ui/checkbox";
+import { GhostPicker } from "@/components/CompareGhosts";
+import { ghostLabel, useCompareGhosts, type CompareCandidate } from "@/hooks/useCompareGhosts";
 import bounceIcon from "@/assets/game/bounce.svg";
 import skullIcon from "@/assets/game/skull.svg";
 import finishIcon from "@/assets/game/finish_line_icon.svg";
@@ -71,6 +63,11 @@ interface ReplayViewerProps {
   username?: string;
   levelName?: string;
   className?: string;
+  /**
+   * Other runs on this level to compare against, TAS or real-game. A real-game
+   * candidate carries its `runId` and is fetched on demand.
+   */
+  boardEntries?: CompareCandidate[];
 }
 
 interface RunPayload {
@@ -104,10 +101,18 @@ const SPEEDS = [0.5, 1, 2, 4];
  * recorded inputs and the level geometry; an info menu breaks the same run down
  * into its held inputs (Input) and its press sequence (Combo).
  */
-export function ReplayViewer({ runId, username, levelName, className }: ReplayViewerProps) {
+export function ReplayViewer({
+  runId,
+  username,
+  levelName,
+  className,
+  boardEntries,
+}: ReplayViewerProps) {
   const [open, setOpen] = React.useState(false);
   const [state, setState] = React.useState<"idle" | "loading" | "ready" | "error">("idle");
   const [summary, setSummary] = React.useState<ReplaySummary | null>(null);
+  const [levelData, setLevelData] = React.useState<RawLevelData | null>(null);
+  const [selectedGhostIds, setSelectedGhostIds] = React.useState<string[]>([]);
   const [meta, setMeta] = React.useState<RunPayload | null>(null);
   const [geometry, setGeometry] = React.useState<SimGeometry>({
     walls: [],
@@ -142,6 +147,8 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
     setState("loading");
     setSim(null);
     setGeometry({ walls: [], zones: [], portals: [] });
+    setLevelData(null);
+    setSelectedGhostIds([]);
     setPanel("none");
     setFrame(0);
     setPlaying(true);
@@ -175,6 +182,7 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
               const levelData = payload.levelInfo?.data ?? null;
               if (levelData && !cancelled) {
                 setGeometry(levelGeometry(levelData));
+                setLevelData(levelData);
                 const result = await simulateRun(
                   data.inputs ?? "",
                   data.input_count,
@@ -207,6 +215,34 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
   const active = inputs[selected];
   const combo = React.useMemo(() => (summary ? detectCombo(summary) : null), [summary]);
   const pathLength = sim?.path.length ?? 0;
+
+  // Compare against other runs on the same level — TAS entries or other
+  // real-game runs. Real-game ghosts fetch their inputs on demand; each ghost
+  // is simulated against the geometry already loaded for the primary run.
+  const candidates = React.useMemo(() => boardEntries ?? [], [boardEntries]);
+  const ghostSims = useCompareGhosts(open, levelData, candidates, selectedGhostIds);
+  const overlays = React.useMemo<ReplayOverlay[]>(
+    () =>
+      selectedGhostIds.flatMap((id) => {
+        const entry = candidates.find((c) => c.id === id);
+        const ghostSim = ghostSims[id];
+        if (!entry || !ghostSim || ghostSim.path.length === 0) return [];
+        const index = candidates.findIndex((c) => c.id === id);
+        return [
+          {
+            id,
+            sim: ghostSim,
+            color: ghostColor(index),
+            arrow: arrowKind(entry.arrowName),
+            arrowRadius: arrowConstants(entry.arrowName).radius ?? 16,
+            label: ghostLabel(entry),
+          },
+        ];
+      }),
+    [selectedGhostIds, candidates, ghostSims],
+  );
+  const toggleGhost = (id: string) =>
+    setSelectedGhostIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
   // Drive the animation while playing.
   React.useEffect(() => {
@@ -315,11 +351,21 @@ export function ReplayViewer({ runId, username, levelName, className }: ReplayVi
                   setFrame(value);
                 }}
                 onSpeed={setSpeed}
+                overlays={overlays}
               />
             ) : (
               <div className="rounded-lg border border-white/5 bg-black/30 py-10 text-center text-slate-500 text-xs italic">
                 Level geometry unavailable — showing the input breakdown only.
               </div>
+            )}
+
+            {pathLength > 0 && (
+              <GhostPicker
+                candidates={candidates}
+                selectedIds={selectedGhostIds}
+                onToggle={toggleGhost}
+                onClear={() => setSelectedGhostIds([])}
+              />
             )}
 
             {/* Info menu: Input / Combo */}
@@ -1030,17 +1076,7 @@ interface TasReplayViewerProps {
   timeMs?: number;
   className?: string;
   /** Other runs on this level's board, offered as ghosts to compare against. */
-  boardEntries?: TasCompareCandidate[];
-}
-
-/** A TAS board entry the viewer can replay as a ghost. */
-export interface TasCompareCandidate {
-  id: string;
-  username: string;
-  inputs: string;
-  inputCount: number;
-  arrowName: string;
-  timeMs: number;
+  boardEntries?: CompareCandidate[];
 }
 
 /**
@@ -1077,9 +1113,9 @@ export function TasReplayViewer({
   // costs one simulation, not another geometry fetch.
   const [levelData, setLevelData] = React.useState<RawLevelData | null>(null);
   const [selectedGhostIds, setSelectedGhostIds] = React.useState<string[]>([]);
-  const [ghostSims, setGhostSims] = React.useState<Record<string, SimResult>>({});
 
   const candidates = React.useMemo(() => boardEntries ?? [], [boardEntries]);
+  const ghostSims = useCompareGhosts(open, levelData, candidates, selectedGhostIds);
   const arrow = arrowKind(arrowName);
   const arrowRadius = arrowConstants(arrowName).radius ?? 16;
   const pathLength = sim?.path.length ?? 0;
@@ -1095,7 +1131,6 @@ export function TasReplayViewer({
     setSim(null);
     setLevelData(null);
     setSelectedGhostIds([]);
-    setGhostSims({});
     setFrame(0);
     setPlaying(true);
 
@@ -1148,35 +1183,6 @@ export function TasReplayViewer({
     return () => cancelAnimationFrame(raf);
   }, [open, playing, sim, pathLength, speed]);
 
-  // Re-simulate every ticked ghost against the cached geometry. Each ghost's
-  // own arrow name drives its hitbox and sprite, exactly like the primary run.
-  React.useEffect(() => {
-    if (!open || !levelData) return;
-    let cancelled = false;
-    (async () => {
-      const next: Record<string, SimResult> = {};
-      for (const id of selectedGhostIds) {
-        const entry = candidates.find((c) => c.id === id);
-        if (!entry) continue;
-        try {
-          next[id] = await simulateRun(
-            entry.inputs,
-            entry.inputCount,
-            levelData,
-            {},
-            entry.arrowName,
-          );
-        } catch {
-          /* a ghost that won't simulate is simply left off the stage */
-        }
-      }
-      if (!cancelled) setGhostSims(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, levelData, selectedGhostIds, candidates]);
-
   const overlays = React.useMemo<ReplayOverlay[]>(
     () =>
       selectedGhostIds.flatMap((id) => {
@@ -1191,7 +1197,7 @@ export function TasReplayViewer({
             color: ghostColor(index),
             arrow: arrowKind(entry.arrowName),
             arrowRadius: arrowConstants(entry.arrowName).radius ?? 16,
-            label: `${entry.username} · ${(entry.timeMs / 1000).toFixed(3)}s`,
+            label: ghostLabel(entry),
           },
         ];
       }),
@@ -1292,59 +1298,13 @@ export function TasReplayViewer({
               </div>
             )}
 
-            {candidates.length > 0 && pathLength > 0 && (
-              <div className="rounded-lg border border-white/5 bg-black/20 p-3 space-y-2">
-                <div className="flex items-center gap-2">
-                  <GitCompareArrows className="w-3.5 h-3.5 text-[var(--app-accent)]" />
-                  <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500">
-                    Compare ghosts
-                  </span>
-                  {selectedGhostIds.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedGhostIds([])}
-                      className="ml-auto text-[10px] text-slate-500 hover:text-slate-300"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  {candidates.map((entry) => {
-                    const index = candidates.findIndex((c) => c.id === entry.id);
-                    const checked = selectedGhostIds.includes(entry.id);
-                    return (
-                      <label
-                        key={entry.id}
-                        className="flex items-center gap-2 cursor-pointer rounded px-1 py-0.5 hover:bg-white/[0.03]"
-                      >
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={() => toggleGhost(entry.id)}
-                          aria-label={`Compare ${entry.username}`}
-                        />
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: ghostColor(index) }}
-                        />
-                        <span className="text-xs text-slate-200 truncate">{entry.username}</span>
-                        <span className="text-[11px] text-slate-500 truncate hidden sm:inline">
-                          {entry.arrowName}
-                        </span>
-                        <span className="ml-auto font-mono text-[11px] text-slate-400">
-                          {(entry.timeMs / 1000).toFixed(3)}s
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-                {overlays.length > 0 && (
-                  <p className="text-[10px] text-slate-600">
-                    Ghosts are drawn as tinted trails with a matching arrow; the primary run stays
-                    on top.
-                  </p>
-                )}
-              </div>
+            {pathLength > 0 && (
+              <GhostPicker
+                candidates={candidates}
+                selectedIds={selectedGhostIds}
+                onToggle={toggleGhost}
+                onClear={() => setSelectedGhostIds([])}
+              />
             )}
           </div>
         )}

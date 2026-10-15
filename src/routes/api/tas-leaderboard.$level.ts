@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { decodeInputSymbols } from "@/lib/replay";
+import { runTasCheck } from "@/lib/tas-tracker.server";
 import {
   addTasEntry,
   hasDuplicateInputs,
@@ -83,8 +84,20 @@ export const Route = createFileRoute("/api/tas-leaderboard/$level")({
         }
 
         const sorted = sortTasEntries(entries);
+        const isRecord = isNewTasRecord(existing, timeMs);
+
+        // Announce a new record right away through the TAS tracker. Best effort:
+        // a slow upstream or a dead webhook must never fail the upload itself.
+        if (isRecord) {
+          try {
+            await runTasCheck([params.level], { force: true });
+          } catch {
+            /* notification is best effort */
+          }
+        }
+
         return Response.json({
-          isRecord: isNewTasRecord(existing, timeMs),
+          isRecord,
           rank: sorted.findIndex((e) => e.id === entry.id) + 1,
           entries: sorted,
         });

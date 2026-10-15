@@ -13,6 +13,9 @@ import { cn } from "@/lib/utils";
 import { LEVELS } from "@/constants";
 import { fetchTasBoard, removeTasRun, type TasEntry } from "@/lib/tas-leaderboard";
 import { TasReplayViewer } from "@/components/ReplayViewer";
+import { fetchLeaderboard } from "@/services/api";
+import type { CompareCandidate } from "@/hooks/useCompareGhosts";
+import type { LeaderboardEntry } from "@/types";
 
 /** A TAS entry handed to the editor so it can be edited like any other run. */
 export interface TasLoadRequest {
@@ -38,6 +41,8 @@ export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewPro
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [removingId, setRemovingId] = React.useState<string | null>(null);
+  // The level's real-game runs, so a TAS run can be compared against a human one.
+  const [humanEntries, setHumanEntries] = React.useState<LeaderboardEntry[]>([]);
 
   const load = React.useCallback(async (id: string) => {
     if (!id) return;
@@ -56,6 +61,48 @@ export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewPro
   React.useEffect(() => {
     void load(levelId);
   }, [levelId, load]);
+
+  // The real-game board for this level, so a TAS run can be compared against a
+  // human run (and vice versa) on the same stage.
+  React.useEffect(() => {
+    let cancelled = false;
+    setHumanEntries([]);
+    fetchLeaderboard(levelId, false, true)
+      .then((entries) => {
+        if (!cancelled) setHumanEntries(entries);
+      })
+      .catch(() => {
+        if (!cancelled) setHumanEntries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [levelId]);
+
+  const compareCandidates = React.useMemo<CompareCandidate[]>(() => {
+    const human: CompareCandidate[] = humanEntries
+      .filter((e) => !e.isLegacy && e.run_id > 0)
+      .map((e) => ({
+        id: `run-${e.run_id}`,
+        runId: e.run_id,
+        username: e.username,
+        inputs: "",
+        inputCount: 0,
+        arrowName: e.arrow_name,
+        timeMs: Math.round(e.completion_time * 1000),
+        kind: "human" as const,
+      }));
+    const tas: CompareCandidate[] = entries.map((e) => ({
+      id: `tas-${e.id}`,
+      username: e.username,
+      inputs: e.inputs,
+      inputCount: e.inputCount,
+      arrowName: e.arrowName,
+      timeMs: e.timeMs,
+      kind: "tas" as const,
+    }));
+    return [...human, ...tas];
+  }, [humanEntries, entries]);
 
   const remove = async (entry: TasEntry) => {
     if (
@@ -201,7 +248,7 @@ export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewPro
                           inputs={entry.inputs}
                           inputCount={entry.inputCount}
                           timeMs={entry.timeMs}
-                          boardEntries={entries.filter((e) => e.id !== entry.id)}
+                          boardEntries={compareCandidates.filter((c) => c.id !== `tas-${entry.id}`)}
                         />
                         {onLoadRun && (
                           <Button
