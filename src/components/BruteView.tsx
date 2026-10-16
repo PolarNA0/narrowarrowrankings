@@ -179,10 +179,14 @@ export function BruteRunner() {
     return entries.find((e) => e.id === seedId) ?? entries[0];
   }, [entries, seedId]);
 
-  const humanSeed = React.useMemo(
-    () => humanEntries.find((h) => `human-${h.run_id}` === seedId) ?? null,
-    [humanEntries, seedId],
-  );
+  const humanSeed = React.useMemo(() => {
+    // "auto" means "the fastest run available": the fastest TAS entry if the
+    // level has one, otherwise the fastest real-game run. Without the fallback
+    // a level whose TAS board is still empty had no usable default seed and the
+    // run failed with "No run to seed from".
+    if (seedId === "auto") return entries.length === 0 ? (humanEntries[0] ?? null) : null;
+    return humanEntries.find((h) => `human-${h.run_id}` === seedId) ?? null;
+  }, [humanEntries, seedId, entries.length]);
 
   const canSeed = entries.length > 0 || humanEntries.length > 0 || !!drawnSeed;
 
@@ -522,6 +526,11 @@ export function BruteRunner() {
                     <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
                       Human runs
                     </SelectLabel>
+                    {entries.length === 0 && (
+                      <SelectItem value="auto" className="text-xs">
+                        Fastest run
+                      </SelectItem>
+                    )}
                     {humanEntries.slice(0, 25).map((h) => (
                       <SelectItem key={h.run_id} value={`human-${h.run_id}`} className="text-xs">
                         {h.username} — {h.completion_time.toFixed(3)}s ({h.arrow_name})
