@@ -380,6 +380,33 @@ export function BruteRunner() {
           settleRef.current = null;
           resolve(best);
         };
+        // Each worker streams its own progress, but the panel is a single row of
+        // stats. Keep a per-worker ledger and sum the counters — showing just the
+        // last worker's snapshot made Generations/Rollouts jump around (they are
+        // independent per worker) instead of climbing monotonically. The best
+        // tick is the minimum across workers, so it only ever improves.
+        const workerProgress = new Map<number, BruteProgress>();
+        const publishProgress = () => {
+          const ps = [...workerProgress.values()];
+          if (ps.length === 0) return;
+          let bestTick: number | null = null;
+          for (const p of ps) {
+            if (p.bestFinishTick !== null && (bestTick === null || p.bestFinishTick < bestTick)) {
+              bestTick = p.bestFinishTick;
+            }
+          }
+          const leader =
+            ps.find((p) => p.bestFinishTick === bestTick) ??
+            ps.reduce((a, b) => (b.generations > a.generations ? b : a));
+          setProgress({
+            bestFinishTick: bestTick,
+            bestTimeMs: leader.bestTimeMs,
+            seedFinishTick: leader.seedFinishTick,
+            generations: ps.reduce((sum, p) => sum + p.generations, 0),
+            evaluations: ps.reduce((sum, p) => sum + p.evaluations, 0),
+            symbols: leader.symbols,
+          });
+        };
         workers.forEach((worker, i) => {
           worker.onmessage = (
             ev: MessageEvent<
@@ -390,14 +417,8 @@ export function BruteRunner() {
           ) => {
             const m = ev.data;
             if (m.type === "progress") {
-              // Progress streams from every worker; surface the best tick seen.
-              setProgress((prev) => {
-                const bf = m.progress.bestFinishTick;
-                if (bf !== null && (prev?.bestFinishTick == null || bf < prev.bestFinishTick)) {
-                  return m.progress;
-                }
-                return prev ?? m.progress;
-              });
+              workerProgress.set(i, m.progress);
+              publishProgress();
             } else if (m.type === "done") {
               if (m.result && (!best || m.result.timeMs < best.timeMs)) best = m.result;
               if (--remaining === 0) finish();
