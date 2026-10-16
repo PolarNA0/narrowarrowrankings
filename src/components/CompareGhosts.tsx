@@ -1,3 +1,4 @@
+import * as React from "react";
 import { GitCompareArrows } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ghostColor } from "@/lib/compare-ghosts";
@@ -10,9 +11,28 @@ interface GhostPickerProps {
   onClear: () => void;
 }
 
-/** The tick-list that turns other runs on this level into ghost overlays. */
-export function GhostPicker({ candidates, selectedIds, onToggle, onClear }: GhostPickerProps) {
+/**
+ * Cap how many rows are mounted. A level's human board can hold hundreds of
+ * runs, and the replay re-renders its dialog on every animation frame — mounting
+ * the whole board meant reconciling hundreds of checkboxes 60+ times a second,
+ * which is what made a run's replay crawl. The list is already sorted fastest
+ * first, so the fastest 40 are the useful ones to compare against.
+ */
+const MAX_ROWS = 40;
+
+/**
+ * The tick-list that turns other runs on this level into ghost overlays.
+ * Memoised: the replay dialog re-renders every animation frame, and this list
+ * is far too expensive to rebuild that often.
+ */
+export const GhostPicker = React.memo(function GhostPicker({
+  candidates,
+  selectedIds,
+  onToggle,
+  onClear,
+}: GhostPickerProps) {
   if (candidates.length === 0) return null;
+  const rows = candidates.length > MAX_ROWS ? candidates.slice(0, MAX_ROWS) : candidates;
   return (
     <div className="rounded-lg border border-white/5 bg-black/20 p-3 space-y-2">
       <div className="flex items-center gap-2">
@@ -31,7 +51,7 @@ export function GhostPicker({ candidates, selectedIds, onToggle, onClear }: Ghos
         )}
       </div>
       <div className="space-y-1">
-        {candidates.map((entry, index) => (
+        {rows.map((entry, index) => (
           <label
             key={entry.id}
             className="flex items-center gap-2 cursor-pointer rounded px-1 py-0.5 hover:bg-white/[0.03]"
@@ -67,4 +87,4 @@ export function GhostPicker({ candidates, selectedIds, onToggle, onClear }: Ghos
       )}
     </div>
   );
-}
+});

@@ -266,8 +266,13 @@ export function ReplayViewer({
       }),
     [selectedGhostIds, candidates, ghostSims],
   );
-  const toggleGhost = (id: string) =>
-    setSelectedGhostIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  // Stable identities so the memoised GhostPicker is not rebuilt every frame.
+  const toggleGhost = React.useCallback(
+    (id: string) =>
+      setSelectedGhostIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])),
+    [],
+  );
+  const clearGhosts = React.useCallback(() => setSelectedGhostIds([]), []);
 
   // Drive the animation while playing.
   React.useEffect(() => {
@@ -389,7 +394,7 @@ export function ReplayViewer({
                 candidates={candidates}
                 selectedIds={selectedGhostIds}
                 onToggle={toggleGhost}
-                onClear={() => setSelectedGhostIds([])}
+                onClear={clearGhosts}
               />
             )}
 
@@ -1798,8 +1803,13 @@ export function TasReplayViewer({
     [selectedGhostIds, candidates, ghostSims],
   );
 
-  const toggleGhost = (id: string) =>
-    setSelectedGhostIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  // Stable identities so the memoised GhostPicker is not rebuilt every frame.
+  const toggleGhost = React.useCallback(
+    (id: string) =>
+      setSelectedGhostIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])),
+    [],
+  );
+  const clearGhosts = React.useCallback(() => setSelectedGhostIds([]), []);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -1897,7 +1907,7 @@ export function TasReplayViewer({
                 candidates={candidates}
                 selectedIds={selectedGhostIds}
                 onToggle={toggleGhost}
-                onClear={() => setSelectedGhostIds([])}
+                onClear={clearGhosts}
               />
             )}
           </div>

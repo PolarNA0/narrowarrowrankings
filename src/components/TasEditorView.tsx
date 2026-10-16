@@ -96,6 +96,8 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
   const [loaded, setLoaded] = React.useState<Loaded | null>(null);
   const [symbols, setSymbols] = React.useState<number[]>([]);
   const [path, setPath] = React.useState<SimPoint[]>([]);
+  const pathRef = React.useRef<SimPoint[]>([]);
+  pathRef.current = path;
   const [finishTick, setFinishTick] = React.useState<number | null>(null);
   const [frame, setFrame] = React.useState(0);
   const [playing, setPlaying] = React.useState(false);
@@ -393,66 +395,84 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
     return () => cancelAnimationFrame(rafRef.current);
   }, [playing, path.length]);
 
-  const commit = (next: number[], fromTick: number) => {
-    symbolsRef.current = next;
-    setSymbols(next);
-    resimulate(fromTick, next);
-  };
+  const commit = React.useCallback(
+    (next: number[], fromTick: number) => {
+      symbolsRef.current = next;
+      setSymbols(next);
+      resimulate(fromTick, next);
+    },
+    [resimulate],
+  );
 
   /** Change the input held at `index` (splitting/merging its segments). */
-  const changeSymbol = (index: number, symbol: number) => {
-    if (index < 0 || index >= symbolsRef.current.length) return;
-    if (symbolsRef.current[index] === symbol) return;
-    const next = symbolsRef.current.slice();
-    next[index] = symbol;
-    commit(next, index);
-  };
+  const changeSymbol = React.useCallback(
+    (index: number, symbol: number) => {
+      if (index < 0 || index >= symbolsRef.current.length) return;
+      if (symbolsRef.current[index] === symbol) return;
+      const next = symbolsRef.current.slice();
+      next[index] = symbol;
+      commit(next, index);
+    },
+    [commit],
+  );
 
   /** Grow (+1) or shrink (-1) the hold that starts at `segStart`. */
-  const adjustSegment = (segStart: number, delta: number, symbol: number) => {
-    const len = lengthOf(symbolsRef.current, segStart);
-    if (delta > 0) {
-      const next = symbolsRef.current.slice();
-      next.splice(segStart + len, 0, symbol);
-      commit(next, segStart + len);
-      setFrame(segStart + len + 1);
-    } else {
-      if (len <= 1) return;
-      const next = symbolsRef.current.slice();
-      next.splice(segStart + len - 1, 1);
-      commit(next, segStart + len - 1);
-      setFrame(Math.min(segStart + len - 1, next.length));
-    }
-  };
+  const adjustSegment = React.useCallback(
+    (segStart: number, delta: number, symbol: number) => {
+      const len = lengthOf(symbolsRef.current, segStart);
+      if (delta > 0) {
+        const next = symbolsRef.current.slice();
+        next.splice(segStart + len, 0, symbol);
+        commit(next, segStart + len);
+        setFrame(segStart + len + 1);
+      } else {
+        if (len <= 1) return;
+        const next = symbolsRef.current.slice();
+        next.splice(segStart + len - 1, 1);
+        commit(next, segStart + len - 1);
+        setFrame(Math.min(segStart + len - 1, next.length));
+      }
+    },
+    [commit],
+  );
 
   /** Append a new hold of `symbol` (and `length` ticks) at the end. */
-  const appendSegment = (symbol: number, length: number) => {
-    const next = symbolsRef.current.slice();
-    const start = next.length;
-    for (let i = 0; i < length; i++) next.push(symbol);
-    commit(next, start);
-    setFrame(Math.min(start + 1, next.length));
-  };
+  const appendSegment = React.useCallback(
+    (symbol: number, length: number) => {
+      const next = symbolsRef.current.slice();
+      const start = next.length;
+      for (let i = 0; i < length; i++) next.push(symbol);
+      commit(next, start);
+      setFrame(Math.min(start + 1, next.length));
+    },
+    [commit],
+  );
 
   /**
    * Insert a brand-new hold of `symbol` (and `length` ticks) beginning at
    * `at`, shifting everything after it later. This adds a hold in the middle of
    * the run, not just at the end.
    */
-  const insertSegment = (at: number, symbol: number, length = 1) => {
-    const next = symbolsRef.current.slice();
-    for (let i = 0; i < length; i++) next.splice(at + i, 0, symbol);
-    commit(next, at);
-    setFrame(Math.min(at + 1, Math.max(0, next.length - 1)));
-  };
+  const insertSegment = React.useCallback(
+    (at: number, symbol: number, length = 1) => {
+      const next = symbolsRef.current.slice();
+      for (let i = 0; i < length; i++) next.splice(at + i, 0, symbol);
+      commit(next, at);
+      setFrame(Math.min(at + 1, Math.max(0, next.length - 1)));
+    },
+    [commit],
+  );
 
   /** Remove the hold beginning at `segStart` (all `length` of its ticks). */
-  const removeSegment = (segStart: number, length: number) => {
-    const next = symbolsRef.current.slice();
-    next.splice(segStart, length);
-    commit(next, Math.min(segStart, next.length));
-    setFrame(Math.min(segStart + 1, Math.max(0, next.length - 1)));
-  };
+  const removeSegment = React.useCallback(
+    (segStart: number, length: number) => {
+      const next = symbolsRef.current.slice();
+      next.splice(segStart, length);
+      commit(next, Math.min(segStart, next.length));
+      setFrame(Math.min(segStart + 1, Math.max(0, next.length - 1)));
+    },
+    [commit],
+  );
 
   const segments = React.useMemo<Segment[]>(() => {
     const out: Segment[] = [];
@@ -474,10 +494,10 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
     (s) => currentTick >= s.start && currentTick < s.start + s.length,
   );
 
-  const jumpToSegment = (start: number) => {
+  const jumpToSegment = React.useCallback((start: number) => {
     setPlaying(false);
-    setFrame(Math.min(start + 1, Math.max(0, path.length - 1)));
-  };
+    setFrame(Math.min(start + 1, Math.max(0, pathRef.current.length - 1)));
+  }, []);
 
   const jumpToTime = () => {
     const seconds = Number(goTo);
@@ -849,66 +869,17 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
                   No inputs yet — add a hold to start building the run.
                 </div>
               )}
-              {segments.map((seg, i) => {
-                const active = i === currentSegIndex;
-                return (
-                  <div
-                    key={seg.start}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-md px-2 py-1",
-                      active && "bg-white/5 ring-1 ring-[var(--app-accent)]/40",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "w-4 text-center text-xs font-bold font-mono",
-                        symbolTone(REPLAY_SYMBOLS[seg.symbol]?.key ?? "neutral"),
-                      )}
-                    >
-                      {REPLAY_SYMBOLS[seg.symbol]?.short ?? "?"}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 w-6 p-0 text-slate-400"
-                      onClick={() => adjustSegment(seg.start, -1, seg.symbol)}
-                      disabled={seg.length <= 1}
-                      aria-label="Remove one tick"
-                    >
-                      <Minus className="w-3.5 h-3.5" />
-                    </Button>
-                    <span className="w-12 text-center font-mono text-xs text-slate-100">
-                      {showTime ? seconds(seg.length) : seg.length}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 w-6 p-0 text-slate-400"
-                      onClick={() => adjustSegment(seg.start, 1, seg.symbol)}
-                      aria-label="Add one tick"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </Button>
-                    <button
-                      className="ml-auto font-mono text-[10px] text-slate-500 hover:text-slate-300"
-                      onClick={() => jumpToSegment(seg.start)}
-                      title="Jump to this hold"
-                    >
-                      {showTime ? seconds(seg.start) : `tick ${seg.start}`}
-                    </button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 w-6 p-0 text-slate-500 hover:text-red-400"
-                      onClick={() => removeSegment(seg.start, seg.length)}
-                      aria-label="Delete this hold"
-                      title="Delete this hold"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                );
-              })}
+              {segments.map((seg, i) => (
+                <SegmentRow
+                  key={seg.start}
+                  seg={seg}
+                  active={i === currentSegIndex}
+                  showTime={showTime}
+                  onAdjust={adjustSegment}
+                  onRemove={removeSegment}
+                  onJump={jumpToSegment}
+                />
+              ))}
             </div>
 
             <div className="flex items-center justify-between px-2 pt-1 border-t border-white/5">
@@ -1070,3 +1041,84 @@ function symbolTone(key: ReplaySymbolKey): string {
     brake: "text-rose-400",
   }[key];
 }
+
+/**
+ * One hold in the input list. Memoised because the editor re-renders on every
+ * animation frame while a run plays, and a long run has hundreds of holds —
+ * rebuilding each row 60+ times a second is what made the editor crawl. Only
+ * the active row (whose `active` flips as the cursor moves) re-renders.
+ */
+interface SegmentRowProps {
+  seg: Segment;
+  active: boolean;
+  showTime: boolean;
+  onAdjust: (segStart: number, delta: number, symbol: number) => void;
+  onRemove: (segStart: number, length: number) => void;
+  onJump: (start: number) => void;
+}
+
+const SegmentRow = React.memo(function SegmentRow({
+  seg,
+  active,
+  showTime,
+  onAdjust,
+  onRemove,
+  onJump,
+}: SegmentRowProps) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1.5 rounded-md px-2 py-1",
+        active && "bg-white/5 ring-1 ring-[var(--app-accent)]/40",
+      )}
+    >
+      <span
+        className={cn(
+          "w-4 text-center text-xs font-bold font-mono",
+          symbolTone(REPLAY_SYMBOLS[seg.symbol]?.key ?? "neutral"),
+        )}
+      >
+        {REPLAY_SYMBOLS[seg.symbol]?.short ?? "?"}
+      </span>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 w-6 p-0 text-slate-400"
+        onClick={() => onAdjust(seg.start, -1, seg.symbol)}
+        disabled={seg.length <= 1}
+        aria-label="Remove one tick"
+      >
+        <Minus className="w-3.5 h-3.5" />
+      </Button>
+      <span className="w-12 text-center font-mono text-xs text-slate-100">
+        {showTime ? seconds(seg.length) : seg.length}
+      </span>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 w-6 p-0 text-slate-400"
+        onClick={() => onAdjust(seg.start, 1, seg.symbol)}
+        aria-label="Add one tick"
+      >
+        <Plus className="w-3.5 h-3.5" />
+      </Button>
+      <button
+        className="ml-auto font-mono text-[10px] text-slate-500 hover:text-slate-300"
+        onClick={() => onJump(seg.start)}
+        title="Jump to this hold"
+      >
+        {showTime ? seconds(seg.start) : `tick ${seg.start}`}
+      </button>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 w-6 p-0 text-slate-500 hover:text-red-400"
+        onClick={() => onRemove(seg.start, seg.length)}
+        aria-label="Delete this hold"
+        title="Delete this hold"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </Button>
+    </div>
+  );
+});
