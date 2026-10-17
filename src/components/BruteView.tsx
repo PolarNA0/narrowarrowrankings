@@ -881,26 +881,8 @@ function ResultPreview({
   const [speed, setSpeed] = React.useState(1);
   const pathLength = result.sim.path.length;
 
-  React.useEffect(() => {
-    if (!playing) return;
-    let raf = 0;
-    let last = performance.now();
-    const step = (now: number) => {
-      const elapsed = now - last;
-      last = now;
-      setFrame((f) => {
-        const next = f + (elapsed / SIM_TICK_MS) * speed;
-        if (next >= pathLength - 1) {
-          setPlaying(false);
-          return pathLength - 1;
-        }
-        return next;
-      });
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, pathLength, speed]);
+  // Playback advances inside ReplayStage via refs; the settled frame is reported
+  // back through onFrameCommit, so this component does not re-render per frame.
 
   return (
     <div className="rounded-lg border border-white/5 bg-black/20 p-3 space-y-2">
@@ -937,6 +919,7 @@ function ResultPreview({
           setFrame(value);
         }}
         onSpeed={setSpeed}
+        onFrameCommit={setFrame}
       />
     </div>
   );

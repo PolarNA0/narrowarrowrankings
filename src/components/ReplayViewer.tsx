@@ -274,28 +274,6 @@ export function ReplayViewer({
   );
   const clearGhosts = React.useCallback(() => setSelectedGhostIds([]), []);
 
-  // Drive the animation while playing.
-  React.useEffect(() => {
-    if (!open || !playing || !sim || pathLength === 0) return;
-    let raf = 0;
-    let last = performance.now();
-    const step = (now: number) => {
-      const elapsed = now - last;
-      last = now;
-      setFrame((f) => {
-        const next = f + (elapsed / SIM_TICK_MS) * speed;
-        if (next >= pathLength - 1) {
-          setPlaying(false);
-          return pathLength - 1;
-        }
-        return next;
-      });
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [open, playing, sim, pathLength, speed]);
-
   const replayTimeMs = frame * SIM_TICK_MS;
 
   return (
@@ -381,6 +359,7 @@ export function ReplayViewer({
                   setFrame(value);
                 }}
                 onSpeed={setSpeed}
+                onFrameCommit={setFrame}
                 overlays={overlays}
               />
             ) : (
@@ -602,6 +581,11 @@ interface StageProps {
   onTogglePlay: () => void;
   onScrub: (value: number) => void;
   onSpeed: (value: number) => void;
+  /**
+   * Reports the settled frame when playback pauses or finishes, so the parent's
+   * `frame` state stays in sync without re-rendering on every animated frame.
+   */
+  onFrameCommit?: (frame: number) => void;
   /** Hide the built-in transport bar (the TAS editor provides its own). */
   hideControls?: boolean;
   /** Extra runs drawn under the main arrow so attempts can be compared. */
@@ -652,6 +636,7 @@ export function ReplayStage({
   onTogglePlay,
   onScrub,
   onSpeed,
+  onFrameCommit,
   hideControls,
   overlays = NO_OVERLAYS,
   onDrawPath,
@@ -674,9 +659,22 @@ export function ReplayStage({
   // re-rendering the whole stage 60 times a second).
   const drawRef = React.useRef<() => void>(() => {});
   // The draw effect deliberately omits `frame`, so `draw` reads the current
-  // frame through this ref instead of a stale closure.
+  // frame through this ref instead of a stale closure. During playback the loop
+  // below owns this ref, so it is only re-synced when the parent changes `frame`
+  // externally (scrub, restart, commit) — never on every render.
   const frameRef = React.useRef(frame);
-  frameRef.current = frame;
+  const speedRef = React.useRef(speed);
+  speedRef.current = speed;
+  const pathLengthRef = React.useRef(sim.path.length);
+  pathLengthRef.current = sim.path.length;
+  const onTogglePlayRef = React.useRef(onTogglePlay);
+  onTogglePlayRef.current = onTogglePlay;
+  const onFrameCommitRef = React.useRef(onFrameCommit);
+  onFrameCommitRef.current = onFrameCommit;
+  // The transport readouts are updated imperatively by the playback loop so a
+  // playing replay never re-renders the tree.
+  const timeRef = React.useRef<HTMLSpanElement | null>(null);
+  const scrubberRef = React.useRef<HTMLInputElement | null>(null);
 
   // Drawing support: pointer→world uses the live transform, which lives inside
   // the canvas effect, so it is exposed through refs the handlers read.
@@ -902,7 +900,11 @@ export function ReplayStage({
       g.stroke();
     };
 
-    /** The game's layered thrust flame, trailing behind the arrow. */
+    /**
+     * The game's layered thrust flame. It starts just behind the arrow's tail
+     * and stays narrower than the body, so it trails out of the thruster
+     * instead of covering the arrow.
+     */
     const drawGameThrust = (
       g: CanvasRenderingContext2D,
       kind: ArrowKind,
@@ -912,10 +914,13 @@ export function ReplayStage({
       radius: number,
     ) => {
       const [outer, inner] = GAME_THRUST_COLORS[kind];
-      const len = radius * 3.2;
-      const halfW = radius * 1.05;
+      const back = radius * 0.85;
+      const ox = x - Math.sin(rot) * back;
+      const oy = y + Math.cos(rot) * back;
+      const len = radius * 2.6;
+      const halfW = radius * 0.7;
       g.save();
-      g.translate(tx(x), ty(y));
+      g.translate(tx(ox), ty(oy));
       g.rotate(rot + Math.PI);
       for (const [color, f] of [
         [outer, 1],
@@ -1348,11 +1353,51 @@ export function ReplayStage({
     // static layer and world bounds are not rebuilt on every frame.
   }, [sim, geometry, bodyColor, trail, thrust, arrow, arrowRadius, overlays, mode]);
 
-  // Repaint on every frame change. Kept out of the effect above so the world
-  // bounds and the static wall layer are not rebuilt 60 times a second.
+  // Repaint on every external frame change (scrub, restart, or the settled
+  // frame reported after playback) and resync the live ref and readouts to it.
   React.useEffect(() => {
+    frameRef.current = frame;
     drawRef.current();
+    if (timeRef.current) timeRef.current.textContent = `${((frame * SIM_TICK_MS) / 1000).toFixed(2)}s`;
+    if (scrubberRef.current) scrubberRef.current.value = String(Math.floor(frame));
   }, [frame]);
+
+  // On pause, hand the settled frame back to the parent so its state catches up
+  // without having re-rendered on every animated frame.
+  const prevPlaying = React.useRef(playing);
+  React.useEffect(() => {
+    if (prevPlaying.current && !playing) onFrameCommitRef.current?.(frameRef.current);
+    prevPlaying.current = playing;
+  }, [playing]);
+
+  // Self-driven playback: advance the frame ref and repaint without touching
+  // React state, so a playing replay never re-renders the component tree. The
+  // parent settles its own state via `onFrameCommit` when playback stops.
+  React.useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    let last = performance.now();
+    const step = (now: number) => {
+      const elapsed = now - last;
+      last = now;
+      const next = frameRef.current + (elapsed / SIM_TICK_MS) * speedRef.current;
+      const max = pathLengthRef.current - 1;
+      if (next >= max) {
+        frameRef.current = max;
+        drawRef.current();
+        onFrameCommitRef.current?.(max);
+        onTogglePlayRef.current();
+        return;
+      }
+      frameRef.current = next;
+      drawRef.current();
+      if (timeRef.current) timeRef.current.textContent = `${((next * SIM_TICK_MS) / 1000).toFixed(2)}s`;
+      if (scrubberRef.current) scrubberRef.current.value = String(Math.floor(next));
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [playing]);
 
   // Repaint when the drawn route changes so the trace tracks the pointer.
   React.useEffect(() => {
@@ -1487,15 +1532,19 @@ export function ReplayStage({
             <RotateCcw className="w-4 h-4" />
           </Button>
           <input
+            ref={scrubberRef}
             type="range"
             min={0}
             max={maxFrame}
-            value={Math.floor(frame)}
+            defaultValue={Math.floor(frame)}
             onChange={(e) => onScrub(Number(e.target.value))}
             className="flex-1 accent-[var(--app-accent)]"
             aria-label="Replay scrubber"
           />
-          <span className="font-mono text-[11px] text-slate-400 w-14 text-right">
+          <span
+            ref={timeRef}
+            className="font-mono text-[11px] text-slate-400 w-14 text-right"
+          >
             {(replayTimeMs / 1000).toFixed(2)}s
           </span>
           <Select value={String(speed)} onValueChange={(v) => onSpeed(Number(v))}>
@@ -1761,26 +1810,8 @@ export function TasReplayViewer({
     };
   }, [open, levelId, inputs, inputCount, arrowName, attempt]);
 
-  React.useEffect(() => {
-    if (!open || !playing || !sim || pathLength === 0) return;
-    let raf = 0;
-    let last = performance.now();
-    const step = (now: number) => {
-      const elapsed = now - last;
-      last = now;
-      setFrame((f) => {
-        const next = f + (elapsed / SIM_TICK_MS) * speed;
-        if (next >= pathLength - 1) {
-          setPlaying(false);
-          return pathLength - 1;
-        }
-        return next;
-      });
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [open, playing, sim, pathLength, speed]);
+  // Playback is driven inside ReplayStage via refs, so this component does not
+  // advance `frame` on every animated tick.
 
   const overlays = React.useMemo<ReplayOverlay[]>(
     () =>
@@ -1894,6 +1925,7 @@ export function TasReplayViewer({
                   setFrame(value);
                 }}
                 onSpeed={setSpeed}
+                onFrameCommit={setFrame}
                 overlays={overlays}
               />
             ) : (

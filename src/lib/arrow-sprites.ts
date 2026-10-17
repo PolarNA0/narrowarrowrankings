@@ -31,9 +31,8 @@ const SPRITES: Record<ArrowKind, Sprite> = {
   },
 };
 
-/** The sprite's native width in the 64x64 viewBox; the tip sits at y=4. */
+/** The sprite's native width in the 64x64 viewBox. */
 const SPRITE_SIZE = 64;
-const SPRITE_TIP_Y = 4;
 
 /** Resolve a run's `arrow_name` to the sprite it flies (default: Narrow). */
 export function arrowKind(arrowName: string | null | undefined): ArrowKind {
@@ -58,6 +57,11 @@ function pathsFor(kind: ArrowKind) {
  * Draw the run's arrow sprite at `(x, y)`, facing `heading`, scaled to a world
  * radius of `worldRadius` and tinted with the skin's body/tail colours. The
  * caller has already mapped world units to canvas px via `scale`.
+ *
+ * The sprite is centred on the hitbox: its tip-to-tail span is ~1.75x the
+ * radius and its width ~1.5x, so once centred the whole arrow sits inside the
+ * collision circle. (Anchoring the tip at the centre instead pushed the tail
+ * well outside the circle.)
  */
 export function drawArrowSprite(
   ctx: CanvasRenderingContext2D,
@@ -77,7 +81,7 @@ export function drawArrowSprite(
   // The sprite points up; the engine's heading is a canvas angle, so add 90deg.
   ctx.rotate(heading + Math.PI / 2);
   ctx.scale(size / SPRITE_SIZE, size / SPRITE_SIZE);
-  ctx.translate(-SPRITE_SIZE / 2, -SPRITE_TIP_Y);
+  ctx.translate(-SPRITE_SIZE / 2, -SPRITE_SIZE / 2);
   // A soft glow behind the body so the arrow reads against bright walls.
   ctx.shadowColor = bodyColor;
   ctx.shadowBlur = 6;
