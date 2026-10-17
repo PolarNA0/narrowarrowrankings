@@ -29,14 +29,26 @@ const DEFAULT_EMOJIS: Record<Slot, string> = { narrow: "🏹", speedy: "💨", e
 
 const DEFAULT_TAS_TEMPLATES: Record<Slot, string> = {
   narrow:
-    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
   speedy:
-    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
   energy:
-    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
 };
 
-const DEFAULT_TAS_CHAMPION = "🏆";
+/** The TAS feed's own emojis: the same custom Discord emojis the real feed uses. */
+const DEFAULT_TAS_CHAMPION = "<:champion:1351205618534449223>";
+const DEFAULT_TAS_EMOJIS: Record<Slot, string> = {
+  narrow: "<:narrow:1356331491746910319>",
+  speedy: "<:speedy:1356331493160386620>",
+  energy: "<:energy:1356331490010464421>",
+};
+
+/** The old built-in emoji set, so a saved config that still carries it picks up
+ *  the new custom ones instead of overriding them. */
+const LEGACY_TAS_EMOJIS = new Set(["🏆", "🏹", "💨", "⚡"]);
+const pickTasEmoji = (slot: Slot, saved?: string) =>
+  saved && !LEGACY_TAS_EMOJIS.has(saved) ? saved : DEFAULT_TAS_EMOJIS[slot];
 
 /** Admin controls for the Discord record notifiers (real + TAS). */
 export function AdminDiscordTracker() {
@@ -49,7 +61,7 @@ export function AdminDiscordTracker() {
   const [tasIntervalMinutes, setTasIntervalMinutes] = React.useState(5);
   const [tasTemplates, setTasTemplates] =
     React.useState<Record<Slot, string>>(DEFAULT_TAS_TEMPLATES);
-  const [tasEmojis, setTasEmojis] = React.useState<Record<Slot, string>>(DEFAULT_EMOJIS);
+  const [tasEmojis, setTasEmojis] = React.useState<Record<Slot, string>>(DEFAULT_TAS_EMOJIS);
   const [tasChampion, setTasChampion] = React.useState(DEFAULT_TAS_CHAMPION);
   const [tasWebhookUrl, setTasWebhookUrl] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -70,8 +82,16 @@ export function AdminDiscordTracker() {
         setTasEnabled(data.tasEnabled !== false);
         setTasIntervalMinutes(Number(data.tasIntervalMinutes) || Number(data.intervalMinutes) || 5);
         setTasTemplates({ ...DEFAULT_TAS_TEMPLATES, ...(data.tasTemplates || {}) });
-        setTasEmojis({ ...DEFAULT_EMOJIS, ...(data.tasEmojis || {}) });
-        setTasChampion(data.tasChampion ?? DEFAULT_TAS_CHAMPION);
+        setTasEmojis({
+          narrow: pickTasEmoji("narrow", data.tasEmojis?.narrow),
+          speedy: pickTasEmoji("speedy", data.tasEmojis?.speedy),
+          energy: pickTasEmoji("energy", data.tasEmojis?.energy),
+        });
+        setTasChampion(
+          data.tasChampion && !LEGACY_TAS_EMOJIS.has(data.tasChampion)
+            ? data.tasChampion
+            : DEFAULT_TAS_CHAMPION,
+        );
         setTasWebhookUrl(data.tasWebhookUrl || "");
       } catch {
         /* first-time setup */

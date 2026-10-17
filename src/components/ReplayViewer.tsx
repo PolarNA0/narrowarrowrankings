@@ -915,8 +915,9 @@ export function ReplayStage({
     ) => {
       const [outer, inner] = GAME_THRUST_COLORS[kind];
       const back = radius * 0.85;
-      const ox = x - Math.sin(rot) * back;
-      const oy = y + Math.cos(rot) * back;
+      // Behind the arrow is -forward; forward is (cos rot, sin rot).
+      const ox = x - Math.cos(rot) * back;
+      const oy = y - Math.sin(rot) * back;
       const len = radius * 2.6;
       const halfW = radius * 0.7;
       g.save();
@@ -1358,7 +1359,8 @@ export function ReplayStage({
   React.useEffect(() => {
     frameRef.current = frame;
     drawRef.current();
-    if (timeRef.current) timeRef.current.textContent = `${((frame * SIM_TICK_MS) / 1000).toFixed(2)}s`;
+    if (timeRef.current)
+      timeRef.current.textContent = `${((frame * SIM_TICK_MS) / 1000).toFixed(2)}s`;
     if (scrubberRef.current) scrubberRef.current.value = String(Math.floor(frame));
   }, [frame]);
 
@@ -1391,7 +1393,8 @@ export function ReplayStage({
       }
       frameRef.current = next;
       drawRef.current();
-      if (timeRef.current) timeRef.current.textContent = `${((next * SIM_TICK_MS) / 1000).toFixed(2)}s`;
+      if (timeRef.current)
+        timeRef.current.textContent = `${((next * SIM_TICK_MS) / 1000).toFixed(2)}s`;
       if (scrubberRef.current) scrubberRef.current.value = String(Math.floor(next));
       raf = requestAnimationFrame(step);
     };
@@ -1541,10 +1544,7 @@ export function ReplayStage({
             className="flex-1 accent-[var(--app-accent)]"
             aria-label="Replay scrubber"
           />
-          <span
-            ref={timeRef}
-            className="font-mono text-[11px] text-slate-400 w-14 text-right"
-          >
+          <span ref={timeRef} className="font-mono text-[11px] text-slate-400 w-14 text-right">
             {(replayTimeMs / 1000).toFixed(2)}s
           </span>
           <Select value={String(speed)} onValueChange={(v) => onSpeed(Number(v))}>

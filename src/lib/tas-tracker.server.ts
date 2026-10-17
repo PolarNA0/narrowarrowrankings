@@ -14,6 +14,7 @@
  */
 import { fetchLevelBoard } from "@/lib/leaderboard-source";
 import { readTasBoard } from "@/lib/tas-board.server";
+import { arrowKind } from "@/lib/arrow-sprites";
 import { LEVELS } from "@/constants";
 
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"] as const;
@@ -27,21 +28,38 @@ const ARROW_KEY: Record<Arrow, "narrow" | "speedy" | "energy"> = {
 
 export const DEFAULT_TAS_TEMPLATES: Record<"narrow" | "speedy" | "energy", string> = {
   narrow:
-    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
   speedy:
-    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
   energy:
-    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [WR {wrDiff}] [TAS -{catDiff}]",
+    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
 };
 
 /** Champion badge shown first, before the per-arrow emoji. */
-export const DEFAULT_TAS_CHAMPION = "🏆";
+export const DEFAULT_TAS_CHAMPION = "<:champion:1351205618534449223>";
 
 export const DEFAULT_TAS_EMOJIS: Record<"narrow" | "speedy" | "energy", string> = {
-  narrow: "🏹",
-  speedy: "💨",
-  energy: "⚡",
+  narrow: "<:narrow:1356331491746910319>",
+  speedy: "<:speedy:1356331493160386620>",
+  energy: "<:energy:1356331490010464421>",
 };
+
+/** The old built-in emoji set, so a saved config that still carries it picks up
+ *  the new custom ones instead of overriding them. */
+const LEGACY_TAS_EMOJIS = new Set(["🏆", "🏹", "💨", "⚡"]);
+
+/**
+ * Templates often carry a literal sign in front of a diff that already has one
+ * (`[WR -{wrDiff}]` with `-0.155` renders `[WR --0.155]`), and a tag with no
+ * value leaves an empty bracket pair. Collapse both so every bracket reads
+ * cleanly, whichever template the deployment has saved.
+ */
+function tidyTags(content: string): string {
+  return content
+    .replace(/\[(WR|wr|TAS|tas) ([+-])[+-]/g, "[$1 $2")
+    .replace(/ \[(WR|wr|TAS|tas)\s*(-?—)?\s*\]/g, "")
+    .replace(/\[\s*\] ?/g, "");
+}
 
 interface TrackerConfig {
   webhookUrl?: string;
@@ -144,41 +162,65 @@ export async function runTasCheck(
       const overallWr = all.length ? Math.min(...all.map((r) => r.completion_time)) : null;
 
       ARROWS.forEach((arrow) => {
-        const runs = tasEntries.filter((e) => e.arrowName === arrow);
+        const runs = tasEntries.filter((e) => arrowKind(e.arrowName) === ARROW_KEY[arrow]);
         if (!runs.length) return;
         const best = runs.reduce((a, b) => (a.timeMs <= b.timeMs ? a : b));
         const timeSec = best.timeMs / 1000;
         const key = `${level.id}|${ARROW_KEY[arrow]}`;
         const prior = previous[key];
+        const isNew = !prior || timeSec < prior.time - 0.0005;
         next[key] = { username: best.username, time: timeSec };
 
-        // First run is a silent baseline: it only records the current bests so
-        // later checks have something to compare against. `announceAll` skips
-        // that and also announces records that are already baselined.
-        if (!opts.announceAll) {
-          if (isFirstRun || !prior) return;
-          if (timeSec >= prior.time - 0.0005) return;
-        }
+        // A level+arrow is baselined once we've recorded a best for it. A run
+        // that improves on a baselined best is a record — including the very
+        // first run on a level whose board was empty at the last check, which
+        // otherwise went unannounced. Only a run that *sets* the baseline (the
+        // first observation of that level+arrow) stays silent, and `announceAll`
+        // re-announces even those.
+        if (!opts.announceAll && (!isNew || (!prior && isFirstRun))) return;
 
         const slot = ARROW_KEY[arrow];
-        const template = config.tasTemplates?.[slot] || DEFAULT_TAS_TEMPLATES[slot];
-        const emoji = config.tasEmojis?.[slot] || DEFAULT_TAS_EMOJIS[slot];
-        const champion = config.tasChampion ?? DEFAULT_TAS_CHAMPION;
+        // A template saved before the `{wrTag}`/`{tasTag}` split carries a
+        // literal sign in front of a diff that already has one, which is what
+        // printed `[WR --0.155]`. Detect that shape and use the fixed default
+        // instead, so existing deployments heal without a manual re-save.
+        const savedTemplate = config.tasTemplates?.[slot];
+        const legacyTemplate = !!savedTemplate && /-[{]?(wrDiff|catDiff)[}]/.test(savedTemplate);
+        const template =
+          savedTemplate && !legacyTemplate ? savedTemplate : DEFAULT_TAS_TEMPLATES[slot];
+        const savedEmoji = config.tasEmojis?.[slot];
+        const emoji =
+          savedEmoji && !LEGACY_TAS_EMOJIS.has(savedEmoji) ? savedEmoji : DEFAULT_TAS_EMOJIS[slot];
+        const champion =
+          config.tasChampion && !LEGACY_TAS_EMOJIS.has(config.tasChampion)
+            ? config.tasChampion
+            : DEFAULT_TAS_CHAMPION;
         // TAS run minus the human time: negative means the TAS beats the human WR.
-        const wrDiff = overallWr != null ? (timeSec - overallWr).toFixed(3) : "0.000";
-        messages.push(
-          template
-            .replaceAll("{champion}", champion)
-            .replaceAll("{emoji}", emoji)
-            .replaceAll("{player}", best.username)
-            .replaceAll("{level}", level.name)
-            .replaceAll("{arrow}", arrow)
-            .replaceAll("{time}", `${timeSec.toFixed(3)}s`)
-            .replaceAll("{wr}", overallWr != null ? `${overallWr.toFixed(3)}s` : "—")
-            .replaceAll("{wrDiff}", wrDiff)
-            .replaceAll("{catDiff}", prior ? (prior.time - timeSec).toFixed(3) : "0.000")
-            .replaceAll("{previous}", prior?.username ?? "—"),
-        );
+        const wrDiff = overallWr != null ? timeSec - overallWr : null;
+        // Gain over the previous TAS record; absent on a level+arrow's first run.
+        const catDiff = prior ? prior.time - timeSec : null;
+        // The tag is omitted entirely when there is nothing to compare against,
+        // so a lone record reads `[WR -0.155]`, never `[WR -0.155] [TAS --]`.
+        const wrTag =
+          wrDiff == null ? "" : `WR ${wrDiff <= 0 ? "-" : "+"}${Math.abs(wrDiff).toFixed(3)}`;
+        const tasTag = catDiff == null ? "" : `TAS -${catDiff.toFixed(3)}`;
+        const rendered = template
+          .replaceAll("{champion}", champion)
+          .replaceAll("{emoji}", emoji)
+          .replaceAll("{player}", best.username)
+          .replaceAll("{level}", level.name)
+          .replaceAll("{arrow}", arrow)
+          .replaceAll("{time}", `${timeSec.toFixed(3)}s`)
+          .replaceAll("{wr}", overallWr != null ? `${overallWr.toFixed(3)}s` : "—")
+          .replaceAll("{wrDiff}", wrDiff != null ? wrDiff.toFixed(3) : "—")
+          .replaceAll("{catDiff}", catDiff != null ? catDiff.toFixed(3) : "—")
+          .replaceAll("{previous}", prior?.username ?? "—")
+          .replaceAll("{wrTag}", wrTag)
+          .replaceAll("{tasTag}", tasTag)
+          // `{tags}` is the ready-made bracket content; a template wraps it as
+          // `[{tags}]` and empty tags collapse without leaving a stray `[]`.
+          .replaceAll("{tags}", [wrTag, tasTag].filter(Boolean).join("] ["));
+        messages.push(tidyTags(rendered));
       });
     }
   };
