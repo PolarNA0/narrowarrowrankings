@@ -1,6 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
+  EXPORT_HEADER,
+  buildExportRows,
   readSheetsConfigPublic,
+  rowToCells,
   runSheetsExport,
   saveSheetsConfig,
 } from "@/lib/sheets-export.server";
@@ -17,7 +20,18 @@ export const Route = createFileRoute("/api/public/sheets-export")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const force = new URL(request.url).searchParams.get("force") === "1";
+        const url = new URL(request.url);
+        // `data=1` returns the table itself (no Google account needed) so the
+        // panel can offer a copy-to-clipboard export.
+        if (url.searchParams.get("data") === "1") {
+          const rows = await buildExportRows();
+          return Response.json({
+            rows: rows.map(rowToCells),
+            header: [...EXPORT_HEADER],
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        const force = url.searchParams.get("force") === "1";
         const [config, result] = await Promise.all([
           readSheetsConfigPublic(),
           runSheetsExport({ force }),

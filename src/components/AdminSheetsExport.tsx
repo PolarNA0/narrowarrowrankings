@@ -1,5 +1,5 @@
 import * as React from "react";
-import { FileSpreadsheet, Loader2, RefreshCw, Save } from "lucide-react";
+import { ClipboardCopy, FileSpreadsheet, Loader2, RefreshCw, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,7 @@ export function AdminSheetsExport() {
   const [hasKey, setHasKey] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
+  const [copying, setCopying] = React.useState(false);
   const [status, setStatus] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
@@ -143,6 +144,28 @@ export function AdminSheetsExport() {
     }
   };
 
+  const copyTable = async () => {
+    setCopying(true);
+    setStatus("Building table…");
+    try {
+      const res = await fetch("/api/public/sheets-export?data=1");
+      const data = (await res.json()) as { rows: string[][]; header: string[]; updatedAt: string };
+      const tsv = [
+        `Last updated: ${new Date(data.updatedAt).toLocaleString()}`,
+        data.header.join("\t"),
+        ...data.rows.map((r) => r.join("\t")),
+      ].join("\n");
+      await navigator.clipboard.writeText(tsv);
+      setStatus(`Copied ${data.rows.length} rows — paste into a spreadsheet cell.`);
+      toast.success("Table copied to clipboard");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Copy failed");
+      toast.error("Could not copy the table");
+    } finally {
+      setCopying(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -155,112 +178,140 @@ export function AdminSheetsExport() {
         </p>
       </div>
 
-      <div className="rounded-lg border border-white/10 bg-black/30 p-4 space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="space-y-1">
-            <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-              Spreadsheet id or URL
-            </span>
-            <Input
-              value={sheetId}
-              onChange={(e) => setSheetId(e.target.value)}
-              placeholder="https://docs.google.com/spreadsheets/d/…"
-              className="bg-white/5 border-white/10 text-xs"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-              Tab name
-            </span>
-            <Input
-              value={tab}
-              onChange={(e) => setTab(e.target.value)}
-              placeholder="TAS vs WR"
-              className="bg-white/5 border-white/10 text-xs"
-            />
-          </label>
-        </div>
-
-        <label className="space-y-1 block">
-          <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-            Service-account key (JSON)
-          </span>
-          <Textarea
-            value={serviceAccountJson}
-            onChange={(e) => setServiceAccountJson(e.target.value)}
-            placeholder={
-              hasKey
-                ? "A key is already saved. Paste a new one to replace it."
-                : '{ "type": "service_account", "client_email": "…", "private_key": "-----BEGIN PRIVATE KEY-----…" }'
-            }
-            rows={5}
-            className="bg-white/5 border-white/10 text-xs font-mono"
-          />
-          <span className="text-[11px] text-slate-500">
-            {serviceEmail ? (
-              <>
-                Share the sheet with{" "}
-                <span className="font-mono text-[var(--app-accent)]">{serviceEmail}</span> as an
-                Editor.
-              </>
-            ) : hasKey ? (
-              "A key is saved server-side (never sent to the browser)."
-            ) : (
-              "Create a Google Cloud service account, enable the Sheets API, and paste its JSON key."
-            )}
-          </span>
-        </label>
-
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-xs text-slate-300">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-              className="accent-[var(--app-accent)]"
-            />
-            Enabled
-          </label>
-          <label className="flex items-center gap-2 text-xs text-slate-300">
-            Every
-            <Input
-              type="number"
-              min={5}
-              step={5}
-              value={intervalMinutes}
-              onChange={(e) => setIntervalMinutes(Math.max(5, Number(e.target.value) || 30))}
-              className="h-8 w-20 bg-white/5 border-white/10 text-xs font-mono"
-            />
-            minutes
-          </label>
-        </div>
-
+      <div className="rounded-lg border border-white/10 bg-black/30 p-4 space-y-3">
+        <p className="text-xs text-slate-300">
+          <span className="font-bold text-white">No Google account needed:</span> copy the whole
+          table to your clipboard and paste it into any spreadsheet.
+        </p>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" className="h-9 text-xs" onClick={() => void save()} disabled={saving}>
-            {saving ? (
-              <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-            ) : (
-              <Save className="w-3.5 h-3.5 mr-1" />
-            )}
-            Save
-          </Button>
           <Button
             size="sm"
-            variant="outline"
             className="h-9 text-xs"
-            onClick={() => void exportNow()}
-            disabled={exporting || !sheetId}
+            onClick={() => void copyTable()}
+            disabled={copying}
           >
-            {exporting ? (
+            {copying ? (
               <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
             ) : (
-              <RefreshCw className="w-3.5 h-3.5 mr-1" />
+              <ClipboardCopy className="w-3.5 h-3.5 mr-1" />
             )}
-            Export now
+            Copy table
           </Button>
           {status && <span className="text-[11px] text-slate-400">{status}</span>}
         </div>
       </div>
+
+      <details className="rounded-lg border border-white/10 bg-black/20">
+        <summary className="cursor-pointer select-none px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-400">
+          Automatic updates (optional, needs a Google service account)
+        </summary>
+        <div className="space-y-4 border-t border-white/10 p-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                Spreadsheet id or URL
+              </span>
+              <Input
+                value={sheetId}
+                onChange={(e) => setSheetId(e.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/…"
+                className="bg-white/5 border-white/10 text-xs"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                Tab name
+              </span>
+              <Input
+                value={tab}
+                onChange={(e) => setTab(e.target.value)}
+                placeholder="TAS vs WR"
+                className="bg-white/5 border-white/10 text-xs"
+              />
+            </label>
+          </div>
+
+          <label className="space-y-1 block">
+            <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+              Service-account key (JSON)
+            </span>
+            <Textarea
+              value={serviceAccountJson}
+              onChange={(e) => setServiceAccountJson(e.target.value)}
+              placeholder={
+                hasKey
+                  ? "A key is already saved. Paste a new one to replace it."
+                  : '{ "type": "service_account", "client_email": "…", "private_key": "-----BEGIN PRIVATE KEY-----…" }'
+              }
+              rows={5}
+              className="bg-white/5 border-white/10 text-xs font-mono"
+            />
+            <span className="text-[11px] text-slate-500">
+              {serviceEmail ? (
+                <>
+                  Share the sheet with{" "}
+                  <span className="font-mono text-[var(--app-accent)]">{serviceEmail}</span> as an
+                  Editor.
+                </>
+              ) : hasKey ? (
+                "A key is saved server-side (never sent to the browser)."
+              ) : (
+                "Create a Google Cloud service account, enable the Sheets API, and paste its JSON key."
+              )}
+            </span>
+          </label>
+
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-xs text-slate-300">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+                className="accent-[var(--app-accent)]"
+              />
+              Enabled
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-300">
+              Every
+              <Input
+                type="number"
+                min={5}
+                step={5}
+                value={intervalMinutes}
+                onChange={(e) => setIntervalMinutes(Math.max(5, Number(e.target.value) || 30))}
+                className="h-8 w-20 bg-white/5 border-white/10 text-xs font-mono"
+              />
+              minutes
+            </label>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" className="h-9 text-xs" onClick={() => void save()} disabled={saving}>
+              {saving ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5 mr-1" />
+              )}
+              Save
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 text-xs"
+              onClick={() => void exportNow()}
+              disabled={exporting || !sheetId}
+            >
+              {exporting ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5 mr-1" />
+              )}
+              Export now
+            </Button>
+            {status && <span className="text-[11px] text-slate-400">{status}</span>}
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

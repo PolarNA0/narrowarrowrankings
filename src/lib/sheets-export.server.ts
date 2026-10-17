@@ -16,6 +16,15 @@ import { readTasBoard } from "@/lib/tas-board.server";
 
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"] as const;
 
+/** Submissions and upstream runs spell the arrow inconsistently ("narrow",
+ *  "Narrow Arrow", "narrow arrow"), so match on the arrow kind. */
+function arrowKindOf(name: string): "narrow" | "speedy" | "energy" {
+  const n = name.toLowerCase();
+  if (n.includes("speedy")) return "speedy";
+  if (n.includes("energy")) return "energy";
+  return "narrow";
+}
+
 export interface SheetsConfig {
   /** The spreadsheet id from its URL: /spreadsheets/d/<id>/edit. */
   sheetId: string;
@@ -173,29 +182,36 @@ export async function buildExportRows(): Promise<SheetsExportRow[]> {
       if (!level) return;
 
       const tasEntries = await readTasBoard(level.id);
-      if (!tasEntries.length) return;
+      if (!tasEntries.length) continue;
 
-      let wrSec: number | null = null;
-      let wrPlayer = "";
-      let wrArrow = "";
+      let board: Awaited<ReturnType<typeof fetchLevelBoard>> = [];
       try {
-        const board = await fetchLevelBoard(level.id);
+        board = await fetchLevelBoard(level.id);
+      } catch {
+        /* leave every WR blank if upstream is unavailable */
+      }
+
+      for (const arrow of ARROWS) {
+        const kind = arrowKindOf(arrow);
+        const runs = tasEntries.filter((e) => arrowKindOf(e.arrowName) === kind);
+        if (!runs.length) continue;
+        const best = runs.reduce((a, b) => (a.timeMs <= b.timeMs ? a : b));
+        const tasSec = best.timeMs / 1000;
+
+        // Compare against the human WR flown with the same arrow, so the delta
+        // is meaningful.
+        let wrSec: number | null = null;
+        let wrPlayer = "";
+        let wrArrow = "";
         for (const run of board) {
+          if (arrowKindOf(run.arrow_name ?? "") !== kind) continue;
           if (wrSec === null || run.completion_time < wrSec) {
             wrSec = run.completion_time;
             wrPlayer = run.username;
             wrArrow = run.arrow_name ?? "";
           }
         }
-      } catch {
-        /* leave the WR blank if upstream is unavailable */
-      }
 
-      for (const arrow of ARROWS) {
-        const runs = tasEntries.filter((e) => e.arrowName === arrow);
-        if (!runs.length) continue;
-        const best = runs.reduce((a, b) => (a.timeMs <= b.timeMs ? a : b));
-        const tasSec = best.timeMs / 1000;
         rows.push({
           level: level.name,
           pack: level.packId,
@@ -246,6 +262,41 @@ async function ensureTab(sheetId: string, tab: string, token: string): Promise<v
   }
 }
 
+/** The tab's columns, shared by the Google write and the copy-to-clipboard TSV. */
+export const EXPORT_HEADER = [
+  "Level",
+  "Pack",
+  "Arrow",
+  "TAS (s)",
+  "TAS player",
+  "Human WR (s)",
+  "WR player",
+  "WR arrow",
+  "Delta TAS-WR (s)",
+  "TAS ahead?",
+] as const;
+
+export function rowToCells(r: SheetsExportRow): string[] {
+  return [
+    r.level,
+    r.pack,
+    r.arrow,
+    r.tasSec.toFixed(3),
+    r.tasPlayer,
+    r.wrSec === null ? "—" : r.wrSec.toFixed(3),
+    r.wrPlayer || "—",
+    r.wrArrow || "—",
+    r.deltaSec === null ? "—" : r.deltaSec.toFixed(3),
+    r.deltaSec === null ? "—" : r.deltaSec < 0 ? "yes" : "no",
+  ];
+}
+
+/** Tab-separated table, ready to paste straight into a spreadsheet. */
+export function rowsToTsv(rows: SheetsExportRow[], updatedAt: string): string {
+  const lines = [EXPORT_HEADER.join("\t"), ...rows.map((r) => rowToCells(r).join("\t"))];
+  return `Last updated: ${updatedAt}\n${lines.join("\n")}`;
+}
+
 /** Overwrite the tab with the current table, clearing any stale rows first. */
 async function writeRows(
   sheetId: string,
@@ -262,33 +313,11 @@ async function writeRows(
     { method: "POST", headers: { authorization: `Bearer ${token}` } },
   );
 
-  const header = [
-    "Level",
-    "Pack",
-    "Arrow",
-    "TAS (s)",
-    "TAS player",
-    "Human WR (s)",
-    "WR player",
-    "WR arrow",
-    "Delta TAS-WR (s)",
-    "TAS ahead?",
-  ];
+  const header = [...EXPORT_HEADER];
   const values: (string | number)[][] = [
     [`Last updated: ${updatedAt}`, "", "", "", "", "", "", "", "", ""],
     header,
-    ...rows.map((r) => [
-      r.level,
-      r.pack,
-      r.arrow,
-      r.tasSec.toFixed(3),
-      r.tasPlayer,
-      r.wrSec === null ? "—" : r.wrSec.toFixed(3),
-      r.wrPlayer || "—",
-      r.wrArrow || "—",
-      r.deltaSec === null ? "—" : r.deltaSec.toFixed(3),
-      r.deltaSec === null ? "—" : r.deltaSec < 0 ? "yes" : "no",
-    ]),
+    ...rows.map(rowToCells),
   ];
 
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(
