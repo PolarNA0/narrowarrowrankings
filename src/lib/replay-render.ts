@@ -95,6 +95,13 @@ export function cameraPreset(preset: CameraPreset): CameraSettings {
 export const DEFAULT_CAMERA = cameraPreset("normal");
 
 /**
+ * The stage's default game-render camera: the `locked` preset (fixed zoom, no
+ * dynamic zoom, snapped to the arrow) but at a 1× view, so the level reads at
+ * its true scale instead of the preset's zoomed-in 2.4.
+ */
+export const DEFAULT_GAME_CAMERA: CameraSettings = { ...cameraPreset("locked"), zoom: 1 };
+
+/**
  * Follow camera matching the game's `Settings → Camera` options. Movement
  * Smoothness is the position-follow exponent and Zoom Smoothness the zoom
  * exponent; `locked` snaps the camera to the arrow at a fixed zoom. Speed is in

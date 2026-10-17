@@ -58,7 +58,7 @@ import {
 import { arrowKind, drawArrowSprite, type ArrowKind } from "@/lib/arrow-sprites";
 import {
   CAMERA_PRESETS,
-  DEFAULT_CAMERA,
+  DEFAULT_GAME_CAMERA,
   FollowCamera,
   GAME_COLLISION_COLOR,
   GAME_FINISH_THICKNESS,
@@ -72,7 +72,9 @@ import {
   type CameraPreset,
   type CameraSettings,
 } from "@/lib/replay-render";
+import { drawGameThrust, paintWalls, paintZones, strokeTrail } from "@/lib/replay-paint";
 import { ghostColor } from "@/lib/compare-ghosts";
+import { ReplayExportDialog } from "@/components/ReplayExportDialog";
 import { GhostPicker } from "@/components/CompareGhosts";
 import { ghostLabel, useCompareGhosts, type CompareCandidate } from "@/hooks/useCompareGhosts";
 import bounceIcon from "@/assets/game/bounce.svg";
@@ -377,6 +379,27 @@ export function ReplayViewer({
               />
             )}
 
+            {sim && pathLength > 0 && levelData && (
+              <div className="flex items-center justify-end gap-2 border-t border-white/5 pt-3">
+                <ReplayExportDialog
+                  sim={sim}
+                  geometry={geometry}
+                  arrow={arrow}
+                  arrowRadius={arrowRadius}
+                  defaultColors={{ body: bodyColor, trail, thrust }}
+                  levelName={meta?.mapName ?? String(runId)}
+                  ghostCandidates={overlays.map((o) => ({
+                    id: o.id,
+                    label: o.label ?? o.id,
+                    sim: o.sim,
+                    arrow: o.arrow,
+                    arrowRadius: o.arrowRadius,
+                    color: o.color,
+                  }))}
+                />
+              </div>
+            )}
+
             {/* Info menu: Input / Combo */}
             <div className="flex items-center gap-2">
               <Button
@@ -648,9 +671,9 @@ export function ReplayStage({
   const [mode, setMode] = React.useState<ReplayRenderMode>("lines");
   // Camera state for "game" mode; a ref so the draw effect reads it without
   // re-running on every settings change (the frame effect repaints anyway).
-  const [cameraSettings, setCameraSettings] = React.useState<CameraSettings>(DEFAULT_CAMERA);
+  const [cameraSettings, setCameraSettings] = React.useState<CameraSettings>(DEFAULT_GAME_CAMERA);
   const [showCamera, setShowCamera] = React.useState(false);
-  const cameraRef = React.useRef(new FollowCamera(DEFAULT_CAMERA));
+  const cameraRef = React.useRef(new FollowCamera(DEFAULT_GAME_CAMERA));
   const settingsRef = React.useRef(cameraSettings);
   settingsRef.current = cameraSettings;
   cameraRef.current.settings = cameraSettings;
@@ -843,196 +866,34 @@ export function ReplayStage({
     };
 
     /** Zones and portals, drawn under the walls in both modes. */
-    const paintZones = (g: CanvasRenderingContext2D) => {
-      for (const z of geometry.zones) {
-        const color = zoneColorFor(z.type);
-        const x = tx(Math.min(z.x0, z.x1));
-        const y = ty(Math.min(z.y0, z.y1));
-        const w = Math.abs(tx(z.x1) - tx(z.x0));
-        const h = Math.abs(ty(z.y1) - ty(z.y0));
-        if (mode === "game") {
-          g.fillStyle = withAlpha(color, 0.22);
-          g.fillRect(x, y, w, h);
-        } else {
-          g.fillStyle = withAlpha(color, 0.14);
-          g.fillRect(x, y, w, h);
-          g.strokeStyle = withAlpha(color, 0.55);
-          g.lineWidth = 1;
-          g.setLineDash([6, 4]);
-          g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-          g.setLineDash([]);
-        }
-      }
-      for (const p of geometry.portals) {
-        drawPortal(g, p, tx, ty, mode === "game");
-      }
-    };
+    const paintZonesLocal = (g: CanvasRenderingContext2D) =>
+      paintZones(g, geometry, { tx, ty, scale, mode });
 
     /** Stroke a run's trail in full at the current transform (game mode). */
-    const strokeTrail = (
+    const strokeTrailLocal = (
       g: CanvasRenderingContext2D,
       path: SimResult["path"],
       upto: number,
       color: string,
       glow: boolean,
-    ) => {
-      if (upto < 1) return;
-      g.lineCap = "round";
-      g.lineJoin = "round";
-      if (glow) {
-        for (const [w, a] of [
-          [7, 0.12],
-          [3.5, 0.3],
-        ] as const) {
-          g.strokeStyle = withAlpha(color, a);
-          g.lineWidth = w;
-          g.beginPath();
-          g.moveTo(tx(path[0].x), ty(path[0].y));
-          for (let i = 1; i <= upto; i++) g.lineTo(tx(path[i].x), ty(path[i].y));
-          g.stroke();
-        }
-      }
-      g.strokeStyle = glow ? lighten(color, 0.35) : color;
-      g.lineWidth = glow ? 1.4 : 2;
-      g.beginPath();
-      g.moveTo(tx(path[0].x), ty(path[0].y));
-      for (let i = 1; i <= upto; i++) g.lineTo(tx(path[i].x), ty(path[i].y));
-      g.stroke();
-    };
+    ) => strokeTrail(g, path, upto, color, glow, { tx, ty, scale, mode });
 
     /**
-     * The game's layered thrust flame. It starts just behind the arrow's tail
-     * and stays narrower than the body, so it trails out of the thruster
-     * instead of covering the arrow.
+     * The game's thrust flame, anchored behind the arrow. `scale` is folded in
+     * (see `drawGameThrust`) so the flame tracks the zoom instead of keeping a
+     * fixed pixel size.
      */
-    const drawGameThrust = (
+    const drawGameThrustLocal = (
       g: CanvasRenderingContext2D,
       kind: ArrowKind,
       x: number,
       y: number,
       rot: number,
       radius: number,
-    ) => {
-      const [outer, inner] = GAME_THRUST_COLORS[kind];
-      const back = radius * 0.85;
-      // Behind the arrow is -forward; forward is (cos rot, sin rot).
-      const ox = x - Math.cos(rot) * back;
-      const oy = y - Math.sin(rot) * back;
-      const len = radius * 2.6;
-      const halfW = radius * 0.7;
-      g.save();
-      g.translate(tx(ox), ty(oy));
-      g.rotate(rot + Math.PI);
-      for (const [color, f] of [
-        [outer, 1],
-        [inner, 0.6],
-      ] as const) {
-        g.fillStyle = color;
-        g.globalAlpha = 0.85;
-        g.beginPath();
-        g.moveTo(0, -halfW * f);
-        g.lineTo(len * f, 0);
-        g.lineTo(0, halfW * f);
-        g.closePath();
-        g.fill();
-      }
-      g.restore();
-    };
+    ) => drawGameThrust(g, kind, x, y, rot, radius, scale, tx, ty);
 
-    /** Paint walls (rotated to `tick` when they spin) onto a 2D context. */
-    const paintWalls = (g: CanvasRenderingContext2D, walls: SimWall[], tick: number) => {
-      g.lineCap = "round";
-      for (const w of walls) {
-        let ax = w.ax;
-        let ay = w.ay;
-        let bx = w.bx;
-        let by = w.by;
-        if (w.pivot && w.rotationSpeed) {
-          const ang = w.rotationSpeed * tick;
-          const cosA = Math.cos(ang);
-          const sinA = Math.sin(ang);
-          const rotate = (px: number, py: number) => {
-            const dx = px - w.pivot!.x;
-            const dy = py - w.pivot!.y;
-            return { x: w.pivot!.x + dx * cosA - dy * sinA, y: w.pivot!.y + dx * sinA + dy * cosA };
-          };
-          const a = rotate(ax, ay);
-          const b = rotate(bx, by);
-          ax = a.x;
-          ay = a.y;
-          bx = b.x;
-          by = b.y;
-        }
-        const isFinish = w.type === "finish";
-        const color = isFinish ? "#ffffff" : wallColorFor(w.type);
-        const X0 = tx(ax);
-        const Y0 = ty(ay);
-        const X1 = tx(bx);
-        const Y1 = ty(by);
-
-        if (mode === "game") {
-          const thickness = isFinish ? GAME_FINISH_THICKNESS : w.thickness || GAME_WALL_THICKNESS;
-          const core = Math.max(2, thickness * scale);
-          if (isFinish) {
-            drawFinish(g, X0, Y0, X1, Y1, thickness, scale);
-            continue;
-          }
-          if (ax === bx && ay === by) {
-            g.fillStyle = color;
-            g.beginPath();
-            g.arc(X0, Y0, core / 2, 0, Math.PI * 2);
-            g.fill();
-            continue;
-          }
-          g.strokeStyle = color;
-          g.lineWidth = core;
-          g.beginPath();
-          g.moveTo(X0, Y0);
-          g.lineTo(X1, Y1);
-          g.stroke();
-          continue;
-        }
-
-        const visual = wallVisual(w.type);
-        if (visual.kind === "finish") {
-          drawFinish(g, X0, Y0, X1, Y1, w.thickness, scale);
-          continue;
-        }
-        // Draw at the wall's real thickness, in world units. The engine collides
-        // at `arrowRadius + thickness / 2`, so a wall drawn thinner than it
-        // collides reads as the arrow bonking against nothing. A small floor
-        // keeps the thinnest walls visible at the replay's zoom.
-        const core = Math.max(1.5, w.thickness * scale);
-        const X = X0;
-        const Y = Y0;
-        if (ax === bx && ay === by) {
-          // A single-point wall: the engine collides with it as a zero-length
-          // segment, so draw the dot it really is.
-          g.fillStyle = withAlpha(visual.color, 0.16);
-          g.beginPath();
-          g.arc(X, Y, core * 1.8, 0, Math.PI * 2);
-          g.fill();
-          g.fillStyle = visual.color;
-          g.beginPath();
-          g.arc(X, Y, core / 2, 0, Math.PI * 2);
-          g.fill();
-          continue;
-        }
-        // A faint wide pass under a crisp core reads as the game's neon walls.
-        g.strokeStyle = withAlpha(visual.color, 0.16);
-        g.lineWidth = Math.max(3, core * 2.4);
-        g.beginPath();
-        g.moveTo(X, Y);
-        g.lineTo(X1, Y1);
-        g.stroke();
-        g.strokeStyle = visual.color;
-        g.lineWidth = core;
-        g.beginPath();
-        g.moveTo(X, Y);
-        g.lineTo(X1, Y1);
-        g.stroke();
-      }
-    };
+    const paintWallsLocal = (g: CanvasRenderingContext2D, walls: SimWall[], tick: number) =>
+      paintWalls(g, walls, tick, { tx, ty, scale, mode });
 
     /** Paint everything that never changes as the frame advances onto an offscreen layer. */
     const paintBase = () => {
@@ -1046,8 +907,8 @@ export function ReplayStage({
       g.fillRect(0, 0, width, HEIGHT);
 
       // Zones and portals first, then the walls that are baked once.
-      paintZones(g);
-      paintWalls(g, staticWalls, 0);
+      paintZonesLocal(g);
+      paintWallsLocal(g, staticWalls, 0);
       return c;
     };
 
@@ -1112,15 +973,15 @@ export function ReplayStage({
         vector();
         ctx.fillStyle = "#07070b";
         ctx.fillRect(0, 0, width, HEIGHT);
-        paintZones(ctx);
-        paintWalls(ctx, geometry.walls, upto);
+        paintZonesLocal(ctx);
+        paintWallsLocal(ctx, geometry.walls, upto);
         for (const o of overlays) {
           const gp = o.sim.path;
           if (gp.length < 2) continue;
           const gUpto = Math.max(0, Math.min(upto, gp.length - 1));
           ctx.save();
           ctx.globalAlpha = 0.5;
-          strokeTrail(ctx, gp, gUpto, o.color, false);
+          strokeTrailLocal(ctx, gp, gUpto, o.color, false);
           ctx.restore();
           const gp2 = gp[gUpto];
           ctx.save();
@@ -1143,10 +1004,10 @@ export function ReplayStage({
             ctx.fillText(o.label, tx(gp2.x) + 9, ty(gp2.y) - 9);
           }
         }
-        strokeTrail(ctx, sim.path, upto, trail, true);
+        strokeTrailLocal(ctx, sim.path, upto, trail, true);
         const point = sim.path[upto];
         if ((point.thrustPower ?? 0) > 0.05) {
-          drawGameThrust(ctx, arrow, point.x, point.y, point.rot, arrowRadius);
+          drawGameThrustLocal(ctx, arrow, point.x, point.y, point.rot, arrowRadius);
         }
         ctx.save();
         ctx.globalAlpha = 0.16;
@@ -1181,7 +1042,7 @@ export function ReplayStage({
       // Rotating walls sit above the baked layer and move with the frame.
       if (rotatingWalls.length > 0) {
         vector();
-        paintWalls(ctx, rotatingWalls, upto);
+        paintWallsLocal(ctx, rotatingWalls, upto);
       }
 
       // Ghost trails, each cached at its own current tick and only re-stroked
@@ -1571,92 +1432,6 @@ export function ReplayStage({
   );
 }
 
-/** A portal as a dashed segment with a chevron pointing along the travel. */
-function drawPortal(
-  ctx: CanvasRenderingContext2D,
-  p: SimPortal,
-  tx: (x: number) => number,
-  ty: (y: number) => number,
-  game = false,
-) {
-  const x0 = tx(p.ax);
-  const y0 = ty(p.ay);
-  const x1 = tx(p.bx);
-  const y1 = ty(p.by);
-  if (game) {
-    // The game's portal: a bright particle band along the segment.
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.strokeStyle = withAlpha(GAME_PORTAL_COLORS.a, 0.5);
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y1);
-    ctx.stroke();
-    ctx.strokeStyle = GAME_PORTAL_COLORS.a;
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y1);
-    ctx.stroke();
-    ctx.restore();
-    return;
-  }
-  const visual = wallVisual("portal");
-  ctx.save();
-  ctx.strokeStyle = withAlpha(visual.color, 0.7);
-  ctx.lineWidth = 1.6;
-  ctx.setLineDash([5, 4]);
-  ctx.beginPath();
-  ctx.moveTo(x0, y0);
-  ctx.lineTo(x1, y1);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  const ang = Math.atan2(y1 - y0, x1 - x0);
-  const mx = (x0 + x1) / 2;
-  const my = (y0 + y1) / 2;
-  const s = 6;
-  ctx.fillStyle = visual.color;
-  ctx.beginPath();
-  ctx.moveTo(mx + Math.cos(ang) * s, my + Math.sin(ang) * s);
-  ctx.lineTo(mx + Math.cos(ang + 2.5) * s, my + Math.sin(ang + 2.5) * s);
-  ctx.lineTo(mx + Math.cos(ang - 2.5) * s, my + Math.sin(ang - 2.5) * s);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-}
-
-/** The finish line: a white strip with a black chequer, like the game's grid. */
-function drawFinish(
-  ctx: CanvasRenderingContext2D,
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  worldThickness: number,
-  scale: number,
-) {
-  const len = Math.hypot(x1 - x0, y1 - y0);
-  const ang = Math.atan2(y1 - y0, x1 - x0);
-  const cells = Math.max(4, Math.round(len / 12));
-  const cell = len / cells;
-  const thick = Math.max(6, worldThickness * scale);
-  ctx.save();
-  ctx.translate(x0, y0);
-  ctx.rotate(ang);
-  for (let i = 0; i < cells; i++) {
-    for (let j = 0; j < 2; j++) {
-      ctx.fillStyle = checkerAt(i, j, 1) ? "#ffffff" : "#111114";
-      ctx.fillRect(i * cell, -thick / 2 + (j * thick) / 2, cell, thick / 2);
-    }
-  }
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(0, -thick / 2, len, thick);
-  ctx.restore();
-}
-
-/** The game's own icons for the obstacle types, used in the legend below. */
 const LEGEND_ICONS: Record<string, string> = {
   normal: railIcon,
   death: skullIcon,
@@ -1941,6 +1716,31 @@ export function TasReplayViewer({
                 onToggle={toggleGhost}
                 onClear={clearGhosts}
               />
+            )}
+
+            {sim && pathLength > 0 && levelData && (
+              <div className="flex items-center justify-end gap-2 border-t border-white/5 pt-3">
+                <ReplayExportDialog
+                  sim={sim}
+                  geometry={geometry}
+                  arrow={arrow}
+                  arrowRadius={arrowRadius}
+                  defaultColors={{
+                    body: themeColor(null),
+                    trail: trailColor(null),
+                    thrust: thrustColor(null),
+                  }}
+                  levelName={levelName ?? levelId}
+                  ghostCandidates={overlays.map((o) => ({
+                    id: o.id,
+                    label: o.label ?? o.id,
+                    sim: o.sim,
+                    arrow: o.arrow,
+                    arrowRadius: o.arrowRadius,
+                    color: o.color,
+                  }))}
+                />
+              </div>
             )}
           </div>
         )}

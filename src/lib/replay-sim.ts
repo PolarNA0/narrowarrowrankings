@@ -96,6 +96,12 @@ export interface SimPoint {
   finished?: boolean;
   /** Engine thrust level at this sample (0..1); drives the flame in game mode. */
   thrustPower?: number;
+  /**
+   * The input symbol that produced this sample (0 coast, 1 right, 2 left,
+   * 3 brake). Absent on the spawn sample, which no input produced. Drives the
+   * steer-dot HUD.
+   */
+  input?: number;
 }
 
 export interface SimWall {
@@ -455,6 +461,7 @@ export async function simulateRun(
   // spin that never translates still shows up in the path.
   for (let i = 0; i < n; i++) {
     const point = replay.step(symbols[i]);
+    point.input = symbols[i];
     path.push(point);
     bounds.minX = Math.min(bounds.minX, point.x);
     bounds.minY = Math.min(bounds.minY, point.y);
