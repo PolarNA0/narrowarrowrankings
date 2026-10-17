@@ -104,6 +104,7 @@ interface RunPayload {
   mapName?: string;
   arrow_name?: string;
   skinConfig?: SkinConfig;
+  verified?: boolean;
 }
 
 const SYMBOL_TONE: Record<ReplaySymbolKey, string> = {
@@ -391,6 +392,10 @@ export function ReplayViewer({
                   defaultInfo={{
                     player: username ?? "Anonymous",
                     seconds: summary.durationMs / 1000,
+                    arrow: meta?.arrow_name ?? undefined,
+                    levelName: meta?.mapName ?? levelName ?? undefined,
+                    inputs: summary.tickCount || undefined,
+                    badge: meta?.verified ? "VERIFIED" : undefined,
                   }}
                   ghostCandidates={overlays.map((o) => ({
                     id: o.id,
@@ -1738,6 +1743,17 @@ export function TasReplayViewer({
                   defaultInfo={{
                     player: username ?? "Anonymous",
                     seconds: (timeMs ?? summary.durationMs) / 1000,
+                    arrow: arrowName ?? undefined,
+                    levelName: levelName ?? levelId,
+                    inputs: inputCount || summary.tickCount || undefined,
+                    rank: candidates.length
+                      ? candidates.filter((c) => c.timeMs < (timeMs ?? summary.durationMs)).length +
+                        1
+                      : undefined,
+                    rankTotal: candidates.length || undefined,
+                    badge: candidates.some((c) => c.timeMs < (timeMs ?? summary.durationMs))
+                      ? "TAS"
+                      : "WR",
                   }}
                   ghostCandidates={overlays.map((o) => ({
                     id: o.id,

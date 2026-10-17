@@ -105,6 +105,18 @@ export function ReplayExportDialog({
   const [infoDelta, setInfoDelta] = React.useState(
     defaultInfo?.delta != null ? String(defaultInfo.delta) : "",
   );
+  const [infoArrow, setInfoArrow] = React.useState(defaultInfo?.arrow ?? "");
+  const [infoLevel, setInfoLevel] = React.useState(defaultInfo?.levelName ?? levelName ?? "");
+  const [infoRank, setInfoRank] = React.useState(
+    defaultInfo?.rank != null ? String(defaultInfo.rank) : "",
+  );
+  const [infoTotal, setInfoTotal] = React.useState(
+    defaultInfo?.rankTotal != null ? String(defaultInfo.rankTotal) : "",
+  );
+  const [infoInputs, setInfoInputs] = React.useState(
+    defaultInfo?.inputs != null ? String(defaultInfo.inputs) : "",
+  );
+  const [infoBadge, setInfoBadge] = React.useState(defaultInfo?.badge ?? "");
   const [hue, setHue] = React.useState(215);
   const [sat, setSat] = React.useState(0.85);
   const [light, setLight] = React.useState(0.72);
@@ -157,12 +169,22 @@ export function ReplayExportDialog({
       const seconds = Number(infoSeconds);
       if (!showInfo || !Number.isFinite(seconds)) return undefined;
       const delta = infoDelta.trim() === "" ? undefined : Number(infoDelta);
+      const rank = infoRank.trim() === "" ? undefined : Number(infoRank);
+      const rankTotal = infoTotal.trim() === "" ? undefined : Number(infoTotal);
+      const inputs = infoInputs.trim() === "" ? undefined : Number(infoInputs);
       return {
         player: infoPlayer.trim() || "Anonymous",
         seconds,
         date: infoDate.trim() || undefined,
         delta: delta !== undefined && Number.isFinite(delta) ? delta : undefined,
         deltaLabel: defaultInfo?.deltaLabel ?? "WR",
+        arrow: infoArrow.trim() || undefined,
+        levelName: infoLevel.trim() || undefined,
+        rank: rank !== undefined && Number.isFinite(rank) ? rank : undefined,
+        rankTotal: rankTotal !== undefined && Number.isFinite(rankTotal) ? rankTotal : undefined,
+        inputs: inputs !== undefined && Number.isFinite(inputs) ? inputs : undefined,
+        hz: inputs !== undefined ? 240 : undefined,
+        badge: infoBadge.trim() || undefined,
       };
     })();
     try {
@@ -398,6 +420,63 @@ export function ReplayExportDialog({
                     placeholder="-0.031"
                     inputMode="decimal"
                     className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] font-mono text-slate-200"
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-14 text-[10px] text-slate-500">Level</span>
+                  <input
+                    value={infoLevel}
+                    onChange={(e) => setInfoLevel(e.target.value)}
+                    placeholder="Moon Rock Rally"
+                    className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] text-slate-200"
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-14 text-[10px] text-slate-500">Arrow</span>
+                  <input
+                    value={infoArrow}
+                    onChange={(e) => setInfoArrow(e.target.value)}
+                    placeholder="Narrow Arrow"
+                    className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] text-slate-200"
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-14 text-[10px] text-slate-500">Rank</span>
+                  <input
+                    value={infoRank}
+                    onChange={(e) => setInfoRank(e.target.value)}
+                    placeholder="1"
+                    inputMode="numeric"
+                    className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] font-mono text-slate-200"
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-14 text-[10px] text-slate-500">of total</span>
+                  <input
+                    value={infoTotal}
+                    onChange={(e) => setInfoTotal(e.target.value)}
+                    placeholder="250"
+                    inputMode="numeric"
+                    className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] font-mono text-slate-200"
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-14 text-[10px] text-slate-500">Inputs</span>
+                  <input
+                    value={infoInputs}
+                    onChange={(e) => setInfoInputs(e.target.value)}
+                    placeholder="2819"
+                    inputMode="numeric"
+                    className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] font-mono text-slate-200"
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-14 text-[10px] text-slate-500">Badge</span>
+                  <input
+                    value={infoBadge}
+                    onChange={(e) => setInfoBadge(e.target.value)}
+                    placeholder="TAS / WR / PB"
+                    className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] text-slate-200"
                   />
                 </label>
               </div>

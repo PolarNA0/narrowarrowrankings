@@ -43,8 +43,8 @@ import type { ArrowKind } from "@/lib/arrow-sprites";
 export type ExportCameraMode = "follow" | "fit";
 
 /**
- * The run-info card drawn above the input dots: who ran it, the time, the date
- * and how far off the record it is.
+ * The run-info card drawn above the input dots: who ran it, the time, the level
+ * and arrow, the rank, the input count and how far off the record it is.
  */
 export interface ExportInfoCard {
   player: string;
@@ -56,6 +56,18 @@ export interface ExportInfoCard {
   delta?: number;
   /** Label for the reference, e.g. `WR` or `TAS`. */
   deltaLabel?: string;
+  /** Arrow name, e.g. `Narrow Arrow`. */
+  arrow?: string;
+  /** Level name, e.g. `Moon Rock Rally`. */
+  levelName?: string;
+  /** Rank on the board, and how many entries it sits among. */
+  rank?: number;
+  rankTotal?: number;
+  /** Number of recorded inputs (ticks) and the sample rate they were taken at. */
+  inputs?: number;
+  hz?: number;
+  /** A short pill shown beside the player, e.g. `TAS`, `WR` or `VERIFIED`. */
+  badge?: string;
 }
 
 export interface ExportGhost {
@@ -136,9 +148,10 @@ export function hslToHex(h: number, s: number, l: number): string {
 }
 
 /**
- * The run-info card, bottom-right above the steer dots: the player name, the
- * time, the date and the gap to the reference. Left-aligned like the readouts
- * the game itself shows, so it sits naturally in the corner.
+ * The run-info card, bottom-right above the steer dots: a player line with an
+ * optional badge, the big time, the level and arrow, and a bottom row of the
+ * date, rank, input count and gap to the reference. Left-aligned like the
+ * readouts the game itself shows, so it sits naturally in the corner.
  */
 function drawInfoCard(
   ctx: CanvasRenderingContext2D,
@@ -147,58 +160,115 @@ function drawInfoCard(
   height: number,
   bottomPad: number,
 ) {
-  const pad = 14;
-  const lines: { text: string; font: string; color: string }[] = [];
-  lines.push({
-    text: info.player,
-    font: "bold 15px ui-sans-serif, system-ui, sans-serif",
-    color: "#f1f5f9",
-  });
-  lines.push({
-    text: `${info.seconds.toFixed(3)}`,
-    font: "bold 22px ui-monospace, monospace",
-    color: "#ffffff",
-  });
-  if (info.date) {
-    const d = new Date(info.date);
-    const label = isNaN(d.getTime())
-      ? info.date
-      : `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCFullYear()).slice(2)}`;
-    lines.push({ text: label, font: "11px ui-monospace, monospace", color: "#94a3b8" });
-  }
+  const pad = 16;
+  const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
+  const SANS = "ui-sans-serif, system-ui, sans-serif";
+  const GREEN = "#4ade80";
+  const RED = "#f87171";
+  const DIM = "#94a3b8";
+
+  const fmtDate = (v: string) => {
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return v;
+    return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+  };
+
+  // --- row 1: player (+ badge) -------------------------------------------------
+  ctx.font = `bold 15px ${SANS}`;
+  const playerW = ctx.measureText(info.player).width;
+  const badge = info.badge?.trim();
+  ctx.font = `bold 10px ${MONO}`;
+  const badgeW = badge ? ctx.measureText(badge).width + 14 : 0;
+
+  // --- row 2: the big time -----------------------------------------------------
+  ctx.font = `bold 26px ${MONO}`;
+  const timeStr = `${info.seconds.toFixed(3)}s`;
+  const timeW = ctx.measureText(timeStr).width;
+
+  // --- row 3: level · arrow ----------------------------------------------------
+  ctx.font = `11px ${SANS}`;
+  const sub = [info.levelName, info.arrow].filter(Boolean).join("  ·  ");
+  const subW = sub ? ctx.measureText(sub).width : 0;
+
+  // --- row 4: date · rank · inputs · delta -------------------------------------
+  ctx.font = `11px ${MONO}`;
+  const metaParts: string[] = [];
+  if (info.date) metaParts.push(fmtDate(info.date));
+  if (info.rank != null)
+    metaParts.push(`#${info.rank}${info.rankTotal ? `/${info.rankTotal}` : ""}`);
+  if (info.inputs != null) metaParts.push(`${info.inputs} in${info.hz ? ` @${info.hz}Hz` : ""}`);
   if (info.delta !== undefined) {
     const sign = info.delta <= 0 ? "-" : "+";
-    lines.push({
-      text: `[${info.deltaLabel ?? "WR"} ${sign}${Math.abs(info.delta).toFixed(3)}]`,
-      font: "bold 12px ui-monospace, monospace",
-      color: info.delta <= 0 ? "#4ade80" : "#f87171",
-    });
+    metaParts.push(`[${info.deltaLabel ?? "WR"} ${sign}${Math.abs(info.delta).toFixed(3)}]`);
   }
+  const metaStr = metaParts.join("   ");
+  const metaW = metaStr ? ctx.measureText(metaStr).width : 0;
 
-  const lineH = 24;
-  const boxH = lines.length * lineH + pad * 2 - 6;
-  let boxW = 0;
-  for (const l of lines) {
-    ctx.font = l.font;
-    boxW = Math.max(boxW, ctx.measureText(l.text).width);
-  }
-  boxW += pad * 2;
+  const innerW = Math.max(playerW + badgeW + 6, timeW, subW, metaW);
+  const boxW = innerW + pad * 2;
+  const boxH =
+    pad * 2 + 18 /* player */ + 6 + 30 /* time */ + (sub ? 4 + 14 : 0) + (metaStr ? 8 + 14 : 0);
   const x = width - 16 - boxW;
   const y = height - bottomPad - boxH;
 
   ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.42)";
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
   ctx.beginPath();
-  ctx.roundRect(x, y, boxW, boxH, 10);
+  ctx.roundRect(x, y, boxW, boxH, 12);
   ctx.fill();
-  let ty = y + pad + 8;
-  for (const l of lines) {
-    ctx.font = l.font;
-    ctx.fillStyle = l.color;
-    ctx.textAlign = "left";
-    ctx.fillText(l.text, x + pad, ty);
-    ty += lineH;
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.textAlign = "left";
+
+  let cy = y + pad;
+  // Player
+  ctx.font = `bold 15px ${SANS}`;
+  ctx.fillStyle = "#f1f5f9";
+  ctx.fillText(info.player, x + pad, cy + 13);
+  // Badge pill
+  if (badge) {
+    const bx = x + pad + playerW + 8;
+    const by = cy + 1;
+    ctx.fillStyle = "rgba(74,222,128,0.16)";
+    ctx.beginPath();
+    ctx.roundRect(bx, by, badgeW, 15, 7);
+    ctx.fill();
+    ctx.font = `bold 10px ${MONO}`;
+    ctx.fillStyle = GREEN;
+    ctx.fillText(badge, bx + 7, by + 11);
   }
+  cy += 18 + 6;
+
+  // Time
+  ctx.font = `bold 26px ${MONO}`;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(timeStr, x + pad, cy + 24);
+  cy += 30;
+
+  // Level · arrow
+  if (sub) {
+    ctx.font = `11px ${SANS}`;
+    ctx.fillStyle = "#cbd5e1";
+    ctx.fillText(sub, x + pad, cy + 11);
+    cy += 4 + 14;
+  }
+
+  // Meta row: date · rank · inputs in white-ish, then the delta in its colour.
+  if (metaParts.length) {
+    cy += 8;
+    ctx.font = `11px ${MONO}`;
+    const headParts = metaParts.slice(0, info.delta !== undefined ? -1 : metaParts.length);
+    const headStr = headParts.join("   ");
+    ctx.fillStyle = DIM;
+    ctx.fillText(headStr, x + pad, cy + 11);
+    if (info.delta !== undefined) {
+      const hw = headStr ? ctx.measureText(headStr).width + 18 : 0;
+      ctx.fillStyle = info.delta <= 0 ? GREEN : RED;
+      ctx.fillText(metaParts[metaParts.length - 1], x + pad + hw, cy + 11);
+    }
+  }
+
   ctx.restore();
 }
 
@@ -265,10 +335,11 @@ function renderScene(
   let scale: number;
   let offX: number;
   let offY: number;
-  if (opts.cameraMode === "follow" && camera) {
-    scale = camera.zoom;
-    offX = width / 2 - camera.x * scale;
-    offY = height / 2 - camera.y * scale;
+  const following = opts.cameraMode === "follow" && camera != null;
+  if (following) {
+    scale = camera!.zoom;
+    offX = width / 2 - camera!.x * scale;
+    offY = height / 2 - camera!.y * scale;
   } else {
     scale = Math.min(width / spanX, height / spanY);
     offX = (width - spanX * scale) / 2 - minX * scale;
@@ -277,6 +348,12 @@ function renderScene(
   const tx = (x: number) => x * scale + offX;
   const ty = (y: number) => y * scale + offY;
   const pc: PaintCtx = { tx, ty, scale, mode };
+
+  // In follow mode the viewport is a small window that moves with the arrow, so
+  // the trail (and each ghost's trail) is only stroked where it can be seen —
+  // otherwise every frame re-walks the whole path from the spawn. In the fixed
+  // "fit" view the whole level is on screen, so no clipping is needed.
+  const clip = following ? { w: width, h: height } : undefined;
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
@@ -297,23 +374,28 @@ function renderScene(
     const gp = g.sim.path;
     if (gp.length < 2) continue;
     const gUpto = Math.max(0, Math.min(upto, gp.length - 1));
+    const p = gp[gUpto];
+    const gx = tx(p.x);
+    const gy = ty(p.y);
+    // Skip a ghost that is entirely off-screen in follow mode; its arrow would
+    // never be visible anyway, and skipping saves a full trail stroke.
+    if (clip && (gx < -clip.w || gx > clip.w * 2 || gy < -clip.h || gy > clip.h * 2)) continue;
     ctx.save();
     ctx.globalAlpha = 0.5;
-    strokeTrail(ctx, gp, gUpto, g.color, false, pc);
+    strokeTrail(ctx, gp, gUpto, g.color, false, pc, clip);
     ctx.restore();
-    const p = gp[gUpto];
     ctx.save();
     ctx.globalAlpha = 0.6;
-    drawSprite(ctx, g.arrow, tx(p.x), ty(p.y), p.rot, scale, g.arrowRadius, g.color, g.color);
+    drawSprite(ctx, g.arrow, gx, gy, p.rot, scale, g.arrowRadius, g.color, g.color);
     ctx.restore();
     if (g.label) {
       ctx.font = "bold 10px ui-monospace, monospace";
       ctx.fillStyle = g.color;
-      ctx.fillText(g.label, tx(p.x) + 9, ty(p.y) - 9);
+      ctx.fillText(g.label, gx + 9, gy - 9);
     }
   }
 
-  strokeTrail(ctx, sim.path, upto, opts.trail, mode === "game", pc);
+  strokeTrail(ctx, sim.path, upto, opts.trail, mode === "game", pc, clip);
   const point = sim.path[upto];
   if (point) {
     if ((point.thrustPower ?? 0) > 0.05) {
@@ -398,7 +480,8 @@ export async function exportReplayVideo(opts: ExportOptions): Promise<Blob> {
   });
 
   const totalTicks = Math.max(1, opts.sim.path.length - 1);
-  const durationMs = (totalTicks * SIM_TICK_MS) / 1;
+  const durationMs = totalTicks * SIM_TICK_MS;
+  const frameInterval = 1000 / opts.fps;
   const tickStep = 240 / opts.fps;
   const dt = (tickStep * SIM_TICK_MS) / 1000;
 
@@ -412,12 +495,11 @@ export async function exportReplayVideo(opts: ExportOptions): Promise<Blob> {
     camera.follow(p.x, p.y, vx, vy, upto === 0 ? 1 : dt);
   };
 
-  recorder.start();
-  // Paint the first frame before the stream is sampled so the clip never opens
-  // on a blank canvas.
-  const bounds = computeBounds(opts);
-  stepCamera(0);
-  renderScene(ctx, 0, opts, camera, dpr, bounds);
+  /** Draw one frame at tick `frame` (may be fractional between 240Hz samples). */
+  const renderFrame = (frame: number) => {
+    stepCamera(frame);
+    renderScene(ctx, frame, opts, camera, dpr, bounds);
+  };
 
   // Progress is throttled to whole percents: calling back on every animation
   // frame re-renders the dialog ~60x a second during the export, which competes
@@ -431,25 +513,37 @@ export async function exportReplayVideo(opts: ExportOptions): Promise<Blob> {
     }
   };
 
+  const bounds = computeBounds(opts);
+  recorder.start();
+  // Paint the first frame before the stream is sampled so the clip never opens
+  // on a blank canvas.
+  renderFrame(0);
+
   await new Promise<void>((resolve) => {
     const t0 = performance.now();
-    const frameInterval = 1000 / opts.fps;
     let lastRender = -Infinity;
     const loop = () => {
       const elapsed = performance.now() - t0;
       // `requestAnimationFrame` fires at the display's refresh rate, which is
       // 120Hz+ on many monitors, but the recorder only samples the canvas at
       // `fps`. Repainting the whole scene on every vsync is wasted work, so a
-      // frame is only drawn once the target interval has passed.
+      // frame is only drawn once the target interval has passed. The frame index
+      // is derived from wall-clock time so the clip always plays at real speed.
       if (elapsed - lastRender >= frameInterval - 1) {
         lastRender = elapsed;
         const frame = Math.min(totalTicks, (elapsed / durationMs) * totalTicks);
-        stepCamera(frame);
-        renderScene(ctx, frame, opts, camera, dpr, bounds);
+        renderFrame(frame);
         reportProgress(elapsed / durationMs);
       }
       if (elapsed >= durationMs) {
-        resolve();
+        // The last drawn frame can sit well before the end when a frame renders
+        // slowly (the loop can jump from mid-run to past `durationMs` in one
+        // tick). Draw the final frame explicitly and hold it a beat so the
+        // recorder writes it — without this the clip ends 1-2s early and the
+        // run's finish is missing.
+        renderFrame(totalTicks);
+        reportProgress(1);
+        window.setTimeout(resolve, frameInterval + 60);
         return;
       }
       requestAnimationFrame(loop);

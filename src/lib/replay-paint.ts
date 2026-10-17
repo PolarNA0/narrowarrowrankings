@@ -262,7 +262,14 @@ export function paintWalls(
   }
 }
 
-/** Stroke a run's trail in full up to `upto`; `glow` adds the halo pass. */
+/**
+ * Stroke a run's trail in full up to `upto`; `glow` adds the halo pass.
+ *
+ * When `clip` is given (the viewport size in CSS px), only the on-screen tail of
+ * the trail is stroked. The trail is drawn from the spawn every frame, so on a
+ * long run the cost grows with the frame index; walking back from the head to
+ * the last off-screen point keeps each frame's work bounded by what is visible.
+ */
 export function strokeTrail(
   ctx: CanvasRenderingContext2D,
   path: SimResult["path"],
@@ -270,9 +277,25 @@ export function strokeTrail(
   color: string,
   glow: boolean,
   pc: PaintCtx,
+  clip?: { w: number; h: number; pad?: number },
 ) {
   if (upto < 1) return;
   const { tx, ty } = pc;
+  let from = 1;
+  if (clip) {
+    const pad = clip.pad ?? 120;
+    let i = upto;
+    while (i > 1) {
+      const p = path[i - 1];
+      const px = tx(p.x);
+      const py = ty(p.y);
+      if (px < -pad || px > clip.w + pad || py < -pad || py > clip.h + pad) break;
+      i--;
+    }
+    // Start one point earlier so the segment entering the view is drawn too.
+    from = Math.max(1, i - 1);
+  }
+  const startPt = path[from - 1];
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   if (glow) {
@@ -283,16 +306,16 @@ export function strokeTrail(
       ctx.strokeStyle = withAlpha(color, a);
       ctx.lineWidth = w;
       ctx.beginPath();
-      ctx.moveTo(tx(path[0].x), ty(path[0].y));
-      for (let i = 1; i <= upto; i++) ctx.lineTo(tx(path[i].x), ty(path[i].y));
+      ctx.moveTo(tx(startPt.x), ty(startPt.y));
+      for (let i = from; i <= upto; i++) ctx.lineTo(tx(path[i].x), ty(path[i].y));
       ctx.stroke();
     }
   }
   ctx.strokeStyle = glow ? lighten(color, 0.35) : color;
   ctx.lineWidth = glow ? 1.4 : 2;
   ctx.beginPath();
-  ctx.moveTo(tx(path[0].x), ty(path[0].y));
-  for (let i = 1; i <= upto; i++) ctx.lineTo(tx(path[i].x), ty(path[i].y));
+  ctx.moveTo(tx(startPt.x), ty(startPt.y));
+  for (let i = from; i <= upto; i++) ctx.lineTo(tx(path[i].x), ty(path[i].y));
   ctx.stroke();
 }
 
