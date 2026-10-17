@@ -1,6 +1,19 @@
 import * as React from "react";
-import { Check, Cpu, Loader2, Pencil, Send, Sparkles, Square, Timer, Trophy } from "lucide-react";
+import {
+  Check,
+  Cpu,
+  Loader2,
+  Pencil,
+  Plus,
+  Send,
+  Sparkles,
+  Square,
+  Timer,
+  Trophy,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -48,14 +61,8 @@ const EMPTY_SIM: SimResult = {
   bounds: { minX: 0, minY: 0, maxX: 0, maxY: 0 },
 };
 
-const BUDGETS = [
-  { label: "15s", ms: 15000 },
-  { label: "30s", ms: 30000 },
-  { label: "60s", ms: 60000 },
-  { label: "2min", ms: 120000 },
-  { label: "5min", ms: 300000 },
-  { label: "10min", ms: 600000 },
-];
+/** Quick-pick budgets (seconds). A typed amount is authoritative; `0` = no cap. */
+const BUDGET_PRESETS = [15, 30, 60, 120, 300, 600];
 
 /** Annealing start temperature presets, matching the reference tool. */
 const INTENSITIES = [
@@ -74,20 +81,24 @@ function workerCount(): number {
 }
 
 /**
- * Admin-gated entry point for the Brute optimizer. Non-admins see a
- * "still in development" notice instead of the tool.
+ * Entry point for the Brute optimizer. Public: anyone can open the tool and
+ * run one or more searches. (It was admin-gated while it was in development.)
  */
-export function BruteView({ isAdmin }: { isAdmin?: boolean }) {
-  if (!isAdmin) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 text-center space-y-2">
-        <Cpu className="w-8 h-8 text-slate-600" />
-        <p className="text-slate-400 text-sm font-medium">This feature is still in development.</p>
-        <p className="text-slate-600 text-xs">Check back soon.</p>
-      </div>
-    );
-  }
+export function BruteView() {
   return <BruteRunner />;
+}
+
+/** Live status of one search, surfaced to the sub-tab bar. */
+export interface BruteSearchState {
+  id: number;
+  label: string;
+  running: boolean;
+  bestTick: number | null;
+}
+
+/** Default name for a freshly added search tab. */
+function defaultLabel(i: number) {
+  return `Search ${i}`;
 }
 
 /**
@@ -97,9 +108,127 @@ export function BruteView({ isAdmin }: { isAdmin?: boolean }) {
  * the control room around it.
  */
 export function BruteRunner() {
+  // Each sub-tab is one independent search. They all run at once (each fans out
+  // over its own workers), so a user can chase several levels or seeds in
+  // parallel; the tab bar shows which are still searching and their best time.
+  const [ids, setIds] = React.useState<number[]>([1]);
+  const [active, setActive] = React.useState(1);
+  const nextId = React.useRef(2);
+  const [states, setStates] = React.useState<Record<number, BruteSearchState>>({});
+
+  const addTab = React.useCallback(() => {
+    const id = nextId.current++;
+    setIds((prev) => [...prev, id]);
+    setActive(id);
+  }, []);
+
+  const closeTab = React.useCallback(
+    (id: number) => {
+      setIds((prev) => {
+        const next = prev.filter((x) => x !== id);
+        if (next.length === 0) return prev; // keep at least one tab open
+        return next;
+      });
+      setStates((prev) => {
+        const { [id]: _drop, ...rest } = prev;
+        return rest;
+      });
+      setActive((cur) => {
+        if (cur !== id) return cur;
+        const remaining = ids.filter((x) => x !== id);
+        return remaining[remaining.length - 1] ?? cur;
+      });
+    },
+    [ids],
+  );
+
+  const report = React.useCallback((state: BruteSearchState) => {
+    setStates((prev) => {
+      const old = prev[state.id];
+      if (
+        old &&
+        old.label === state.label &&
+        old.running === state.running &&
+        old.bestTick === state.bestTick
+      ) {
+        return prev; // avoid a render loop from an unchanged report
+      }
+      return { ...prev, [state.id]: state };
+    });
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-1 overflow-x-auto">
+        {ids.map((id) => {
+          const st = states[id];
+          const isActive = id === active;
+          return (
+            <div
+              key={id}
+              className={cn(
+                "group flex items-center gap-1.5 rounded-t-md border-b-2 px-3 py-2 text-xs whitespace-nowrap transition-colors",
+                isActive
+                  ? "border-[var(--app-accent)] text-white"
+                  : "border-transparent text-slate-500 hover:text-slate-300",
+              )}
+            >
+              <button className="flex items-center gap-1.5" onClick={() => setActive(id)}>
+                {st?.running && (
+                  <Loader2 className="w-3 h-3 animate-spin text-[var(--app-accent)]" />
+                )}
+                <span className="font-medium">{st?.label ?? defaultLabel(id)}</span>
+                {st?.bestTick != null && (
+                  <span className="font-mono text-[10px] text-slate-500">
+                    {((st.bestTick * SIM_TICK_MS) / 1000).toFixed(3)}s
+                  </span>
+                )}
+              </button>
+              {ids.length > 1 && (
+                <button
+                  className="text-slate-600 hover:text-red-400"
+                  aria-label={`Close ${st?.label ?? defaultLabel(id)}`}
+                  onClick={() => closeTab(id)}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          );
+        })}
+        <button
+          className="ml-1 rounded-md p-1.5 text-slate-500 hover:bg-white/5 hover:text-white"
+          aria-label="Add search"
+          onClick={addTab}
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
+
+      {ids.map((id) => (
+        <div key={id} className={cn(id !== active && "hidden")}>
+          <BruteSearch id={id} onStateChange={report} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * One independent search: the level/seed/budget controls, the run/stop button,
+ * and the result preview. Kept mounted while its sub-tab is hidden so a search
+ * keeps running when the user switches tabs.
+ */
+function BruteSearch({
+  id,
+  onStateChange,
+}: {
+  id: number;
+  onStateChange: (state: BruteSearchState) => void;
+}) {
   const [levelId, setLevelId] = React.useState(LEVELS[0]?.id ?? "");
   const [levelName, setLevelName] = React.useState(LEVELS[0]?.name ?? "");
-  const [budgetMs, setBudgetMs] = React.useState(BUDGETS[1].ms);
+  const [budgetSecs, setBudgetSecs] = React.useState(30);
   const [t0, setT0] = React.useState(6);
   const [refine, setRefine] = React.useState(true);
   const [entries, setEntries] = React.useState<TasEntry[]>([]);
@@ -148,6 +277,10 @@ export function BruteRunner() {
     portals: [],
   });
 
+  // The search budget. A typed amount (seconds) is authoritative; 0 means "run
+  // until stopped", which the search reads as an uncapped budget.
+  const budgetMs = Math.max(0, Math.round(budgetSecs * 1000));
+
   // Load the level's TAS board so a run can be chosen as the seed.
   React.useEffect(() => {
     let cancelled = false;
@@ -191,6 +324,18 @@ export function BruteRunner() {
   const canSeed = entries.length > 0 || humanEntries.length > 0 || !!drawnSeed;
 
   const seedTimeMs = seedEntry?.timeMs ?? null;
+
+  const label = `${levelName || levelId}${seedEntry ? ` · ${(seedEntry.timeMs / 1000).toFixed(3)}s` : ""}`;
+
+  // Report this search's live status up to the sub-tab bar.
+  React.useEffect(() => {
+    onStateChange({
+      id,
+      label,
+      running,
+      bestTick: progress?.bestFinishTick ?? null,
+    });
+  }, [id, label, running, progress, onStateChange]);
 
   // Load the level geometry when the draw panel opens, so the map is visible
   // to trace over even before any run has been chosen.
@@ -564,18 +709,55 @@ export function BruteRunner() {
           </Field>
 
           <Field label="Time budget">
-            <Select value={String(budgetMs)} onValueChange={(v) => setBudgetMs(Number(v))}>
-              <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200">
-                {BUDGETS.map((b) => (
-                  <SelectItem key={b.ms} value={String(b.ms)} className="text-xs">
-                    Search {b.label}
-                  </SelectItem>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  min={0}
+                  step={5}
+                  value={budgetSecs}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setBudgetSecs(Number.isFinite(v) ? Math.max(0, v) : 0);
+                  }}
+                  className="h-9 text-xs bg-white/5 border-white/10 font-mono"
+                  aria-label="Search budget in seconds"
+                />
+                <span className="text-[11px] text-slate-500 shrink-0">sec</span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {BUDGET_PRESETS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setBudgetSecs(s)}
+                    className={cn(
+                      "rounded px-1.5 py-0.5 text-[10px] font-mono border transition-colors",
+                      budgetSecs === s
+                        ? "border-[var(--app-accent)]/50 text-[var(--app-accent)]"
+                        : "border-white/10 text-slate-500 hover:text-slate-300",
+                    )}
+                  >
+                    {s >= 60 ? `${s / 60}m` : `${s}s`}
+                  </button>
                 ))}
-              </SelectContent>
-            </Select>
+                <button
+                  type="button"
+                  onClick={() => setBudgetSecs(0)}
+                  className={cn(
+                    "rounded px-1.5 py-0.5 text-[10px] font-mono border transition-colors",
+                    budgetSecs === 0
+                      ? "border-[var(--app-accent)]/50 text-[var(--app-accent)]"
+                      : "border-white/10 text-slate-500 hover:text-slate-300",
+                  )}
+                >
+                  ∞
+                </button>
+              </div>
+              {budgetSecs === 0 && (
+                <p className="text-[10px] text-slate-500">Runs until you press Stop.</p>
+              )}
+            </div>
           </Field>
 
           <Field label="Intensity">

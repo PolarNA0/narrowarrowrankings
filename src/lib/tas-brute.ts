@@ -419,7 +419,8 @@ export function anneal(
   let steps = 0;
   const start = Date.now();
   let lastReport = 0;
-  while (Date.now() - start < budgetMs) {
+  // A budget of 0 (or less) means "no cap": run until the caller stops us.
+  while (budgetMs <= 0 || Date.now() - start < budgetMs) {
     if (hooks.shouldStop?.()) break;
     steps++;
     const cand = mutate(cur, rnd);
@@ -616,9 +617,12 @@ export async function optimizeRunLite(options: BruteOptions): Promise<BruteResul
   };
 
   // Anneal for the bulk of the budget, then spend the rest polishing by 1 tick.
-  const wantRefine = options.refine !== false;
+  // An uncapped budget (<= 0) means "run until stopped", so skip the bounded
+  // refine pass and let the annealer run until `shouldStop` fires.
+  const wantRefine = options.refine !== false && budgetMs > 0;
   const refineBudget = wantRefine ? Math.max(1500, Math.floor(budgetMs * 0.4)) : 0;
-  const annealBudget = wantRefine ? Math.max(1000, budgetMs - refineBudget) : budgetMs;
+  const annealBudget =
+    budgetMs <= 0 ? 0 : wantRefine ? Math.max(1000, budgetMs - refineBudget) : budgetMs;
 
   const annealed = anneal(
     sim,

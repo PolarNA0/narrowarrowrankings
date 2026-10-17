@@ -23,6 +23,7 @@ import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-d
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
 import { Route as ApiPacksSlugRouteImport } from './routes/api/packs.$slug'
 import { Route as ApiPublicCategoryWrCheckRouteImport } from './routes/api/public/category-wr-check'
+import { Route as ApiPublicSheetsExportRouteImport } from './routes/api/public/sheets-export'
 import { Route as ApiPublicTasWrCheckRouteImport } from './routes/api/public/tas-wr-check'
 import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
 import { Route as ApiSkinsSplatRouteImport } from './routes/api/skins.$'
@@ -100,6 +101,11 @@ const ApiPublicCategoryWrCheckRoute =
     path: '/api/public/category-wr-check',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicSheetsExportRoute = ApiPublicSheetsExportRouteImport.update({
+  id: '/api/public/sheets-export',
+  path: '/api/public/sheets-export',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicTasWrCheckRoute = ApiPublicTasWrCheckRouteImport.update({
   id: '/api/public/tas-wr-check',
   path: '/api/public/tas-wr-check',
@@ -140,6 +146,7 @@ export interface FileRoutesByFullPath {
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
+  '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
@@ -161,6 +168,7 @@ export interface FileRoutesByTo {
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
+  '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
@@ -183,6 +191,7 @@ export interface FileRoutesById {
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
+  '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
@@ -206,6 +215,7 @@ export interface FileRouteTypes {
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
+    | '/api/public/sheets-export'
     | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
     | '/api/skins/$'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
+    | '/api/public/sheets-export'
     | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
     | '/api/skins/$'
@@ -248,6 +259,7 @@ export interface FileRouteTypes {
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
+    | '/api/public/sheets-export'
     | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
     | '/api/skins/$'
@@ -270,6 +282,7 @@ export interface RootRouteChildren {
   ApiLevelDetailsLevelIdRoute: typeof ApiLevelDetailsLevelIdRoute
   ApiPacksSlugRoute: typeof ApiPacksSlugRoute
   ApiPublicCategoryWrCheckRoute: typeof ApiPublicCategoryWrCheckRoute
+  ApiPublicSheetsExportRoute: typeof ApiPublicSheetsExportRoute
   ApiPublicTasWrCheckRoute: typeof ApiPublicTasWrCheckRoute
   ApiRunsRunIdRoute: typeof ApiRunsRunIdRoute
   ApiSkinsSplatRoute: typeof ApiSkinsSplatRoute
@@ -378,6 +391,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicCategoryWrCheckRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/sheets-export': {
+      id: '/api/public/sheets-export'
+      path: '/api/public/sheets-export'
+      fullPath: '/api/public/sheets-export'
+      preLoaderRoute: typeof ApiPublicSheetsExportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/tas-wr-check': {
       id: '/api/public/tas-wr-check'
       path: '/api/public/tas-wr-check'
@@ -430,6 +450,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLevelDetailsLevelIdRoute: ApiLevelDetailsLevelIdRoute,
   ApiPacksSlugRoute: ApiPacksSlugRoute,
   ApiPublicCategoryWrCheckRoute: ApiPublicCategoryWrCheckRoute,
+  ApiPublicSheetsExportRoute: ApiPublicSheetsExportRoute,
   ApiPublicTasWrCheckRoute: ApiPublicTasWrCheckRoute,
   ApiRunsRunIdRoute: ApiRunsRunIdRoute,
   ApiSkinsSplatRoute: ApiSkinsSplatRoute,

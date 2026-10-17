@@ -2543,7 +2543,7 @@ export default function App() {
             }}
           />
         ) : view === "brute" ? (
-          <BruteView isAdmin={isAdmin} />
+          <BruteView />
         ) : view === "score" ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">

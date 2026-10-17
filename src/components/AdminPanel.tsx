@@ -39,6 +39,7 @@ import {
 import { useAdminAuth } from "../hooks/useAdminAuth";
 import { AdminBadgeManager } from "./AdminBadgeManager";
 import { AdminDiscordTracker } from "./AdminDiscordTracker";
+import { AdminSheetsExport } from "./AdminSheetsExport";
 import { AdminLevelManager } from "./AdminLevelManager";
 import { useRemovedRuns, restoreRun } from "../hooks/useRemovedRuns";
 
@@ -92,7 +93,7 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
   const { removedRuns, } = useRemovedRuns();
   const [selectedLevel, setSelectedLevel] = useState<string>(levels[0]?.id || "");
   const [selectedPack, setSelectedPack] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState<'maps' | 'general' | 'overall' | 'legacy' | 'removed' | 'badges' | 'discord' | 'levels'>('maps');
+  const [activeTab, setActiveTab] = useState<'maps' | 'general' | 'overall' | 'legacy' | 'removed' | 'badges' | 'discord' | 'levels' | 'sheets'>('maps');
   const [rankConfig, setRankConfig] = useState<Record<string, RankInfo>>(DEFAULT_RANKS);
   const [arrowScope, setArrowScope] = useState<"base" | ArrowScope>("base");
   const [arrowRanks, setArrowRanks] = useState<Partial<Record<ArrowScope, Record<string, number>>>>({});
@@ -726,6 +727,14 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
           <Button 
             variant="ghost" 
             size="sm" 
+            onClick={() => setActiveTab('sheets')}
+            className={cn("text-[10px] uppercase tracking-widest h-8 px-4", activeTab === 'sheets' ? "bg-white/10 text-white" : "text-slate-400")}
+          >
+            Sheets
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
             onClick={() => setActiveTab('levels')}
             className={cn("text-[10px] uppercase tracking-widest h-8 px-4", activeTab === 'levels' ? "bg-white/10 text-white" : "text-slate-400")}
           >
@@ -738,6 +747,8 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
           <AdminLevelManager levelPacks={levelPacks} />
         ) : activeTab === 'discord' ? (
           <AdminDiscordTracker />
+        ) : activeTab === 'sheets' ? (
+          <AdminSheetsExport />
         ) : activeTab === 'badges' ? (
           <AdminBadgeManager usernames={allUsernames} />
         ) : activeTab === 'maps' ? (
