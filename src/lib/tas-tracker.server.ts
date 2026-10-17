@@ -28,15 +28,20 @@ const ARROW_KEY: Record<Arrow, "narrow" | "speedy" | "energy"> = {
 
 export const DEFAULT_TAS_TEMPLATES: Record<"narrow" | "speedy" | "energy", string> = {
   narrow:
-    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
+    "{champion}{emoji}{tasBadge} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
   speedy:
-    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
+    "{champion}{emoji}{tasBadge} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
   energy:
-    "{champion}{emoji} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
+    "{champion}{emoji}{tasBadge} **{player}** set a new TAS world record on **{level}** with **{time}** [{wrTag}] [{tasTag}]",
 };
 
 /** Champion badge shown first, before the per-arrow emoji. */
 export const DEFAULT_TAS_CHAMPION = "<:champion:1351205618534449223>";
+
+/** The animated TAS badge, shown right after the arrow emoji so a record reads
+ *  "arrow · TAS · player". Kept separate from the per-arrow emoji so it can be
+ *  swapped without touching them. */
+export const DEFAULT_TAS_BADGE = "<a:TAS:1561061187515449454>";
 
 export const DEFAULT_TAS_EMOJIS: Record<"narrow" | "speedy" | "energy", string> = {
   narrow: "<:narrow:1356331491746910319>",
@@ -72,6 +77,8 @@ interface TrackerConfig {
   tasEmojis?: Partial<Record<"narrow" | "speedy" | "energy", string>>;
   /** Badge prefixed before the arrow emoji, e.g. 🏆. */
   tasChampion?: string;
+  /** Badge shown right after the arrow emoji, e.g. the animated TAS badge. */
+  tasBadge?: string;
 }
 
 interface TasRecordState {
@@ -186,7 +193,7 @@ export async function runTasCheck(
         // instead, so existing deployments heal without a manual re-save.
         const savedTemplate = config.tasTemplates?.[slot];
         const legacyTemplate = !!savedTemplate && /-[{]?(wrDiff|catDiff)[}]/.test(savedTemplate);
-        const template =
+        let template =
           savedTemplate && !legacyTemplate ? savedTemplate : DEFAULT_TAS_TEMPLATES[slot];
         const savedEmoji = config.tasEmojis?.[slot];
         const emoji =
@@ -195,6 +202,14 @@ export async function runTasCheck(
           config.tasChampion && !LEGACY_TAS_EMOJIS.has(config.tasChampion)
             ? config.tasChampion
             : DEFAULT_TAS_CHAMPION;
+        // The TAS badge sits right after the arrow emoji. A template saved
+        // before the badge existed never references `{tasBadge}`, so insert it
+        // after the first `{emoji}` to heal those deployments. Setting the
+        // badge field to empty is the opt-out: nothing is inserted.
+        const badge = (config.tasBadge ?? DEFAULT_TAS_BADGE).trim();
+        if (badge && template.includes("{emoji}") && !template.includes("{tasBadge}")) {
+          template = template.replace("{emoji}", "{emoji}{tasBadge}");
+        }
         // TAS run minus the human time: negative means the TAS beats the human WR.
         const wrDiff = overallWr != null ? timeSec - overallWr : null;
         // Gain over the previous TAS record; absent on a level+arrow's first run.
@@ -207,6 +222,7 @@ export async function runTasCheck(
         const rendered = template
           .replaceAll("{champion}", champion)
           .replaceAll("{emoji}", emoji)
+          .replaceAll("{tasBadge}", badge)
           .replaceAll("{player}", best.username)
           .replaceAll("{level}", level.name)
           .replaceAll("{arrow}", arrow)
