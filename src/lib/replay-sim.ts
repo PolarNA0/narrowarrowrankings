@@ -117,8 +117,14 @@ export interface SimWall {
   rotationSpeed?: number;
 }
 
-/** A filled zone (boost/ice/nosteer/steer/rail), given as an axis-aligned box. */
+/**
+ * A filled zone (boost/ice/nosteer/steer/rail). The zone is an arbitrary
+ * polygon — level editors use slanted and multi-point zones (e.g. Arctic Dash)
+ * — so the renderer draws `points` verbatim; the `x0..y1` box is only a
+ * convenience bound for framing the camera.
+ */
 export interface SimZone {
+  points: Array<{ x: number; y: number }>;
   x0: number;
   y0: number;
   x1: number;
@@ -187,10 +193,12 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
     const isPortal = obstacle.portal_id != null || obstacle.obstacle_type === "portal";
 
     if (isZone) {
-      const xs = pts.map((p) => p?.x).filter((x): x is number => x != null);
-      const ys = pts.map((p) => p?.y).filter((y): y is number => y != null);
-      if (xs.length === 0 || ys.length === 0) continue;
+      const valid = pts.filter((p): p is { x: number; y: number } => p?.x != null && p?.y != null);
+      if (valid.length === 0) continue;
+      const xs = valid.map((p) => p.x);
+      const ys = valid.map((p) => p.y);
       zones.push({
+        points: valid.map((p) => ({ x: p.x, y: p.y })),
         x0: Math.min(...xs),
         y0: Math.min(...ys),
         x1: Math.max(...xs),

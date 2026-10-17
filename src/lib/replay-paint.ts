@@ -129,20 +129,32 @@ export function paintZones(ctx: CanvasRenderingContext2D, geometry: SimGeometry,
   const { tx, ty, mode } = pc;
   for (const z of geometry.zones) {
     const color = zoneColorFor(z.type, mode);
-    const x = tx(Math.min(z.x0, z.x1));
-    const y = ty(Math.min(z.y0, z.y1));
-    const w = Math.abs(tx(z.x1) - tx(z.x0));
-    const h = Math.abs(ty(z.y1) - ty(z.y0));
-    if (mode === "game") {
-      ctx.fillStyle = withAlpha(color, 0.22);
-      ctx.fillRect(x, y, w, h);
-    } else {
-      ctx.fillStyle = withAlpha(color, 0.14);
-      ctx.fillRect(x, y, w, h);
+    // Trace the zone's own polygon so slanted/multi-point zones (e.g. Arctic
+    // Dash) keep their shape; a zone with too few points falls back to its box.
+    const pts =
+      z.points && z.points.length >= 3
+        ? z.points
+        : [
+            { x: z.x0, y: z.y0 },
+            { x: z.x1, y: z.y0 },
+            { x: z.x1, y: z.y1 },
+            { x: z.x0, y: z.y1 },
+          ];
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const px = tx(p.x);
+      const py = ty(p.y);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+    ctx.fillStyle = withAlpha(color, mode === "game" ? 0.22 : 0.14);
+    ctx.fill();
+    if (mode !== "game") {
       ctx.strokeStyle = withAlpha(color, 0.55);
       ctx.lineWidth = 1;
       ctx.setLineDash([6, 4]);
-      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.stroke();
       ctx.setLineDash([]);
     }
   }
