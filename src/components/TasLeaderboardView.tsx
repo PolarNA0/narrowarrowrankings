@@ -24,6 +24,9 @@ export interface TasLoadRequest {
 interface TasLeaderboardViewProps {
   isAdmin?: boolean;
   onLoadRun?: (request: TasLoadRequest) => void;
+  /** Selected level, controlled by the app so it survives Tools tab switches. */
+  levelId: string;
+  onLevelChange: (id: string) => void;
 }
 
 /** One board per arrow, so each has its own winner. */
@@ -39,8 +42,12 @@ const ARROW_BOARDS: { kind: ArrowKind; label: string }[] = [
  * never touch the official rankings. It is split into one board per arrow, so
  * each arrow has its own WR.
  */
-export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewProps) {
-  const [levelId, setLevelId] = React.useState(LEVELS[0]?.id ?? "");
+export function TasLeaderboardView({
+  isAdmin,
+  onLoadRun,
+  levelId,
+  onLevelChange,
+}: TasLeaderboardViewProps) {
   const [entries, setEntries] = React.useState<TasEntry[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -311,7 +318,7 @@ export function TasLeaderboardView({ isAdmin, onLoadRun }: TasLeaderboardViewPro
             <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
               Level
             </label>
-            <LevelPicker value={levelId} onChange={(l) => setLevelId(l.id)} className="w-48" />
+            <LevelPicker value={levelId} onChange={(l) => onLevelChange(l.id)} className="w-48" />
           </div>
           <Button
             size="sm"

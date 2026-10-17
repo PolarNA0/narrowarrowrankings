@@ -441,6 +441,10 @@ export default function App() {
   >("leaderboard");
   /** A TAS entry the leaderboard asked the editor to open. */
   const [tasLoad, setTasLoad] = useState<TasLoadRequest | null>(null);
+  // The TAS leaderboard's picked level lives here, not inside the view, so
+  // switching Tools tabs (which unmounts the view) keeps the selection instead
+  // of snapping back to the first level.
+  const [tasBoardLevelId, setTasBoardLevelId] = useState<string>(LEVELS[0]?.id ?? "");
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<"wrs" | "hof" | "history" | "arrows">("wrs");
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -2537,6 +2541,8 @@ export default function App() {
         ) : view === "tas-board" ? (
           <TasLeaderboardView
             isAdmin={isAdmin}
+            levelId={tasBoardLevelId}
+            onLevelChange={setTasBoardLevelId}
             onLoadRun={(request) => {
               setTasLoad(request);
               navigateView("tas");
