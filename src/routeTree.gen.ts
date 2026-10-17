@@ -18,6 +18,7 @@ import { Route as ApiOfficialCreatorsRouteImport } from './routes/api/official-c
 import { Route as ApiProfilesRouteImport } from './routes/api/profiles'
 import { Route as ApiPublishedLevelsRouteImport } from './routes/api/published-levels'
 import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
+import { Route as ApiTasLeaderboardsRouteImport } from './routes/api/tas-leaderboards'
 import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
 import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-details.$levelId'
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
@@ -73,6 +74,11 @@ const ApiPublishedLevelsRoute = ApiPublishedLevelsRouteImport.update({
 const ApiStartupDataRoute = ApiStartupDataRouteImport.update({
   id: '/api/startup-data',
   path: '/api/startup-data',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTasLeaderboardsRoute = ApiTasLeaderboardsRouteImport.update({
+  id: '/api/tas-leaderboards',
+  path: '/api/tas-leaderboards',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiLeaderboardLevelRoute = ApiLeaderboardLevelRouteImport.update({
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
+  '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -164,6 +171,7 @@ export interface FileRoutesByTo {
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
+  '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -187,6 +195,7 @@ export interface FileRoutesById {
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
+  '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -211,6 +220,7 @@ export interface FileRouteTypes {
     | '/api/profiles'
     | '/api/published-levels'
     | '/api/startup-data'
+    | '/api/tas-leaderboards'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -233,6 +243,7 @@ export interface FileRouteTypes {
     | '/api/profiles'
     | '/api/published-levels'
     | '/api/startup-data'
+    | '/api/tas-leaderboards'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -255,6 +266,7 @@ export interface FileRouteTypes {
     | '/api/profiles'
     | '/api/published-levels'
     | '/api/startup-data'
+    | '/api/tas-leaderboards'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -278,6 +290,7 @@ export interface RootRouteChildren {
   ApiProfilesRoute: typeof ApiProfilesRoute
   ApiPublishedLevelsRoute: typeof ApiPublishedLevelsRoute
   ApiStartupDataRoute: typeof ApiStartupDataRoute
+  ApiTasLeaderboardsRoute: typeof ApiTasLeaderboardsRoute
   ApiLeaderboardLevelRoute: typeof ApiLeaderboardLevelRoute
   ApiLevelDetailsLevelIdRoute: typeof ApiLevelDetailsLevelIdRoute
   ApiPacksSlugRoute: typeof ApiPacksSlugRoute
@@ -354,6 +367,13 @@ declare module '@tanstack/react-router' {
       path: '/api/startup-data'
       fullPath: '/api/startup-data'
       preLoaderRoute: typeof ApiStartupDataRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/tas-leaderboards': {
+      id: '/api/tas-leaderboards'
+      path: '/api/tas-leaderboards'
+      fullPath: '/api/tas-leaderboards'
+      preLoaderRoute: typeof ApiTasLeaderboardsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/leaderboard/$level': {
@@ -446,6 +466,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProfilesRoute: ApiProfilesRoute,
   ApiPublishedLevelsRoute: ApiPublishedLevelsRoute,
   ApiStartupDataRoute: ApiStartupDataRoute,
+  ApiTasLeaderboardsRoute: ApiTasLeaderboardsRoute,
   ApiLeaderboardLevelRoute: ApiLeaderboardLevelRoute,
   ApiLevelDetailsLevelIdRoute: ApiLevelDetailsLevelIdRoute,
   ApiPacksSlugRoute: ApiPacksSlugRoute,

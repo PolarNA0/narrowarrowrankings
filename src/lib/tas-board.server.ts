@@ -109,9 +109,7 @@ export async function renameTasEntry(
   id: string,
   username: string,
 ): Promise<TasEntry[]> {
-  const entries = (await readTasBoard(levelId)).map((e) =>
-    e.id === id ? { ...e, username } : e,
-  );
+  const entries = (await readTasBoard(levelId)).map((e) => (e.id === id ? { ...e, username } : e));
   if (memoryStoreEnabled()) {
     memoryBoards.set(levelId, entries);
     return sortTasEntries(entries);
@@ -185,4 +183,41 @@ export async function readTasBoardPublic(levelId: string): Promise<TasEntry[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * A TAS entry without its input string. The bulk feed only feeds the record
+ * tracker's timeline, so shipping every run's ~2KB input blob would be pure
+ * waste; the per-level board is where the inputs are needed.
+ */
+export type TasSummary = Omit<TasEntry, "inputs">;
+
+const toSummary = ({ inputs: _inputs, ...rest }: TasEntry): TasSummary => rest;
+
+/**
+ * Every level's TAS board in one read, used by the record tracker (one request
+ * for the whole page instead of a request per level). Keyed by level id; levels
+ * with no submissions are omitted.
+ */
+export async function readAllTasBoards(): Promise<Record<string, TasSummary[]>> {
+  const out: Record<string, TasSummary[]> = {};
+  if (memoryStoreEnabled()) {
+    for (const [levelId, entries] of memoryBoards) out[levelId] = entries.map(toSummary);
+    return out;
+  }
+  try {
+    const { data, error } = await supabase
+      .from("app_docs")
+      .select("doc_id, data")
+      .eq("collection", COLLECTION);
+    if (error) return out;
+    for (const row of data ?? []) {
+      const board = row.data as unknown as TasBoard | undefined;
+      if (Array.isArray(board?.entries) && board.entries.length)
+        out[row.doc_id as string] = board.entries.map(toSummary);
+    }
+  } catch {
+    /* a missing board just means no TAS runs are shown */
+  }
+  return out;
 }

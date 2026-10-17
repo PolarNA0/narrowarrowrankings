@@ -36,7 +36,9 @@ import {
   exportReplayVideo,
   hslToHex,
   type ExportCameraMode,
+  type ExportInfoCard,
 } from "@/lib/replay-export";
+import { BACKGROUNDS, DEFAULT_BACKGROUND, type BackgroundTheme } from "@/lib/replay-background";
 import type { RenderMode } from "@/lib/replay-paint";
 import type { ArrowKind } from "@/lib/arrow-sprites";
 import type { SimGeometry, SimResult } from "@/lib/replay-sim";
@@ -62,6 +64,8 @@ interface ExportDialogProps {
   arrowRadius: number;
   defaultColors: { body: string; trail: string; thrust: string };
   levelName?: string;
+  /** Prefills the run-info card (player, time, date, delta). */
+  defaultInfo?: Partial<ExportInfoCard>;
   /** Pre-simulated runs offered as side-by-side ghosts. */
   ghostCandidates?: {
     id: string;
@@ -81,6 +85,7 @@ export function ReplayExportDialog({
   arrowRadius,
   defaultColors,
   levelName,
+  defaultInfo,
   ghostCandidates = [],
   trigger,
 }: ExportDialogProps) {
@@ -90,6 +95,16 @@ export function ReplayExportDialog({
   const [camera, setCamera] = React.useState<CameraSettings>(cameraPreset("normal"));
   const [sizeIdx, setSizeIdx] = React.useState(0);
   const [fps, setFps] = React.useState<(typeof FPS_PRESETS)[number]>(60);
+  const [bgTheme, setBgTheme] = React.useState<BackgroundTheme>(DEFAULT_BACKGROUND);
+  const [showInfo, setShowInfo] = React.useState(true);
+  const [infoPlayer, setInfoPlayer] = React.useState(defaultInfo?.player ?? "");
+  const [infoSeconds, setInfoSeconds] = React.useState(
+    defaultInfo?.seconds != null ? defaultInfo.seconds.toFixed(3) : "",
+  );
+  const [infoDate, setInfoDate] = React.useState(defaultInfo?.date ?? "");
+  const [infoDelta, setInfoDelta] = React.useState(
+    defaultInfo?.delta != null ? String(defaultInfo.delta) : "",
+  );
   const [hue, setHue] = React.useState(215);
   const [sat, setSat] = React.useState(0.85);
   const [light, setLight] = React.useState(0.72);
@@ -138,6 +153,18 @@ export function ReplayExportDialog({
       URL.revokeObjectURL(resultUrl);
       setResultUrl(null);
     }
+    const infoCard: ExportInfoCard | undefined = (() => {
+      const seconds = Number(infoSeconds);
+      if (!showInfo || !Number.isFinite(seconds)) return undefined;
+      const delta = infoDelta.trim() === "" ? undefined : Number(infoDelta);
+      return {
+        player: infoPlayer.trim() || "Anonymous",
+        seconds,
+        date: infoDate.trim() || undefined,
+        delta: delta !== undefined && Number.isFinite(delta) ? delta : undefined,
+        deltaLabel: defaultInfo?.deltaLabel ?? "WR",
+      };
+    })();
     try {
       const blob = await exportReplayVideo({
         sim,
@@ -154,6 +181,8 @@ export function ReplayExportDialog({
         trail: colors.trail,
         thrust: colors.thrust,
         background: "#07070b",
+        backgroundTheme: bgTheme,
+        infoCard,
         showInputs,
         ghosts,
         onProgress: setProgress,
@@ -213,6 +242,27 @@ export function ReplayExportDialog({
                   onClick={() => setMode(m)}
                 >
                   {m === "game" ? "Game" : "Simple lines"}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {/* Background */}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="w-24 text-[11px] text-slate-400">Background</span>
+            <div className="flex flex-wrap gap-1">
+              {BACKGROUNDS.map((b) => (
+                <Button
+                  key={b.id}
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "h-7 px-2.5 text-[11px]",
+                    bgTheme === b.id ? "bg-white/15 text-slate-100" : "text-slate-400",
+                  )}
+                  onClick={() => setBgTheme(b.id)}
+                >
+                  {b.label}
                 </Button>
               ))}
             </div>
@@ -297,6 +347,61 @@ export function ReplayExportDialog({
               />
               Show the in-game steer dots (bottom-right)
             </label>
+          </div>
+
+          {/* Run info card */}
+          <div className="space-y-2 rounded-lg border border-white/10 bg-black/30 p-3">
+            <label className="flex items-center gap-2 text-[11px] text-slate-300">
+              <input
+                type="checkbox"
+                checked={showInfo}
+                onChange={(e) => setShowInfo(e.target.checked)}
+                className="accent-[var(--app-accent)]"
+              />
+              Show a run info card above the steer dots
+            </label>
+            {showInfo && (
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex items-center gap-2">
+                  <span className="w-14 text-[10px] text-slate-500">Player</span>
+                  <input
+                    value={infoPlayer}
+                    onChange={(e) => setInfoPlayer(e.target.value)}
+                    placeholder="Polar"
+                    className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] text-slate-200"
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-14 text-[10px] text-slate-500">Time (s)</span>
+                  <input
+                    value={infoSeconds}
+                    onChange={(e) => setInfoSeconds(e.target.value)}
+                    placeholder="17.271"
+                    inputMode="decimal"
+                    className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] font-mono text-slate-200"
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-14 text-[10px] text-slate-500">Date</span>
+                  <input
+                    value={infoDate}
+                    onChange={(e) => setInfoDate(e.target.value)}
+                    placeholder="2026-01-17"
+                    className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] text-slate-200"
+                  />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-14 text-[10px] text-slate-500">Δ vs WR</span>
+                  <input
+                    value={infoDelta}
+                    onChange={(e) => setInfoDelta(e.target.value)}
+                    placeholder="-0.031"
+                    inputMode="decimal"
+                    className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] font-mono text-slate-200"
+                  />
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Size and frame rate */}

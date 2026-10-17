@@ -31,10 +31,32 @@ import {
 } from "@/lib/replay-paint";
 import { SIM_TICK_MS, type SimGeometry, type SimResult } from "@/lib/replay-sim";
 import { lighten, withAlpha } from "@/lib/replay-visuals";
+import {
+  DEFAULT_BACKGROUND,
+  backgroundBase,
+  getBackgroundCanvas,
+  type BackgroundTheme,
+} from "@/lib/replay-background";
 import type { ArrowKind } from "@/lib/arrow-sprites";
 
 /** How the camera frames the run. */
 export type ExportCameraMode = "follow" | "fit";
+
+/**
+ * The run-info card drawn above the input dots: who ran it, the time, the date
+ * and how far off the record it is.
+ */
+export interface ExportInfoCard {
+  player: string;
+  /** The run's completion time in seconds. */
+  seconds: number;
+  /** ISO date (or anything `new Date` parses) shown under the time. */
+  date?: string;
+  /** Signed gap to the reference, e.g. `-0.031` for 31 ms faster. */
+  delta?: number;
+  /** Label for the reference, e.g. `WR` or `TAS`. */
+  deltaLabel?: string;
+}
 
 export interface ExportGhost {
   sim: SimResult;
@@ -62,6 +84,10 @@ export interface ExportOptions {
   thrust: string;
   /** Page background; the game render uses near-black, the lines look too. */
   background: string;
+  /** Themed backdrop drawn behind the scene, in place of the flat fill. */
+  backgroundTheme?: BackgroundTheme;
+  /** A run info card (name, time, date, delta) drawn above the input dots. */
+  infoCard?: ExportInfoCard;
   /**
    * Draw the in-game steer-dot readout (two dots that light as the run steers)
    * in the corner of the frame.
@@ -110,47 +136,98 @@ export function hslToHex(h: number, s: number, l: number): string {
 }
 
 /**
- * Renders one replay frame onto `ctx`, given the level, the current camera pose
- * and the render mode. Shared by every exported frame so the whole clip is
- * consistent, and it mirrors the interactive stage's own draw order.
+ * The run-info card, bottom-right above the steer dots: the player name, the
+ * time, the date and the gap to the reference. Left-aligned like the readouts
+ * the game itself shows, so it sits naturally in the corner.
  */
-function renderScene(
+function drawInfoCard(
   ctx: CanvasRenderingContext2D,
-  frame: number,
-  opts: ExportOptions,
-  camera: FollowCamera | null,
-  dpr: number,
+  info: ExportInfoCard,
+  width: number,
+  height: number,
+  bottomPad: number,
 ) {
-  const { sim, geometry, mode, width, height } = opts;
-  const upto = Math.max(0, Math.min(Math.floor(frame), sim.path.length - 1));
+  const pad = 14;
+  const lines: { text: string; font: string; color: string }[] = [];
+  lines.push({
+    text: info.player,
+    font: "bold 15px ui-sans-serif, system-ui, sans-serif",
+    color: "#f1f5f9",
+  });
+  lines.push({
+    text: `${info.seconds.toFixed(3)}`,
+    font: "bold 22px ui-monospace, monospace",
+    color: "#ffffff",
+  });
+  if (info.date) {
+    const d = new Date(info.date);
+    const label = isNaN(d.getTime())
+      ? info.date
+      : `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCFullYear()).slice(2)}`;
+    lines.push({ text: label, font: "11px ui-monospace, monospace", color: "#94a3b8" });
+  }
+  if (info.delta !== undefined) {
+    const sign = info.delta <= 0 ? "-" : "+";
+    lines.push({
+      text: `[${info.deltaLabel ?? "WR"} ${sign}${Math.abs(info.delta).toFixed(3)}]`,
+      font: "bold 12px ui-monospace, monospace",
+      color: info.delta <= 0 ? "#4ade80" : "#f87171",
+    });
+  }
 
-  // World bounds come from the level, the run and any ghosts, so a fixed "fit"
-  // camera always frames everything.
+  const lineH = 24;
+  const boxH = lines.length * lineH + pad * 2 - 6;
+  let boxW = 0;
+  for (const l of lines) {
+    ctx.font = l.font;
+    boxW = Math.max(boxW, ctx.measureText(l.text).width);
+  }
+  boxW += pad * 2;
+  const x = width - 16 - boxW;
+  const y = height - bottomPad - boxH;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.42)";
+  ctx.beginPath();
+  ctx.roundRect(x, y, boxW, boxH, 10);
+  ctx.fill();
+  let ty = y + pad + 8;
+  for (const l of lines) {
+    ctx.font = l.font;
+    ctx.fillStyle = l.color;
+    ctx.textAlign = "left";
+    ctx.fillText(l.text, x + pad, ty);
+    ty += lineH;
+  }
+  ctx.restore();
+}
+
+/**
+ * The world-space bounds of the level, the run and any ghosts. Computed once
+ * per export rather than per frame: iterating every path point of every run on
+ * each of hundreds of frames is a real cost, and none of it changes mid-clip.
+ */
+function computeBounds(opts: ExportOptions) {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (const w of geometry.walls) {
+  for (const w of opts.geometry.walls) {
     const half = (w.thickness || 8) / 2;
     minX = Math.min(minX, Math.min(w.ax, w.bx) - half);
     maxX = Math.max(maxX, Math.max(w.ax, w.bx) + half);
     minY = Math.min(minY, Math.min(w.ay, w.by) - half);
     maxY = Math.max(maxY, Math.max(w.ay, w.by) + half);
   }
-  for (const z of geometry.zones) {
+  for (const z of opts.geometry.zones) {
     minX = Math.min(minX, z.x0);
     minY = Math.min(minY, z.y0);
     maxX = Math.max(maxX, z.x1);
     maxY = Math.max(maxY, z.y1);
   }
-  for (const p of sim.path) {
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x);
-    maxY = Math.max(maxY, p.y);
-  }
-  for (const g of opts.ghosts ?? []) {
-    for (const p of g.sim.path) {
+  const paths = [opts.sim.path, ...(opts.ghosts ?? []).map((g) => g.sim.path)];
+  for (const path of paths) {
+    for (const p of path) {
       minX = Math.min(minX, p.x);
       minY = Math.min(minY, p.y);
       maxX = Math.max(maxX, p.x);
@@ -162,8 +239,28 @@ function renderScene(
   minY -= pad;
   maxX += pad;
   maxY += pad;
-  const spanX = Math.max(1, maxX - minX);
-  const spanY = Math.max(1, maxY - minY);
+  return { minX, minY, spanX: Math.max(1, maxX - minX), spanY: Math.max(1, maxY - minY) };
+}
+
+type SceneBounds = ReturnType<typeof computeBounds>;
+
+/**
+ * Renders one replay frame onto `ctx`, given the level, the current camera pose
+ * and the render mode. Shared by every exported frame so the whole clip is
+ * consistent, and it mirrors the interactive stage's own draw order.
+ */
+function renderScene(
+  ctx: CanvasRenderingContext2D,
+  frame: number,
+  opts: ExportOptions,
+  camera: FollowCamera | null,
+  dpr: number,
+  bounds: SceneBounds,
+) {
+  const { sim, geometry, mode, width, height } = opts;
+  const upto = Math.max(0, Math.min(Math.floor(frame), sim.path.length - 1));
+
+  const { minX, minY, spanX, spanY } = bounds;
 
   let scale: number;
   let offX: number;
@@ -183,8 +280,15 @@ function renderScene(
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = opts.background;
-  ctx.fillRect(0, 0, width, height);
+  const theme = opts.backgroundTheme ?? DEFAULT_BACKGROUND;
+  const bg = getBackgroundCanvas(theme, width, height, dpr);
+  if (bg) {
+    // One blit per frame from the cached backdrop - never repaint it here.
+    ctx.drawImage(bg, 0, 0, width, height);
+  } else {
+    ctx.fillStyle = opts.background || backgroundBase(theme);
+    ctx.fillRect(0, 0, width, height);
+  }
 
   paintZones(ctx, geometry, pc);
   paintWalls(ctx, geometry.walls, upto, pc);
@@ -236,6 +340,8 @@ function renderScene(
     ctx.font = "bold 11px ui-monospace, monospace";
     ctx.fillText("FINISH", 10, 18);
   }
+
+  if (opts.infoCard) drawInfoCard(ctx, opts.infoCard, width, height, opts.showInputs ? 52 : 18);
 
   if (opts.showInputs) {
     // The indicator is drawn in CSS px like the rest of the scene (the base
@@ -309,17 +415,39 @@ export async function exportReplayVideo(opts: ExportOptions): Promise<Blob> {
   recorder.start();
   // Paint the first frame before the stream is sampled so the clip never opens
   // on a blank canvas.
+  const bounds = computeBounds(opts);
   stepCamera(0);
-  renderScene(ctx, 0, opts, camera, dpr);
+  renderScene(ctx, 0, opts, camera, dpr, bounds);
+
+  // Progress is throttled to whole percents: calling back on every animation
+  // frame re-renders the dialog ~60x a second during the export, which competes
+  // with the recording itself.
+  let lastPct = -1;
+  const reportProgress = (fraction: number) => {
+    const pct = Math.min(100, Math.round(fraction * 100));
+    if (pct !== lastPct) {
+      lastPct = pct;
+      opts.onProgress?.(Math.min(1, fraction));
+    }
+  };
 
   await new Promise<void>((resolve) => {
     const t0 = performance.now();
+    const frameInterval = 1000 / opts.fps;
+    let lastRender = -Infinity;
     const loop = () => {
       const elapsed = performance.now() - t0;
-      const frame = Math.min(totalTicks, (elapsed / durationMs) * totalTicks);
-      stepCamera(frame);
-      renderScene(ctx, frame, opts, camera, dpr);
-      opts.onProgress?.(Math.min(1, elapsed / durationMs));
+      // `requestAnimationFrame` fires at the display's refresh rate, which is
+      // 120Hz+ on many monitors, but the recorder only samples the canvas at
+      // `fps`. Repainting the whole scene on every vsync is wasted work, so a
+      // frame is only drawn once the target interval has passed.
+      if (elapsed - lastRender >= frameInterval - 1) {
+        lastRender = elapsed;
+        const frame = Math.min(totalTicks, (elapsed / durationMs) * totalTicks);
+        stepCamera(frame);
+        renderScene(ctx, frame, opts, camera, dpr, bounds);
+        reportProgress(elapsed / durationMs);
+      }
       if (elapsed >= durationMs) {
         resolve();
         return;

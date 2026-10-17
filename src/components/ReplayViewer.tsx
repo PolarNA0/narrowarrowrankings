@@ -388,6 +388,10 @@ export function ReplayViewer({
                   arrowRadius={arrowRadius}
                   defaultColors={{ body: bodyColor, trail, thrust }}
                   levelName={meta?.mapName ?? String(runId)}
+                  defaultInfo={{
+                    player: username ?? "Anonymous",
+                    seconds: summary.durationMs / 1000,
+                  }}
                   ghostCandidates={overlays.map((o) => ({
                     id: o.id,
                     label: o.label ?? o.id,
@@ -1731,6 +1735,10 @@ export function TasReplayViewer({
                     thrust: thrustColor(null),
                   }}
                   levelName={levelName ?? levelId}
+                  defaultInfo={{
+                    player: username ?? "Anonymous",
+                    seconds: (timeMs ?? summary.durationMs) / 1000,
+                  }}
                   ghostCandidates={overlays.map((o) => ({
                     id: o.id,
                     label: o.label ?? o.id,

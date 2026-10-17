@@ -21,12 +21,28 @@ export interface TasSubmitResult {
   entries: TasEntry[];
 }
 
+/** A TAS entry without its input string, as returned by the bulk feed. */
+export type TasSummary = Omit<TasEntry, "inputs">;
+
 export async function fetchTasBoard(levelId: string): Promise<TasEntry[]> {
   const res = await fetch(`/api/tas-leaderboard/${encodeURIComponent(levelId)}`, {
     signal: AbortSignal.timeout(15000),
   });
   if (!res.ok) throw new Error(`TAS board request failed (${res.status})`);
   return (await res.json()) as TasEntry[];
+}
+
+/**
+ * Every level's TAS board in one request, keyed by level id. The record tracker
+ * folds these into its timeline alongside the real-game runs, so a TAS upload
+ * shows up as an event rather than only living on its own board.
+ */
+export async function fetchAllTasBoards(): Promise<Record<string, TasSummary[]>> {
+  const res = await fetch("/api/tas-leaderboards", {
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`TAS boards request failed (${res.status})`);
+  return (await res.json()) as Record<string, TasSummary[]>;
 }
 
 export async function submitTasRun(payload: {

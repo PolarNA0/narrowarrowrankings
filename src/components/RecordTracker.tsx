@@ -2,6 +2,7 @@ import * as React from "react";
 import { Activity, Crown, Filter, Search, Timer } from "lucide-react";
 import type { LeaderboardEntry, LevelInfo } from "../types";
 import { toStandings } from "@/lib/medals";
+import { fetchAllTasBoards } from "@/lib/tas-leaderboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ interface RecordEvent {
   createdAt: number;
   isWr: boolean;
   isLegacy?: boolean;
+  isTas?: boolean;
 }
 
 interface Props {
@@ -44,9 +46,29 @@ function timeAgo(ts: number) {
 export function RecordTracker({ levels, data, onSelectPlayer, onSelectLevel, formatTime }: Props) {
   const [filter, setFilter] = React.useState<"all" | "wr" | "podium" | "top10">("all");
   const [query, setQuery] = React.useState("");
+  const [tasBoards, setTasBoards] = React.useState<
+    Record<string, import("@/lib/tas-leaderboard").TasSummary[]>
+  >({});
+
+  // TAS submissions live on their own boards, not the upstream leaderboard, so
+  // they are fetched separately and folded into the same timeline below.
+  React.useEffect(() => {
+    let alive = true;
+    fetchAllTasBoards()
+      .then((boards) => {
+        if (alive) setTasBoards(boards);
+      })
+      .catch(() => {
+        /* the tracker still works from the real-game boards alone */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const events = React.useMemo(() => {
     const out: RecordEvent[] = [];
+    const byId = new Map(levels.map((l) => [l.id, l]));
     for (const level of levels) {
       const standings = toStandings(data[level.id] || []);
       if (standings.length === 0) continue;
@@ -68,17 +90,45 @@ export function RecordTracker({ levels, data, onSelectPlayer, onSelectLevel, for
         });
       });
     }
+    // TAS runs: compared against the real-game WR on the same level (a TAS is
+    // typically faster, so `gapToWr` is usually negative) and flagged so they
+    // read as tool-assisted rather than a human record.
+    for (const [levelId, entries] of Object.entries(tasBoards)) {
+      const level = byId.get(levelId);
+      if (!level) continue;
+      const standings = toStandings(data[levelId] || []);
+      const wrTime = standings.length ? standings[0].completion_time : null;
+      const bestTime = entries.reduce((m, e) => Math.min(m, e.timeMs / 1000), Infinity);
+      for (const entry of entries) {
+        const ts = new Date(entry.createdAt).getTime();
+        if (!Number.isFinite(ts)) continue;
+        const time = entry.timeMs / 1000;
+        out.push({
+          key: `tas-${levelId}-${entry.id}`,
+          username: entry.username,
+          levelId,
+          levelName: level.name,
+          time,
+          position: 1,
+          gapToWr: wrTime != null ? time - wrTime : 0,
+          createdAt: ts,
+          isWr: time <= bestTime + 1e-9,
+          isTas: true,
+        });
+      }
+    }
     return out.sort((a, b) => b.createdAt - a.createdAt);
-  }, [levels, data]);
+  }, [levels, data, tasBoards]);
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     return events
       .filter((e) => {
-        if (filter === "wr" && !e.isWr) return false;
-        if (filter === "podium" && e.position > 3) return false;
-        if (filter === "top10" && e.position > 10) return false;
-        if (q && !e.username.toLowerCase().includes(q) && !e.levelName.toLowerCase().includes(q)) return false;
+        if (filter === "wr" && (!e.isWr || e.isTas)) return false;
+        if (filter === "podium" && (e.position > 3 || e.isTas)) return false;
+        if (filter === "top10" && (e.position > 10 || e.isTas)) return false;
+        if (q && !e.username.toLowerCase().includes(q) && !e.levelName.toLowerCase().includes(q))
+          return false;
         return true;
       })
       .slice(0, 120);
@@ -90,7 +140,8 @@ export function RecordTracker({ levels, data, onSelectPlayer, onSelectLevel, for
   const weekCount = events.filter((e) => e.createdAt > weekAgo).length;
   const hotPlayer = React.useMemo(() => {
     const tally = new Map<string, number>();
-    for (const e of events) if (e.createdAt > weekAgo) tally.set(e.username, (tally.get(e.username) ?? 0) + 1);
+    for (const e of events)
+      if (e.createdAt > weekAgo) tally.set(e.username, (tally.get(e.username) ?? 0) + 1);
     return [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
   }, [events, weekAgo]);
 
@@ -108,7 +159,9 @@ export function RecordTracker({ levels, data, onSelectPlayer, onSelectLevel, for
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-slate-500 font-bold">
                 <stat.icon className="w-3.5 h-3.5 text-[var(--app-accent)]" /> {stat.label}
               </div>
-              <div className="text-xl font-bold text-white mt-1 font-mono truncate">{stat.value}</div>
+              <div className="text-xl font-bold text-white mt-1 font-mono truncate">
+                {stat.value}
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -129,7 +182,9 @@ export function RecordTracker({ levels, data, onSelectPlayer, onSelectLevel, for
                   onClick={() => setFilter(key)}
                   className={cn(
                     "h-7 px-2.5 text-[10px] uppercase tracking-widest",
-                    filter === key ? "bg-[var(--app-accent)] text-slate-950 font-bold" : "text-slate-400",
+                    filter === key
+                      ? "bg-[var(--app-accent)] text-slate-950 font-bold"
+                      : "text-slate-400",
                   )}
                 >
                   {key === "wr" ? "WRs" : key === "top10" ? "Top 10" : key}
@@ -149,10 +204,15 @@ export function RecordTracker({ levels, data, onSelectPlayer, onSelectLevel, for
         </CardHeader>
         <CardContent className="p-0 divide-y divide-white/5 max-h-[640px] overflow-y-auto">
           {filtered.length === 0 && (
-            <p className="p-8 text-center text-slate-500 font-mono text-xs">No runs match this filter yet.</p>
+            <p className="p-8 text-center text-slate-500 font-mono text-xs">
+              No runs match this filter yet.
+            </p>
           )}
           {filtered.map((event) => (
-            <div key={event.key} className="flex items-center gap-3 p-3 hover:bg-white/[0.03] transition-colors">
+            <div
+              key={event.key}
+              className="flex items-center gap-3 p-3 hover:bg-white/[0.03] transition-colors"
+            >
               <div
                 className={cn(
                   "w-10 h-10 rounded-xl grid place-items-center font-mono text-xs font-bold shrink-0",
@@ -178,6 +238,11 @@ export function RecordTracker({ levels, data, onSelectPlayer, onSelectLevel, for
                       World record
                     </Badge>
                   )}
+                  {event.isTas && (
+                    <Badge className="bg-[var(--app-accent)]/10 text-[var(--app-accent)] border-[var(--app-accent)]/20 text-[9px] uppercase">
+                      TAS
+                    </Badge>
+                  )}
                   {event.isLegacy && (
                     <Badge className="bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/20 text-[9px] uppercase">
                       Legacy
@@ -192,9 +257,14 @@ export function RecordTracker({ levels, data, onSelectPlayer, onSelectLevel, for
                 </button>
               </div>
               <div className="text-right shrink-0">
-                <div className="font-mono font-bold text-[#2DD4BF] text-sm">{formatTime(event.time)}</div>
+                <div className="font-mono font-bold text-[#2DD4BF] text-sm">
+                  {formatTime(event.time)}
+                </div>
                 <div className="text-[10px] font-mono text-slate-500">
-                  {event.gapToWr > 0 ? `+${event.gapToWr.toFixed(3)}s` : "WR pace"} · {timeAgo(event.createdAt)}
+                  {event.gapToWr === 0
+                    ? "WR pace"
+                    : `${event.gapToWr > 0 ? "+" : ""}${event.gapToWr.toFixed(3)}s`}{" "}
+                  · {timeAgo(event.createdAt)}
                 </div>
               </div>
             </div>
