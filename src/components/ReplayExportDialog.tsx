@@ -29,6 +29,7 @@ import {
   type CameraSettings,
 } from "@/lib/replay-render";
 import {
+  canExportOffline,
   canExportVideo,
   deriveArrowColors,
   downloadBlob,
@@ -134,7 +135,7 @@ export function ReplayExportDialog({
   const colors = useSkinColors
     ? defaultColors
     : { body: customColor, ...deriveArrowColors(customColor) };
-  const supported = React.useMemo(() => canExportVideo(), []);
+  const supported = React.useMemo(() => canExportVideo() || canExportOffline(), []);
 
   // Release the last preview blob when a new one replaces it.
   React.useEffect(() => {
@@ -237,7 +238,9 @@ export function ReplayExportDialog({
             <Video className="w-4 h-4" /> Export replay as video
           </DialogTitle>
           <DialogDescription className="text-xs text-slate-500">
-            Records the replay at its real speed. Leave the tab in the foreground while it records.
+            {canExportOffline()
+              ? "Renders every frame offline, so the clip is exact and exports faster than real time."
+              : "Records the replay at its real speed. Leave the tab in the foreground while it records."}
           </DialogDescription>
         </DialogHeader>
 

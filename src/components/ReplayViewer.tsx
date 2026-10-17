@@ -899,7 +899,9 @@ export function ReplayStage({
       y: number,
       rot: number,
       radius: number,
-    ) => drawGameThrust(g, kind, x, y, rot, radius, scale, tx, ty);
+      power: number,
+      tick: number,
+    ) => drawGameThrust(g, kind, x, y, rot, radius, scale, tx, ty, power, tick);
 
     const paintWallsLocal = (g: CanvasRenderingContext2D, walls: SimWall[], tick: number) =>
       paintWalls(g, walls, tick, { tx, ty, scale, mode });
@@ -1016,7 +1018,16 @@ export function ReplayStage({
         strokeTrailLocal(ctx, sim.path, upto, trail, true);
         const point = sim.path[upto];
         if ((point.thrustPower ?? 0) > 0.05) {
-          drawGameThrustLocal(ctx, arrow, point.x, point.y, point.rot, arrowRadius);
+          drawGameThrustLocal(
+            ctx,
+            arrow,
+            point.x,
+            point.y,
+            point.rot,
+            arrowRadius,
+            point.thrustPower ?? 1,
+            upto,
+          );
         }
         ctx.save();
         ctx.globalAlpha = 0.16;

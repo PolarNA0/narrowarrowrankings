@@ -37,6 +37,7 @@ import {
   getBackgroundCanvas,
   type BackgroundTheme,
 } from "@/lib/replay-background";
+import { muxWebM, type WebMFrame } from "@/lib/webm-muxer";
 import type { ArrowKind } from "@/lib/arrow-sprites";
 
 /** How the camera frames the run. */
@@ -399,7 +400,19 @@ function renderScene(
   const point = sim.path[upto];
   if (point) {
     if ((point.thrustPower ?? 0) > 0.05) {
-      drawGameThrust(ctx, opts.arrow, point.x, point.y, point.rot, opts.arrowRadius, scale, tx, ty);
+      drawGameThrust(
+        ctx,
+        opts.arrow,
+        point.x,
+        point.y,
+        point.rot,
+        opts.arrowRadius,
+        scale,
+        tx,
+        ty,
+        point.thrustPower ?? 1,
+        upto,
+      );
     }
     if (mode === "game") {
       drawCollisionCircle(ctx, point.x, point.y, opts.arrowRadius, scale, tx, ty);
@@ -442,11 +455,185 @@ export function exportFileName(levelName: string | undefined, arrow: string): st
 }
 
 /**
- * Record the replay and resolve with the encoded clip. Rejects when the browser
- * cannot record a canvas, so the caller can show a clear message instead of a
- * silent no-op.
+ * Whether this browser can encode offline with WebCodecs (fast, frame-exact).
+ * Falls back to `MediaRecorder` capture when false.
+ */
+export function canExportOffline(): boolean {
+  return typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined";
+}
+
+/** The first WebCodecs codec string the browser will encode, or null. */
+async function pickEncoderCodec(
+  width: number,
+  height: number,
+): Promise<{ codec: string; webmCodec: "V_VP8" | "V_VP9" } | null> {
+  const candidates: Array<{ codec: string; webmCodec: "V_VP8" | "V_VP9" }> = [
+    { codec: "vp09.00.10.08", webmCodec: "V_VP9" },
+    { codec: "vp8", webmCodec: "V_VP8" },
+  ];
+  for (const c of candidates) {
+    try {
+      const support = await VideoEncoder.isConfigSupported({
+        codec: c.codec,
+        width,
+        height,
+        bitrate: 6_000_000,
+      });
+      if (support.supported) return c;
+    } catch {
+      /* try the next codec */
+    }
+  }
+  return null;
+}
+
+/**
+ * Record the replay and resolve with the encoded clip.
+ *
+ * Encoding is offline: each frame is drawn and handed to the WebCodecs
+ * `VideoEncoder` at its exact timestamp, so the clip is deterministic and runs
+ * as fast as the CPU allows instead of in real time. `MediaRecorder` (realtime
+ * canvas capture) is only used when WebCodecs is unavailable. Rejects when the
+ * browser can do neither, so the caller can show a clear message.
  */
 export async function exportReplayVideo(opts: ExportOptions): Promise<Blob> {
+  if (canExportOffline()) {
+    const offline = await tryExportOffline(opts);
+    if (offline) return offline;
+  }
+  return exportWithMediaRecorder(opts);
+}
+
+/** Offline path: render every frame, encode with WebCodecs, mux to WebM. */
+async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
+  const dpr =
+    opts.dpr ?? Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(opts.width * dpr);
+  canvas.height = Math.round(opts.height * dpr);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  const picked = await pickEncoderCodec(canvas.width, canvas.height);
+  if (!picked) return null;
+
+  const camera = opts.cameraMode === "follow" ? new FollowCamera(opts.camera) : null;
+  if (camera) {
+    const p0 = opts.sim.path[0];
+    camera.reset(p0?.x ?? 0, p0?.y ?? 0);
+  }
+
+  const totalTicks = Math.max(1, opts.sim.path.length - 1);
+  const durationMs = totalTicks * SIM_TICK_MS;
+  // Frames are spread uniformly across the exact clip duration, so the last
+  // frame lands precisely on the finish tick and the clip is neither short nor
+  // padded. (`frameInterval` is the nominal 1/fps; the spacing below is within a
+  // fraction of a millisecond of it.)
+  const frameCount = Math.max(2, Math.round(durationMs / (1000 / opts.fps)) + 1);
+  const lastFrame = frameCount - 1;
+  const frameToTick = (f: number) => (f / lastFrame) * totalTicks;
+  const frameToMs = (f: number) => (f / lastFrame) * durationMs;
+  const tickStep = 240 / opts.fps;
+  const dt = (tickStep * SIM_TICK_MS) / 1000;
+  const bounds = computeBounds(opts);
+
+  const stepCamera = (frame: number) => {
+    if (!camera) return;
+    const upto = Math.max(0, Math.min(Math.floor(frame), opts.sim.path.length - 1));
+    const p = opts.sim.path[upto];
+    const prev = opts.sim.path[Math.max(0, upto - 1)];
+    const vx = (p.x - prev.x) / (SIM_TICK_MS / 1000);
+    const vy = (p.y - prev.y) / (SIM_TICK_MS / 1000);
+    camera.follow(p.x, p.y, vx, vy, upto === 0 ? 1 : dt);
+  };
+
+  const frames: WebMFrame[] = [];
+  let encodeError: unknown = null;
+  const encoder = new VideoEncoder({
+    output: (chunk) => {
+      const data = new Uint8Array(chunk.byteLength);
+      chunk.copyTo(data);
+      frames.push({
+        data,
+        timestamp: chunk.timestamp / 1000,
+        keyframe: chunk.type === "key",
+      });
+    },
+    error: (e) => {
+      encodeError = e;
+    },
+  });
+  const bitrate = Math.round(opts.width * opts.height * opts.fps * 0.12);
+  const defaultDurationNs = Math.round(1e9 / opts.fps);
+  const keyEvery = Math.max(1, Math.round(opts.fps * 2));
+
+  try {
+    encoder.configure({
+      codec: picked.codec,
+      width: canvas.width,
+      height: canvas.height,
+      bitrate,
+      framerate: opts.fps,
+    });
+    for (let f = 0; f < frameCount; f++) {
+      const tick = frameToTick(f);
+      stepCamera(tick);
+      renderScene(ctx, tick, opts, camera, dpr, bounds);
+      const frame = new VideoFrame(canvas, {
+        timestamp: Math.round(frameToMs(f) * 1000),
+        duration: Math.round(1e6 / opts.fps),
+      });
+      encoder.encode(frame, { keyFrame: f % keyEvery === 0 });
+      frame.close();
+      if (encodeError) throw encodeError;
+      // Back-pressure: keep the queue shallow so the encoder's output callbacks
+      // (and the UI) get a turn between frames instead of starving behind a
+      // thousand queued frames.
+      if (encoder.encodeQueueSize > 8) {
+        await new Promise<void>((resolve) => {
+          const onDequeue = () => {
+            if (encoder.encodeQueueSize <= 4) {
+              encoder.removeEventListener("dequeue", onDequeue);
+              resolve();
+            }
+          };
+          encoder.addEventListener("dequeue", onDequeue);
+          setTimeout(() => {
+            encoder.removeEventListener("dequeue", onDequeue);
+            resolve();
+          }, 0);
+        });
+      }
+      if (f % 8 === 0) opts.onProgress?.(f / lastFrame);
+    }
+    await encoder.flush();
+  } catch {
+    try {
+      encoder.close();
+    } catch {
+      /* already closed */
+    }
+    return null;
+  }
+  encoder.close();
+  if (encodeError || frames.length === 0) return null;
+
+  opts.onProgress?.(1);
+  return muxWebM(frames, {
+    width: canvas.width,
+    height: canvas.height,
+    codec: picked.webmCodec,
+    durationMs,
+    defaultDurationNs,
+  });
+}
+
+/**
+ * Realtime fallback: capture the canvas with `MediaRecorder`. Used only when
+ * WebCodecs is unavailable; it is tied to wall-clock time and can drop the tail
+ * of a run under load, so the offline path is strongly preferred.
+ */
+async function exportWithMediaRecorder(opts: ExportOptions): Promise<Blob> {
   const mimeType = pickVideoMimeType();
   if (!mimeType) throw new Error("This browser cannot record video from a canvas.");
 

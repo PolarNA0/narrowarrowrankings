@@ -335,6 +335,8 @@ export function drawGameThrust(
   pxScale: number,
   tx: (x: number) => number,
   ty: (y: number) => number,
+  power = 1,
+  tick = 0,
 ) {
   const [outer, inner] = GAME_THRUST_COLORS[kind];
   // Behind the arrow is -forward; forward is (cos rot, sin rot). `back` is in
@@ -342,8 +344,15 @@ export function drawGameThrust(
   const back = radius * 0.85;
   const ox = x - Math.cos(rot) * back;
   const oy = y - Math.sin(rot) * back;
-  const len = radius * 2.6 * pxScale;
-  const halfW = radius * 0.7 * pxScale;
+  // The flame is not a fixed decal: it grows with the engine's thrust level and
+  // flickers a little every 240Hz tick, so it reads as an engine firing rather
+  // than a shape glued to the arrow. The flicker is a pure function of the tick,
+  // so the offline export reproduces the interactive view exactly.
+  const p = Math.max(0, Math.min(1, power));
+  const flicker = 0.9 + 0.1 * (Math.sin(tick * 12.9898) * 0.5 + 0.5);
+  const grow = (0.4 + 0.6 * p) * flicker;
+  const len = radius * 2.6 * pxScale * grow;
+  const halfW = radius * 0.7 * pxScale * grow;
   ctx.save();
   ctx.translate(tx(ox), ty(oy));
   ctx.rotate(rot + Math.PI);
