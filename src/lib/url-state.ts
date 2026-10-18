@@ -22,6 +22,18 @@ export interface UrlState {
 
 const PARAM = { view: "v", level: "level", player: "player" } as const;
 
+const KEYS = ["view", "level", "player"] as const;
+
+/** Build the query string for a state, omitting anything absent. */
+function toQuery(state: UrlState): string {
+  const params = new URLSearchParams();
+  for (const key of KEYS) {
+    const value = state[key];
+    if (value) params.set(PARAM[key], value);
+  }
+  return params.toString();
+}
+
 /**
  * Read the shared state from the current URL. Called once to seed initial React
  * state, so a pasted link opens on the right view instead of the default.
@@ -40,32 +52,30 @@ export function readUrlState(): UrlState {
 }
 
 /**
- * Mirror the current state into the URL without adding a history entry. Values
- * that are absent are removed, so the URL stays clean rather than accumulating
- * empty parameters as the user navigates.
+ * Mirror the current state into the URL.
+ *
+ * Navigating inside the app is a real navigation, so by default this pushes a
+ * history entry — that is what makes the browser Back button walk back through
+ * the views you visited instead of leaving the site. Pass `replace` for changes
+ * that are not navigations (e.g. re-selecting a level within the same view),
+ * so the back stack stays meaningful rather than one entry per click.
+ *
+ * `pushState` with the same URL would still add an entry, so a no-op change is
+ * skipped entirely.
  */
-export function writeUrlState(state: UrlState): void {
+export function writeUrlState(state: UrlState, options: { replace?: boolean } = {}): void {
   if (typeof window === "undefined") return;
-  const params = new URLSearchParams(window.location.search);
-  for (const key of ["view", "level", "player"] as const) {
-    const value = state[key];
-    if (value) params.set(PARAM[key], value);
-    else params.delete(PARAM[key]);
-  }
-  const query = params.toString();
+  const query = toQuery(state);
   const next = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
   const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  if (next !== current) window.history.replaceState(null, "", next);
+  if (next === current) return;
+  if (options.replace) window.history.replaceState(null, "", next);
+  else window.history.pushState(null, "", next);
 }
 
 /** The absolute URL for the current state, for a "Copy link" button. */
 export function shareUrl(state: UrlState): string {
   if (typeof window === "undefined") return "";
-  const params = new URLSearchParams();
-  for (const key of ["view", "level", "player"] as const) {
-    const value = state[key];
-    if (value) params.set(PARAM[key], value);
-  }
-  const query = params.toString();
+  const query = toQuery(state);
   return `${window.location.origin}${window.location.pathname}${query ? `?${query}` : ""}`;
 }

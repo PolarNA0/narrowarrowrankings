@@ -162,6 +162,35 @@ import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
  * `compare` are reached from a player instead. */
 type AppView = NavigableView | "profile" | "compare";
 
+/**
+ * Map a URL's `view` parameter onto a real view. `profile` and `compare` are
+ * real views but live outside the nav groups (they are reached from a player),
+ * so they are listed explicitly; they also need a player to render, so a link
+ * without one falls back to the leaderboard. Unknown values fall back too, so a
+ * hand-edited URL can never leave the app on a blank view.
+ */
+function normalizeView(state: { view?: string; player?: string }): AppView {
+  const fromUrl = state.view;
+  if (!fromUrl) return "leaderboard";
+  const known =
+    NAV_GROUPS.some((g) => g.items.some((i) => i.id === fromUrl)) ||
+    fromUrl === "profile" ||
+    fromUrl === "compare";
+  if (!known) return "leaderboard";
+  if ((fromUrl === "profile" || fromUrl === "compare") && !state.player) return "leaderboard";
+  return fromUrl as AppView;
+}
+
+/** The human label for a view, for the document title. */
+function viewLabel(view: AppView): string | undefined {
+  for (const group of NAV_GROUPS) {
+    for (const item of group.items) {
+      if (item.id === view) return item.label;
+    }
+  }
+  return view === "profile" ? "Player" : view === "compare" ? "Compare" : undefined;
+}
+
 export default function App() {
   // Seed the shareable bits of state from the URL once, so a pasted link opens
   // on the view/level/player it names instead of the default level.
@@ -430,21 +459,7 @@ export default function App() {
     saveMyProfile,
   } = usePlayerProfiles(adminUser?.id);
 
-  const [view, setView] = useState<AppView>(() => {
-    const fromUrl = initialUrlState.view;
-    if (!fromUrl) return "leaderboard";
-    // `profile` and `compare` are real views but live outside the nav groups
-    // (they are reached from a player), so they are listed explicitly. They
-    // also need a player to render, which is why a link without one falls back.
-    const known =
-      NAV_GROUPS.some((g) => g.items.some((i) => i.id === fromUrl)) ||
-      fromUrl === "profile" ||
-      fromUrl === "compare";
-    if (!known) return "leaderboard";
-    if ((fromUrl === "profile" || fromUrl === "compare") && !initialUrlState.player)
-      return "leaderboard";
-    return fromUrl as AppView;
-  });
+  const [view, setView] = useState<AppView>(() => normalizeView(initialUrlState));
   /** A TAS entry the leaderboard asked the editor to open. */
   const [tasLoad, setTasLoad] = useState<TasLoadRequest | null>(null);
   /** A practice checkpoint a TAS viewer asked the Play tab to open. */
@@ -1484,10 +1499,76 @@ export default function App() {
   // a link to what is on screen (and can be copied or bookmarked). The TAS board
   // has its own level picker, so its selection is what the URL carries while it
   // is the open view.
+  //
+  // A view change is a real navigation, so it pushes a history entry and the
+  // browser Back button walks back through the views you visited instead of
+  // leaving the site. Changing only the level or the player is not a navigation,
+  // so it replaces the current entry rather than burying the back stack under
+  // one entry per picker click.
+  const lastPushedView = React.useRef<AppView | null>(null);
+  const urlSyncMounted = React.useRef(false);
   useEffect(() => {
     const level = view === "tas-board" ? tasBoardLevelId : selectedLevel;
-    writeUrlState({ view, level, player: selectedPlayer ?? undefined });
-  }, [view, selectedLevel, tasBoardLevelId, selectedPlayer]);
+    // The first run only normalizes the URL (a pasted link may be missing
+    // parameters); pushing there would leave a bogus entry on the back stack,
+    // so Back would just strip the query string instead of leaving the site.
+    const isFirstRun = !urlSyncMounted.current;
+    urlSyncMounted.current = true;
+    const isNavigation = !isFirstRun && lastPushedView.current !== view;
+    lastPushedView.current = view;
+    writeUrlState({ view, level, player: selectedPlayer ?? undefined }, { replace: !isNavigation });
+
+    // The title is set here rather than in its own effect so it is always in
+    // step with the URL: this effect already runs with the fresh view, and a
+    // separate effect raced the router's head and painted the previous view.
+    const label = viewLabel(view);
+    const levelName = dynamicLevels.find((l) => l.id === level)?.name;
+    let page: string;
+    if (view === "profile" && selectedPlayer) page = selectedPlayer;
+    else if (view === "compare" && selectedPlayer) page = `${selectedPlayer} comparison`;
+    else page = label ?? "Leaderboards";
+    document.title = `${view === "leaderboard" && levelName ? `${levelName} · ` : ""}${page} · Narrow Arrow Rankings`;
+  }, [view, selectedLevel, tasBoardLevelId, selectedPlayer, dynamicLevels]);
+
+  // Restore state when the user goes Back/Forward. The URL is the single source
+  // of truth here: we adopt exactly what it says, so the effect above sees no
+  // difference and does not write a redundant history entry.
+  useEffect(() => {
+    const onPopState = () => {
+      const state = readUrlState();
+      const nextView = normalizeView(state);
+      lastPushedView.current = nextView;
+      setView(nextView);
+      if (state.level) {
+        setSelectedLevel(state.level);
+        setTasBoardLevelId(state.level);
+      }
+      setSelectedPlayer(state.player ?? null);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  // Landing on a new view should start at the top; without this a view change
+  // keeps the previous scroll offset and can open halfway down the page.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [view]);
+
+  // Keep the tab title in step with what is open, so several boards can be told
+  // apart in tabs and history — the static title made every view look identical.
+  useEffect(() => {
+    const label = viewLabel(view);
+    const levelName = dynamicLevels.find(
+      (l) => l.id === (view === "tas-board" ? tasBoardLevelId : selectedLevel),
+    )?.name;
+    let page: string;
+    if (view === "profile" && selectedPlayer) page = selectedPlayer;
+    else if (view === "compare" && selectedPlayer) page = `${selectedPlayer} comparison`;
+    else page = label ?? "Leaderboards";
+    const withLevel = levelName && view === "leaderboard" ? `${levelName} · ${page}` : page;
+    document.title = `${withLevel} · Narrow Arrow Rankings`;
+  }, [view, selectedLevel, tasBoardLevelId, selectedPlayer, dynamicLevels]);
 
   /** Copy the current view as a link, for sharing a level or profile. */
   const copyShareLink = async () => {
@@ -1516,7 +1597,7 @@ export default function App() {
         onSelectLevel={handleLevelClick}
         onSelectPlayer={handlePlayerClick}
         onNavigate={async (next) => {
-          setView(next as any);
+          navigateView(next as NavigableView);
           if (["average", "wrs", "score", "tracker"].includes(next)) await fetchAllLevels();
         }}
       />
