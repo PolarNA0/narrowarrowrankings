@@ -12,9 +12,15 @@ import {
   Trophy,
   RefreshCw,
   Trash2,
+  Undo2,
+  Redo2,
+  ClipboardCopy,
+  ClipboardPaste,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -48,11 +54,22 @@ import {
 } from "@/lib/replay-sim";
 import { arrowKind, type ArrowKind } from "@/lib/arrow-sprites";
 import { ReplayStage } from "@/components/ReplayViewer";
+import { GhostPicker } from "@/components/CompareGhosts";
+import { ghostColor } from "@/lib/compare-ghosts";
+import { useCompareGhosts, ghostLabel, type CompareCandidate } from "@/hooks/useCompareGhosts";
+import { useTasHistory } from "@/hooks/useTasHistory";
+import {
+  clearTasDraft,
+  describeAge,
+  readSubmitterName,
+  readTasDraft,
+  writeSubmitterName,
+  writeTasDraft,
+} from "@/lib/tas-draft";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
 import { TasReplayViewer } from "@/components/ReplayViewer";
 import { LevelPicker } from "@/components/LevelPicker";
-import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 import type { TasLoadRequest } from "@/components/TasLeaderboardView";
 
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
@@ -113,6 +130,18 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
   // Community TAS board for the loaded level, plus the submit dialog state.
   const [tasEntries, setTasEntries] = React.useState<TasEntry[]>([]);
   const [tasOpen, setTasOpen] = React.useState(false);
+  // Undo/redo for the input list, and the last name used to submit.
+  const history = useTasHistory();
+  const [submitterName, setSubmitterName] = React.useState(() => readSubmitterName());
+  // A draft found on load, offered back through a banner rather than applied
+  // automatically, so opening a fresh run never silently resurrects old work.
+  const [draftPrompt, setDraftPrompt] = React.useState<{
+    savedAt: number;
+    levelId: string;
+    symbolCount: number;
+  } | null>(null);
+  // Ghost overlays while editing: tick other runs to see them on the stage.
+  const [selectedGhostIds, setSelectedGhostIds] = React.useState<string[]>([]);
   // Compare ghosts for the TAS board below: the level's real-game runs and its
   // other TAS entries, so a TAS run can be watched against either.
   const compareCandidates = React.useMemo<CompareCandidate[]>(() => {
@@ -139,6 +168,42 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
     }));
     return [...human, ...tas];
   }, [boardEntries, tasEntries]);
+
+  // Simulate the ticked comparison runs against the loaded geometry, so they can
+  // be drawn as ghosts on the editing stage. Reuses the shared hook the replay
+  // dialogs use, so a ghost is simulated once per level rather than per render.
+  const ghostSims = useCompareGhosts(
+    selectedGhostIds.length > 0,
+    loaded?.levelData ?? null,
+    compareCandidates,
+    selectedGhostIds,
+  );
+  const ghostOverlays = React.useMemo(
+    () =>
+      selectedGhostIds.flatMap((id) => {
+        const index = compareCandidates.findIndex((c) => c.id === id);
+        const entry = index >= 0 ? compareCandidates[index] : undefined;
+        const sim = ghostSims[id];
+        if (!entry || !sim || sim.path.length === 0) return [];
+        return [
+          {
+            id,
+            sim,
+            color: ghostColor(index),
+            arrow: arrowKind(entry.arrowName),
+            arrowRadius: 16,
+            label: ghostLabel(entry),
+          },
+        ];
+      }),
+    [selectedGhostIds, compareCandidates, ghostSims],
+  );
+  const toggleGhost = React.useCallback(
+    (id: string) =>
+      setSelectedGhostIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])),
+    [],
+  );
+  const clearGhosts = React.useCallback(() => setSelectedGhostIds([]), []);
 
   const engineRef = React.useRef<ReplayEngine | null>(null);
   const symbolsRef = React.useRef<number[]>([]);
@@ -229,7 +294,12 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
     return next;
   }, []);
 
-  const applySymbols = React.useCallback(
+  /**
+   * Replace the whole run (undo/redo, paste, draft restore, loading a run).
+   * These are not single edits, so they bypass `commit` (which records history)
+   * and reset the re-sim from tick 0.
+   */
+  const replaceSymbols = React.useCallback(
     (next: number[]) => {
       symbolsRef.current = next;
       setSymbols(next);
@@ -239,6 +309,53 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
     },
     [resimulate],
   );
+  const applySymbols = replaceSymbols;
+
+  const undo = React.useCallback(() => {
+    const prev = history.undo(symbolsRef.current);
+    if (!prev) return;
+    replaceSymbols(prev);
+    setStatus(`Undo — ${prev.length} inputs.`);
+  }, [history, replaceSymbols]);
+
+  const redo = React.useCallback(() => {
+    const next = history.redo(symbolsRef.current);
+    if (!next) return;
+    replaceSymbols(next);
+    setStatus(`Redo — ${next.length} inputs.`);
+  }, [history, replaceSymbols]);
+
+  /** Copy the current run's input string, so it can be pasted into a chat or another tool. */
+  const copyInputs = React.useCallback(async () => {
+    if (symbolsRef.current.length === 0) return;
+    const base64 = encodeInputSymbols(symbolsRef.current);
+    try {
+      await navigator.clipboard.writeText(base64);
+      toast.success("Input string copied to the clipboard.");
+    } catch {
+      // Clipboard access needs a secure context and permission; fall back to a prompt.
+      window.prompt("Copy the input string:", base64);
+    }
+  }, []);
+
+  /** Paste an input string (base64 or a run-length list) straight into the editor. */
+  const pasteInputs = React.useCallback(async () => {
+    let text = "";
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      text = window.prompt("Paste the input string:") ?? "";
+    }
+    if (!text.trim()) return;
+    try {
+      const parsed = parseTasFile(text);
+      history.record(symbolsRef.current);
+      replaceSymbols(parsed.symbols);
+      setStatus(`Pasted ${parsed.symbols.length} inputs.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not read that input string.");
+    }
+  }, [history, replaceSymbols]);
 
   /** Load a level from scratch (no inputs yet). */
   const loadLevelOnly = async () => {
@@ -253,6 +370,8 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
       symbolsRef.current = [];
       setFrame(0);
       setFinishTick(null);
+      history.reset();
+      setSelectedGhostIds([]);
       setStatus(`Loaded ${info.mapName}. Add inputs to start building a run.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -290,6 +409,8 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
       setArrowName(arrow);
       setRunId(id);
       const decoded = decodeInputSymbols(data.inputs ?? "", data.input_count);
+      history.reset();
+      setSelectedGhostIds([]);
       applySymbols(decoded);
       setFrame(0);
       setStatus(
@@ -320,6 +441,8 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
         setArrowName(request.arrowName);
         setRunId("");
         const decoded = decodeInputSymbols(request.inputs, request.inputCount);
+        history.reset();
+        setSelectedGhostIds([]);
         applySymbols(decoded);
         setFrame(0);
         setStatus(
@@ -332,7 +455,7 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
         setLoading(false);
       }
     },
-    [loadLevel, applySymbols],
+    [loadLevel, applySymbols, history],
   );
 
   // Pull in a run handed over from the TAS leaderboard (its "load" action).
@@ -395,13 +518,109 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
     return () => cancelAnimationFrame(rafRef.current);
   }, [playing, path.length]);
 
+  /**
+   * Mirror the run into `localStorage` so a reload does not lose it. Debounced:
+   * editing a hold fires this on every tick of a +/-, and writing on each one
+   * would serialise the whole array dozens of times a second.
+   */
+  React.useEffect(() => {
+    if (!loaded) return;
+    const timer = window.setTimeout(() => {
+      writeTasDraft({
+        levelId,
+        arrowName,
+        symbols: symbolsRef.current,
+        runId,
+        savedAt: Date.now(),
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [loaded, levelId, arrowName, runId, symbols]);
+
+  // Offer any draft found on load, but only when the editor has not been
+  // populated yet — never clobber a run that was just loaded deliberately.
+  const draftOfferedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (draftOfferedRef.current || loaded) return;
+    draftOfferedRef.current = true;
+    const draft = readTasDraft();
+    if (draft && draft.symbols.length > 0) {
+      setDraftPrompt({
+        savedAt: draft.savedAt,
+        levelId: draft.levelId,
+        symbolCount: draft.symbols.length,
+      });
+    }
+  }, [loaded]);
+
+  /** Restore the draft found on load, fetching its level geometry first. */
+  const restoreDraft = async () => {
+    const draft = readTasDraft();
+    if (!draft) return;
+    setDraftPrompt(null);
+    setLoading(true);
+    setError(null);
+    try {
+      const arrow = draft.arrowName || arrowName;
+      const info = await loadLevel(draft.levelId, arrow);
+      if (!info) return;
+      setLoaded(info);
+      setLevelId(draft.levelId);
+      setArrowName(arrow);
+      setRunId(draft.runId);
+      history.reset();
+      replaceSymbols(draft.symbols);
+      setStatus(
+        `Restored your draft — ${draft.symbols.length} inputs, saved ${describeAge(draft.savedAt)}.`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /** Discard the draft so it stops being offered. */
+  const discardDraft = () => {
+    clearTasDraft();
+    setDraftPrompt(null);
+  };
+
+  // Global shortcuts. Ignored while a text field or the submit dialog has focus,
+  // so typing a run id or a name never triggers an edit.
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key === "z" && !e.shiftKey) {
+        if (typing) return;
+        e.preventDefault();
+        undo();
+      } else if ((e.key === "z" && e.shiftKey) || e.key === "y") {
+        if (typing) return;
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [undo, redo]);
+
   const commit = React.useCallback(
     (next: number[], fromTick: number) => {
+      // Snapshot the pre-edit symbols so this change can be undone. `commit` is
+      // the single funnel every edit goes through, so history stays complete
+      // without each caller remembering to record.
+      history.record(symbolsRef.current);
       symbolsRef.current = next;
       setSymbols(next);
       resimulate(fromTick, next);
     },
-    [resimulate],
+    [resimulate, history],
   );
 
   /** Change the input held at `index` (splitting/merging its segments). */
@@ -548,6 +767,7 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
         where = " (level not in the catalog — kept the current level)";
       }
 
+      history.reset();
       applySymbols(parsed.symbols);
       const finish =
         parsed.finishTick != null
@@ -712,6 +932,36 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
       {error && <div className="text-rose-400 text-xs">{error}</div>}
       {status && !error && <div className="text-slate-500 text-xs">{status}</div>}
 
+      {/* An unsaved run from a previous visit, offered back. */}
+      {draftPrompt && (
+        <div className="flex items-center gap-3 flex-wrap bg-[var(--app-accent)]/10 border border-[var(--app-accent)]/30 rounded-lg px-3 py-2">
+          <History className="w-4 h-4 text-[var(--app-accent)] shrink-0" />
+          <span className="text-xs text-slate-200">
+            You have an unsaved draft — {draftPrompt.symbolCount} inputs on{" "}
+            {LEVELS.find((l) => l.id === draftPrompt.levelId)?.name ?? draftPrompt.levelId}, saved{" "}
+            {describeAge(draftPrompt.savedAt)}.
+          </span>
+          <div className="flex items-center gap-2 ml-auto">
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => void restoreDraft()}
+              disabled={loading}
+            >
+              Restore
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs text-slate-400"
+              onClick={discardDraft}
+            >
+              Discard
+            </Button>
+          </div>
+        </div>
+      )}
+
       {loaded && sim && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 space-y-4">
@@ -731,7 +981,18 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
               onScrub={() => {}}
               onSpeed={() => {}}
               hideControls
+              overlays={ghostOverlays}
             />
+
+            {/* Compare against the level's other runs, drawn as ghosts above. */}
+            {compareCandidates.length > 0 && (
+              <GhostPicker
+                candidates={compareCandidates}
+                selectedIds={selectedGhostIds}
+                onToggle={toggleGhost}
+                onClear={clearGhosts}
+              />
+            )}
 
             {/* Transport */}
             <div className="space-y-2 bg-black/30 border border-white/5 rounded-lg p-3">
@@ -787,6 +1048,29 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
                 <div className="ml-auto flex items-center gap-2">
                   <Button
                     size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={undo}
+                    disabled={!history.canUndo}
+                    title="Undo (Ctrl+Z)"
+                  >
+                    <Undo2 className="w-3.5 h-3.5 mr-1" /> Undo
+                    {history.depth > 0 && (
+                      <span className="ml-1 text-slate-500">{history.depth}</span>
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={redo}
+                    disabled={!history.canRedo}
+                    title="Redo (Ctrl+Shift+Z)"
+                  >
+                    <Redo2 className="w-3.5 h-3.5 mr-1" /> Redo
+                  </Button>
+                  <Button
+                    size="sm"
                     className="h-8 text-xs"
                     onClick={() => setTasOpen(true)}
                     disabled={finishTick === null || symbols.length === 0}
@@ -797,6 +1081,25 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
                     }
                   >
                     <Send className="w-3.5 h-3.5 mr-1" /> Submit TAS
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() => void copyInputs()}
+                    disabled={symbols.length === 0}
+                    title="Copy the input string to the clipboard"
+                  >
+                    <ClipboardCopy className="w-3.5 h-3.5 mr-1" /> Copy
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() => void pasteInputs()}
+                    title="Paste an input string from the clipboard"
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5 mr-1" /> Paste
                   </Button>
                   <Button
                     size="sm"
@@ -1017,7 +1320,16 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
           timeMs={finishTick * SIM_TICK_MS}
           inputs={encodeInputSymbols(symbolsRef.current)}
           inputCount={symbols.length}
-          onSubmitted={() => void refreshTas(levelId)}
+          defaultName={submitterName}
+          onNameUsed={(name) => {
+            setSubmitterName(name);
+            writeSubmitterName(name);
+          }}
+          onSubmitted={() => {
+            // The run is on the board now, so the local draft is stale.
+            clearTasDraft();
+            void refreshTas(levelId);
+          }}
         />
       )}
     </div>
