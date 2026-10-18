@@ -38,6 +38,7 @@ import {
   type BackgroundTheme,
 } from "@/lib/replay-background";
 import { muxWebM, type WebMFrame } from "@/lib/webm-muxer";
+import { muxMp4 } from "@/lib/mp4-muxer";
 import type { ArrowKind } from "@/lib/arrow-sprites";
 
 /** How the camera frames the run. */
@@ -116,11 +117,12 @@ export interface ExportOptions {
 export function pickVideoMimeType(): string | null {
   if (typeof MediaRecorder === "undefined") return null;
   const candidates = [
+    "video/mp4;codecs=avc1.42E01E",
+    "video/mp4;codecs=h264",
+    "video/mp4",
     "video/webm;codecs=vp9",
     "video/webm;codecs=vp8",
     "video/webm",
-    "video/mp4;codecs=h264",
-    "video/mp4",
   ];
   return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? null;
 }
@@ -462,14 +464,29 @@ export function canExportOffline(): boolean {
   return typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined";
 }
 
+/** H.264 codec strings whose level actually covers this pixel count, best first. */
+function avcCodecs(pixels: number): string[] {
+  if (pixels <= 921_600) return ["avc1.420028", "avc1.42001f"]; // ≤720p: level 4.0, then 3.1
+  if (pixels <= 2_073_600) return ["avc1.42002A", "avc1.420028"]; // ≤1080p: level 4.2, then 4.0
+  return ["avc1.420033", "avc1.42002A"]; // larger: level 5.1, then 4.2
+}
+
 /** The first WebCodecs codec string the browser will encode, or null. */
 async function pickEncoderCodec(
   width: number,
   height: number,
-): Promise<{ codec: string; webmCodec: "V_VP8" | "V_VP9" } | null> {
-  const candidates: Array<{ codec: string; webmCodec: "V_VP8" | "V_VP9" }> = [
-    { codec: "vp09.00.10.08", webmCodec: "V_VP9" },
-    { codec: "vp8", webmCodec: "V_VP8" },
+): Promise<{ codec: string; webmCodec: "V_VP8" | "V_VP9"; mp4: boolean } | null> {
+  // H.264/MP4 first: WebM is not playable in QuickTime, Windows Media Player or
+  // older Safari, which show a media-error placeholder instead. VP9 is the
+  // fallback for browsers whose encoder cannot do H.264.
+  const candidates: Array<{ codec: string; webmCodec: "V_VP8" | "V_VP9"; mp4: boolean }> = [
+    ...avcCodecs(width * height).map((codec) => ({
+      codec,
+      webmCodec: "V_VP8" as const,
+      mp4: true,
+    })),
+    { codec: "vp09.00.10.08", webmCodec: "V_VP9", mp4: false },
+    { codec: "vp8", webmCodec: "V_VP8", mp4: false },
   ];
   for (const c of candidates) {
     try {
@@ -549,8 +566,9 @@ async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
 
   const frames: WebMFrame[] = [];
   let encodeError: unknown = null;
+  let description: Uint8Array | null = null;
   const encoder = new VideoEncoder({
-    output: (chunk) => {
+    output: (chunk, meta) => {
       const data = new Uint8Array(chunk.byteLength);
       chunk.copyTo(data);
       frames.push({
@@ -558,6 +576,12 @@ async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
         timestamp: chunk.timestamp / 1000,
         keyframe: chunk.type === "key",
       });
+      // The `avcC` decoder config only arrives with the first (key) chunk.
+      if (!description && meta?.decoderConfig?.description) {
+        const d = meta.decoderConfig.description;
+        description =
+          d instanceof Uint8Array ? new Uint8Array(d) : new Uint8Array(d as ArrayBuffer);
+      }
     },
     error: (e) => {
       encodeError = e;
@@ -619,6 +643,19 @@ async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
   if (encodeError || frames.length === 0) return null;
 
   opts.onProgress?.(1);
+  // H.264 → MP4 (universally playable). Anything else → WebM.
+  if (picked.mp4 && description) {
+    return muxMp4(
+      frames.map((f) => ({ data: f.data, timestampMs: f.timestamp, keyframe: f.keyframe })),
+      {
+        width: canvas.width,
+        height: canvas.height,
+        fps: opts.fps,
+        durationMs,
+        description,
+      },
+    );
+  }
   return muxWebM(frames, {
     width: canvas.width,
     height: canvas.height,
