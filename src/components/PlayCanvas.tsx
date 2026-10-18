@@ -195,11 +195,14 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
         p.thrustPower ?? 0,
         path.length - 1,
       );
+      // `drawArrowSprite` takes screen px, so map the pose through tx/ty like
+      // every other painter here. Passing world coords put the sprite at its raw
+      // world position (top-left of the canvas) instead of on the arrow.
       drawArrowSprite(
         ctx,
         s.arrow,
-        p.x,
-        p.y,
+        tx(p.x),
+        ty(p.y),
         p.rot,
         scale,
         s.arrowRadius,

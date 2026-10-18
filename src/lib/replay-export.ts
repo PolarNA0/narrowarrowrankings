@@ -500,11 +500,13 @@ function avcCodecs(pixels: number): string[] {
 async function pickEncoderCodec(
   width: number,
   height: number,
+  forceWebm = false,
 ): Promise<{ codec: string; webmCodec: "V_VP8" | "V_VP9"; mp4: boolean } | null> {
   // H.264/MP4 first: WebM is not playable in QuickTime, Windows Media Player or
   // older Safari, which show a media-error placeholder instead. VP9 is the
-  // fallback for browsers whose encoder cannot do H.264.
-  const candidates: Array<{ codec: string; webmCodec: "V_VP8" | "V_VP9"; mp4: boolean }> = [
+  // fallback for browsers whose encoder cannot do H.264, and the only option
+  // when the caller has explicitly asked for a WebM (`forceWebm`).
+  const all: Array<{ codec: string; webmCodec: "V_VP8" | "V_VP9"; mp4: boolean }> = [
     ...avcCodecs(width * height).map((codec) => ({
       codec,
       webmCodec: "V_VP8" as const,
@@ -513,6 +515,7 @@ async function pickEncoderCodec(
     { codec: "vp09.00.10.08", webmCodec: "V_VP9", mp4: false },
     { codec: "vp8", webmCodec: "V_VP8", mp4: false },
   ];
+  const candidates = forceWebm ? all.filter((c) => !c.mp4) : all;
   for (const c of candidates) {
     try {
       const support = await VideoEncoder.isConfigSupported({
@@ -547,6 +550,14 @@ export async function exportReplayVideo(opts: ExportOptions): Promise<Blob> {
   if (canExportOffline()) {
     const offline = await tryExportOffline(opts);
     if (offline) return offline;
+    // H.264/MP4 is the preferred output, but a browser can pick the avc1 codec
+    // string and still fail to hand back a decoder description (or the muxed
+    // file can turn out unplayable). Rather than fall all the way back to the
+    // heavy realtime recorder, retry the offline encoder with the WebM codecs,
+    // which is still exact and lag-free and always decodable in the browsers
+    // that can export at all.
+    const webm = await tryExportOffline(opts, true);
+    if (webm) return webm;
     throw new Error(
       "Video encoding failed — the clip may be too large for this device. Try a smaller size or lower frame rate.",
     );
@@ -560,7 +571,7 @@ export async function exportReplayVideoRealtime(opts: ExportOptions): Promise<Bl
 }
 
 /** Offline path: render every frame, encode with WebCodecs, mux to MP4/WebM. */
-async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
+async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise<Blob | null> {
   const { width, height } = resolveEncodeSize(opts.width, opts.height);
   // The canvas is exactly the output resolution. It is deliberately not scaled
   // by devicePixelRatio: that multiplied the frame buffer by 4x on Retina
@@ -575,7 +586,7 @@ async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
   // reach device px. It is 1 unless the size cap shrank the canvas.
   const dpr = width / opts.width;
 
-  const picked = await pickEncoderCodec(canvas.width, canvas.height);
+  const picked = await pickEncoderCodec(canvas.width, canvas.height, forceWebm);
   if (!picked) return null;
 
   const camera = opts.cameraMode === "follow" ? new FollowCamera(opts.camera) : null;
@@ -693,9 +704,14 @@ async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
   if (encodeError || frames.length === 0) return null;
 
   opts.onProgress?.(1);
-  // H.264 → MP4 (universally playable). Anything else → WebM.
-  if (picked.mp4 && description) {
-    return muxMp4(
+  // H.264 → MP4 (universally playable). Anything else → WebM. An avc1 encode
+  // with no `avcC` description cannot be put in a valid MP4, so it is reported
+  // as a failure (the caller retries with the WebM codecs) rather than being
+  // written out mislabelled as VP8 — a file no player can decode.
+  let blob: Blob;
+  if (picked.mp4) {
+    if (!description) return null;
+    blob = muxMp4(
       frames.map((f) => ({ data: f.data, timestampMs: f.timestamp, keyframe: f.keyframe })),
       {
         width: canvas.width,
@@ -705,13 +721,47 @@ async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
         description,
       },
     );
+  } else {
+    blob = muxWebM(frames, {
+      width: canvas.width,
+      height: canvas.height,
+      codec: picked.webmCodec,
+      durationMs,
+      defaultDurationNs,
+    });
   }
-  return muxWebM(frames, {
-    width: canvas.width,
-    height: canvas.height,
-    codec: picked.webmCodec,
-    durationMs,
-    defaultDurationNs,
+
+  // Last line of defence: confirm the file is actually a decodable video before
+  // handing it to the user. A wrong container or a bad mux would otherwise only
+  // surface as the player's error placeholder (a grey frame) after the download.
+  if (await isPlayableVideo(blob)) return blob;
+  return null;
+}
+
+/**
+ * Whether a `<video>` can decode this blob at all. Resolves false on error or if
+ * the browser never reaches a decodable state, so the caller can retry rather
+ * than present an unplayable clip.
+ */
+function isPlayableVideo(blob: Blob, timeoutMs = 4000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(url);
+      resolve(ok);
+    };
+    video.preload = "metadata";
+    video.muted = true;
+    video.onloadedmetadata = () => finish(video.videoWidth > 0 && video.videoHeight > 0);
+    video.onerror = () => finish(false);
+    window.setTimeout(() => finish(false), timeoutMs);
+    video.src = url;
   });
 }
 
