@@ -24,6 +24,40 @@ import type { RawLevelData } from "./replay-sim";
 export const NALVL_FORMAT = "nalvl";
 export const NALVL_FORMAT_VERSION = 1;
 
+/**
+ * The game's own level format (what `POST /custom-levels` accepts and the game's
+ * importer reads). Every obstacle MUST carry an `obstacle_type` — the game's
+ * importer rejects a file whose obstacles omit it ("obstacle N is missing its
+ * obstacle type"). Field names are snake_case, matching the engine payload.
+ */
+export interface GameLevelData {
+  format_version: number;
+  required_format_version: number;
+  map_name: string;
+  game_mode: string;
+  obstacles: NonNullable<RawLevelData["obstacles"]>;
+}
+
+export interface GameLevelFile {
+  level_id: string;
+  name: string;
+  published: boolean;
+  // The game's file importer reads the level data at the top level (it found the
+  // obstacle list, then rejected each entry for lacking `obstacle_type`).
+  format_version: number;
+  required_format_version: number;
+  map_name: string;
+  game_mode: string;
+  obstacles: NonNullable<RawLevelData["obstacles"]>;
+  // `POST /custom-levels` wraps the same data under `data`; included so one
+  // exported file works for both the importer and the API.
+  data: GameLevelData;
+}
+
+/** The format versions the game currently writes for a new custom level. */
+export const GAME_FORMAT_VERSION = 3;
+export const GAME_REQUIRED_FORMAT_VERSION = 0;
+
 export type NalvlWallType = "normal" | "death" | "bouncy" | "boost" | "finish";
 export type NalvlZoneType = "boost" | "ice" | "nosteer" | "steer" | "rail";
 export type NalvlKind = "wall" | "zone" | "portal";
@@ -82,7 +116,9 @@ export function defaultObstacle(kind: NalvlKind, points: NalvlPoint[]): NalvlObs
   const base: NalvlObstacle = { id: nextObstacleId(), kind, points };
   if (kind === "wall") return { ...base, wallType: "normal", thickness: 8 };
   if (kind === "zone") return { ...base, zoneType: "boost", zoneDirection: 0 };
-  return { ...base, portalId: "p1", side: "both" };
+  // The game links two portals by a shared `portal_id`, one on each `side`
+  // ("a"/"b"); a lone portal is still importable.
+  return { ...base, portalId: "p1", side: "a" };
 }
 
 /** A minimal, playable starter level so the editor is never a blank void. */
@@ -133,36 +169,79 @@ function cleanPoints(points: unknown): NalvlPoint[] {
 
 /** Lower an authored level to the engine's `RawLevelData` payload. */
 export function nalvlToRawLevelData(level: NalvlLevel): RawLevelData {
+  return nalvlToGameData(level);
+}
+
+/**
+ * Lower an authored level to the game's own level data (the shape the game's
+ * importer and `POST /custom-levels` expect). This is the payload that can be
+ * taken back into the game — every obstacle gets an explicit `obstacle_type`.
+ */
+export function nalvlToGameData(level: NalvlLevel): GameLevelData {
   const obstacles: NonNullable<RawLevelData["obstacles"]> = level.obstacles.map((o) => {
     const points = o.points.map((p) => ({ x: p.x, y: p.y }));
     if (o.kind === "zone") {
       return {
-        points,
         obstacle_type: "zone",
         zone_type: o.zoneType ?? "boost",
+        points,
         ...(isNum(o.zoneDirection) ? { zone_direction: o.zoneDirection } : {}),
       };
     }
     if (o.kind === "portal") {
       return {
-        points,
         obstacle_type: "portal",
         portal_id: o.portalId ?? "p1",
-        side: o.side ?? "both",
+        side: o.side === "both" ? "a" : (o.side ?? "a"),
+        points,
       };
     }
     return {
-      points,
       obstacle_type: "wall",
       wall_type: o.wallType ?? "normal",
       wall_thickness: isNum(o.thickness) ? o.thickness : 8,
+      points,
       ...(o.rotationPivot && isNum(o.rotationPivot.x) && isNum(o.rotationPivot.y)
         ? { rotation_pivot: { x: o.rotationPivot.x, y: o.rotationPivot.y } }
         : {}),
       ...(isNum(o.rotationSpeed) ? { rotation_speed: o.rotationSpeed } : {}),
     };
   });
-  return { map_name: level.name, game_mode: level.gameMode, obstacles };
+  return {
+    format_version: GAME_FORMAT_VERSION,
+    required_format_version: GAME_REQUIRED_FORMAT_VERSION,
+    map_name: level.name,
+    game_mode: level.gameMode,
+    obstacles,
+  };
+}
+
+/** Wrap a level as a game-importable file (game importer shape + API `data`). */
+export function nalvlToGameFile(level: NalvlLevel): GameLevelFile {
+  const data = nalvlToGameData(level);
+  return {
+    level_id: gameLevelId(level),
+    name: level.name,
+    published: false,
+    format_version: data.format_version,
+    required_format_version: data.required_format_version,
+    map_name: data.map_name,
+    game_mode: data.game_mode,
+    obstacles: data.obstacles,
+    data,
+  };
+}
+
+/** An 8-char uppercase hex id, the shape the game uses for custom `level_id`s. */
+export function gameLevelId(seed?: NalvlLevel | string): string {
+  const text =
+    typeof seed === "string" ? seed : seed ? JSON.stringify(seed.obstacles) : String(Date.now());
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).toUpperCase().padStart(8, "0").slice(0, 8);
 }
 
 /** Recover an editable level from an engine payload (official or community). */
@@ -219,8 +298,12 @@ export function serializeNalvl(level: NalvlLevel): string {
 }
 
 /**
- * Parse a `.nalvl` file (or a bare engine payload). Throws a readable error on
- * anything that isn't a level, so the caller can surface it in the UI.
+ * Parse a level file. Accepts:
+ *  - the site's `.nalvl` (`{format:"nalvl", obstacles:[…]}`),
+ *  - the game's custom-level file (`{level_id, name, data:{obstacles:[…]}}`),
+ *  - a bare engine/level payload (`{map_name, obstacles:[…]}`).
+ * Throws a readable error on anything that isn't a level, so the caller can
+ * surface it in the UI.
  */
 export function parseNalvl(text: string): NalvlLevel {
   let raw: unknown;
@@ -229,8 +312,20 @@ export function parseNalvl(text: string): NalvlLevel {
   } catch {
     throw new Error("Not valid JSON");
   }
-  const obj = raw as Partial<NalvlLevel> & RawLevelData;
+  const obj = raw as Record<string, unknown> & Partial<NalvlLevel> & RawLevelData;
   if (!obj || typeof obj !== "object") throw new Error("Not a level object");
+
+  // The game's custom-level file wraps the level under `data`.
+  if (
+    obj.data &&
+    typeof obj.data === "object" &&
+    Array.isArray((obj.data as RawLevelData).obstacles)
+  ) {
+    const data = obj.data as RawLevelData;
+    const name = typeof obj.name === "string" ? obj.name : data.map_name;
+    return rawLevelDataToNalvl(data, name);
+  }
+
   if (Array.isArray(obj.obstacles)) {
     // Already a `.nalvl`, or an engine payload we can normalise either way.
     const looksAuthored = obj.format === NALVL_FORMAT;
@@ -283,4 +378,17 @@ export function nalvlFilename(level: NalvlLevel): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   return `${slug || "level"}.nalvl`;
+}
+
+/**
+ * Suggested filename for the game-importable file. The game's importer is a
+ * `.json` file picker, so this is JSON (with `obstacle_type` on every obstacle),
+ * not the site's `.nalvl`.
+ */
+export function gameFilename(level: NalvlLevel): string {
+  const slug = level.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `${slug || "level"}-game.json`;
 }

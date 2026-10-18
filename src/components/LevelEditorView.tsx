@@ -62,7 +62,9 @@ import { themeColor, trailColor } from "@/lib/replay-visuals";
 import {
   NALVL_WALL_TYPES,
   NALVL_ZONE_TYPES,
+  gameFilename,
   nalvlFilename,
+  nalvlToGameFile,
   nalvlToRawLevelData,
   parseNalvl,
   rawLevelDataToNalvl,
@@ -187,6 +189,23 @@ export function LevelEditorView({ initialLevel, onLevelConsumed }: LevelEditorVi
     a.download = nalvlFilename(level);
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // The game's importer needs the game's own JSON: every obstacle tagged with
+  // `obstacle_type`, wrapped as `{ level_id, name, data }`. Exporting the site
+  // `.nalvl` (which keys obstacles on `kind`) makes the game report
+  // "obstacle N is missing its obstacle type".
+  const exportForGame = () => {
+    const blob = new Blob([JSON.stringify(nalvlToGameFile(level), null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = gameFilename(level);
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Exported in the game's level format");
   };
 
   const importFile = async (file: File) => {
@@ -314,8 +333,9 @@ export function LevelEditorView({ initialLevel, onLevelConsumed }: LevelEditorVi
       <div>
         <h2 className="text-2xl font-bold text-white">Level Editor</h2>
         <p className="text-slate-500 text-sm">
-          Draw walls, zones and portals, then test-play against the real engine. Export as{" "}
-          <span className="font-mono">.nalvl</span>.
+          Draw walls, zones and portals, then test-play against the real engine. Export for game
+          writes the level in the game&apos;s own format (importable in the app); Export .nalvl
+          saves the site format.
         </p>
       </div>
 
@@ -416,6 +436,9 @@ export function LevelEditorView({ initialLevel, onLevelConsumed }: LevelEditorVi
                 <FilePlus2 className="w-3.5 h-3.5" />
               </Button>
             </div>
+            <Button variant="outline" size="sm" className="w-full" onClick={exportForGame}>
+              <Download className="w-3.5 h-3.5 mr-2" /> Export for game (.json)
+            </Button>
             <Button variant="outline" size="sm" className="w-full" onClick={exportNalvl}>
               <Download className="w-3.5 h-3.5 mr-2" /> Export .nalvl
             </Button>
@@ -624,14 +647,14 @@ export function LevelEditorView({ initialLevel, onLevelConsumed }: LevelEditorVi
                   <div className="space-y-1.5">
                     <Label className="text-xs">Side</Label>
                     <Select
-                      value={selected.side ?? "both"}
+                      value={selected.side === "both" ? "a" : (selected.side ?? "a")}
                       onValueChange={(v) => updateSelected({ side: v })}
                     >
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {["both", "front", "back"].map((s) => (
+                        {["a", "b"].map((s) => (
                           <SelectItem key={s} value={s} className="text-xs">
                             {s}
                           </SelectItem>

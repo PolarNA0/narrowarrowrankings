@@ -21,7 +21,13 @@ import {
   type GenOptions,
   type GenTemplate,
 } from "@/lib/level-gen";
-import { nalvlFilename, serializeNalvl, type NalvlLevel } from "@/lib/nalvl";
+import {
+  gameFilename,
+  nalvlFilename,
+  nalvlToGameFile,
+  serializeNalvl,
+  type NalvlLevel,
+} from "@/lib/nalvl";
 
 export interface LevelGeneratorViewProps {
   onOpenInEditor(level: NalvlLevel): void;
@@ -49,6 +55,18 @@ export function LevelGeneratorView({ onOpenInEditor }: LevelGeneratorViewProps) 
     const a = document.createElement("a");
     a.href = url;
     a.download = nalvlFilename(level);
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportForGame = () => {
+    const blob = new Blob([JSON.stringify(nalvlToGameFile(level), null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = gameFilename(level);
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -152,6 +170,9 @@ export function LevelGeneratorView({ onOpenInEditor }: LevelGeneratorViewProps) 
           <div className="flex flex-col gap-2">
             <Button variant="secondary" size="sm" onClick={() => onOpenInEditor(level)}>
               <Pencil className="w-3.5 h-3.5 mr-2" /> Open in Editor
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportForGame}>
+              <Download className="w-3.5 h-3.5 mr-2" /> Export for game (.json)
             </Button>
             <Button variant="outline" size="sm" onClick={exportNalvl}>
               <Download className="w-3.5 h-3.5 mr-2" /> Export .nalvl
