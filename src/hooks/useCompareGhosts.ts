@@ -15,6 +15,14 @@ export interface CompareCandidate {
   timeMs: number;
   /** Set for real-game runs whose inputs are not loaded yet. */
   runId?: number;
+  /**
+   * Set for TAS entries whose inputs are not loaded yet. The board list is
+   * fetched without input blobs (they are the bulk of the payload), so a ghost
+   * pulls its own stream only when it is actually ticked.
+   */
+  tasEntryId?: string;
+  /** The level a lazily-loaded TAS entry belongs to. */
+  tasLevelId?: string;
   kind?: "tas" | "human";
 }
 
@@ -47,10 +55,25 @@ export async function fetchRunInputs(runId: number): Promise<RunInputs | null> {
   }
 }
 
+/** Load a TAS entry's inputs so it can be simulated as a ghost. */
+async function fetchTasGhostInputs(entry: CompareCandidate): Promise<RunInputs | null> {
+  const levelId = entry.tasLevelId;
+  if (!levelId || !entry.tasEntryId) return null;
+  const { fetchTasEntry } = await import("@/lib/tas-leaderboard");
+  const full = await fetchTasEntry(levelId, entry.tasEntryId);
+  if (!full) return null;
+  return {
+    inputs: full.inputs,
+    inputCount: full.inputCount,
+    arrowName: full.arrowName || entry.arrowName,
+  };
+}
+
 /**
  * Re-simulate every ticked candidate against one cached geometry, so each ghost
  * costs a single simulation rather than another geometry fetch. A real-game
- * candidate's inputs are fetched once, then kept with the simulated result.
+ * candidate's inputs are fetched once, then kept with the simulated result; a
+ * TAS candidate behaves the same way, since the board list omits input blobs.
  */
 export function useCompareGhosts(
   open: boolean,
@@ -60,6 +83,7 @@ export function useCompareGhosts(
 ): Record<string, SimResult> {
   const [sims, setSims] = React.useState<Record<string, SimResult>>({});
   const fetched = React.useRef<Map<number, RunInputs | null>>(new Map());
+  const fetchedTas = React.useRef<Map<string, RunInputs | null>>(new Map());
 
   React.useEffect(() => {
     if (!open || !levelData) return;
@@ -77,6 +101,15 @@ export function useCompareGhosts(
             fetched.current.set(entry.runId, await fetchRunInputs(entry.runId));
           }
           const loaded = fetched.current.get(entry.runId);
+          if (!loaded) continue;
+          inputs = loaded.inputs;
+          inputCount = loaded.inputCount;
+          arrowName = loaded.arrowName || arrowName;
+        } else if (!inputs && entry.tasEntryId) {
+          if (!fetchedTas.current.has(entry.tasEntryId)) {
+            fetchedTas.current.set(entry.tasEntryId, await fetchTasGhostInputs(entry));
+          }
+          const loaded = fetchedTas.current.get(entry.tasEntryId);
           if (!loaded) continue;
           inputs = loaded.inputs;
           inputCount = loaded.inputCount;
