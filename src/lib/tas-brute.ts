@@ -396,8 +396,13 @@ export class CheckpointSim {
         const d = Math.hypot(p.x - this.target.x, p.y - this.target.y);
         if (d < minDist) minDist = d;
       }
-      if (i > 0 && i % this.stride === 0 && this.cps[this.cps.length - 1]?.at !== i)
-        this.cps.push({ at: i, snap: this.engine.snapshot(), minDist });
+      // Key the checkpoint by the input index it is ready to resume FROM: after
+      // stepping input `i` the engine has consumed `i+1` inputs, so the next one
+      // to apply is `i+1`. Storing `i` here would re-apply input `i` on resume
+      // and silently double-step one tick per checkpoint — which let the search
+      // "finish" runs that actually die when replayed from the spawn.
+      if (i > 0 && i % this.stride === 0 && this.cps[this.cps.length - 1]?.at !== i + 1)
+        this.cps.push({ at: i + 1, snap: this.engine.snapshot(), minDist });
       if (code !== 0) break;
     }
   }
