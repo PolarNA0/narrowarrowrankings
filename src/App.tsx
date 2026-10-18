@@ -145,6 +145,7 @@ import { SkinsView } from "@/components/SkinsView";
 import { TasEditorView } from "@/components/TasEditorView";
 import { TasLeaderboardView, type TasLoadRequest } from "@/components/TasLeaderboardView";
 import { BruteView } from "@/components/BruteView";
+import { PlayView } from "@/components/PlayView";
 import { fetchBestTasTime, fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 import { useInGameMedals } from "@/hooks/useInGameMedals";
@@ -438,6 +439,7 @@ export default function App() {
     | "tas"
     | "tas-board"
     | "brute"
+    | "play"
   >("leaderboard");
   /** A TAS entry the leaderboard asked the editor to open. */
   const [tasLoad, setTasLoad] = useState<TasLoadRequest | null>(null);
@@ -2550,6 +2552,8 @@ export default function App() {
           />
         ) : view === "brute" ? (
           <BruteView />
+        ) : view === "play" ? (
+          <PlayView levels={dynamicLevels} />
         ) : view === "score" ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">

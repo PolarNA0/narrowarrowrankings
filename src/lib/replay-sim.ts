@@ -330,6 +330,19 @@ export interface ReplayEngine {
   stepCode(symbol: number): number;
   /** Reset to the spawn pose (engine rebuild) and return the initial sample. */
   reset(): SimPoint;
+  /**
+   * Parse the engine's current full state into a sample, without stepping.
+   * `step`/`stepCode` already advanced, so a caller that only needs the pose at
+   * the render rate reads it once here instead of paying the full-state JSON
+   * parse on every 240Hz tick.
+   */
+  read(): SimPoint;
+  /**
+   * The engine's terminal-state code at the current tick, without stepping:
+   * 0 playing, 1 finish, 2 dead. `step` already advanced, so callers that need
+   * both the sample and the code use this instead of `stepCode`.
+   */
+  code(): number;
   /** Serialize the full engine state so a later `restore` can resume exactly. */
   snapshot(): string;
   /** Rebuild the engine from a snapshot, returning the pose at that tick. */
@@ -398,6 +411,12 @@ export async function createReplayEngine(
       engine.free();
       engine = new mod.GameMechanicsEngine(state());
       return read(engine);
+    },
+    read() {
+      return read(engine);
+    },
+    code() {
+      return engine.player_state_code();
     },
     snapshot() {
       return engine.state;

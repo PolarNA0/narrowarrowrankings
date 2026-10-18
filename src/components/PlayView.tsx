@@ -1,0 +1,796 @@
+/**
+ * The Play tab: a sandbox where a run can actually be driven in the browser.
+ *
+ * Scope, deliberately: this is a *sandbox*. The physics is the real engine, so a
+ * played run reproduces exactly and can be replayed; but the loop advances in
+ * wall-clock time, so it is not a verified competitive mode. Finished runs can
+ * be posted to the site's own community TAS board (which stores the input string
+ * and can replay it) — never to the real game leaderboard, which this site is
+ * read-only against.
+ *
+ * The engine is stepped at a fixed 240Hz; the pose is read once per animation
+ * frame (the full-state parse is the expensive part) and the canvas repaints
+ * imperatively, so nothing here re-renders React at tick rate.
+ */
+
+import * as React from "react";
+import {
+  Gamepad2,
+  Keyboard,
+  Play,
+  Pause,
+  RotateCcw,
+  Flag,
+  Ghost,
+  Send,
+  Loader2,
+  AlertCircle,
+  ChevronRight,
+} from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { PlayCanvas, type PlayCanvasHandle } from "@/components/PlayCanvas";
+import { TasSubmitDialog } from "@/components/TasSubmitDialog";
+import { PlayGame, type PlayResult, type Split } from "@/lib/play-game";
+import {
+  actionForKey,
+  DEFAULT_INPUT_SETTINGS,
+  firstConnectedGamepad,
+  keyLabel,
+  loadInputSettings,
+  resolveGamepad,
+  resolveKeyboard,
+  saveInputSettings,
+  symbolFromHeld,
+  type PlayInputSettings,
+} from "@/lib/play-input";
+import { decodeInputSymbols, encodeInputSymbols } from "@/lib/replay";
+import {
+  arrowConstants,
+  SIM_TICK_MS,
+  simulateRun,
+  type RawLevelData,
+  type SimGeometry,
+} from "@/lib/replay-sim";
+import { arrowKind, type ArrowKind } from "@/lib/arrow-sprites";
+import { themeColor, trailColor } from "@/lib/replay-visuals";
+
+const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"] as const;
+const LEVELS_URL = "/api/level-details";
+
+interface LevelOption {
+  id: string;
+  name: string;
+}
+
+interface GhostRun {
+  label: string;
+  timeMs: number;
+  path: {
+    x: number;
+    y: number;
+    rot: number;
+    finished?: boolean;
+    thrustPower?: number;
+    input?: number;
+  }[];
+}
+
+type GhostChoice = "none" | "pb" | "wr";
+
+function fmtTime(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec - m * 60;
+  return `${m}:${s.toFixed(3).padStart(6, "0")}`;
+}
+
+const bestKey = (levelId: string, arrow: string) => `naPlayBest:${levelId}:${arrow}`;
+
+interface StoredBest {
+  inputs: string;
+  inputCount: number;
+  timeMs: number;
+}
+
+function loadBest(levelId: string, arrow: string): StoredBest | null {
+  try {
+    const raw = window.localStorage.getItem(bestKey(levelId, arrow));
+    return raw ? (JSON.parse(raw) as StoredBest) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function PlayView({ levels }: { levels: LevelOption[] }) {
+  const [levelId, setLevelId] = React.useState(levels[0]?.id ?? "");
+  const [levelName, setLevelName] = React.useState(levels[0]?.name ?? "");
+  const [arrowName, setArrowName] = React.useState<string>(ARROWS[0]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const [phase, setPhase] = React.useState<string>("idle");
+  const [tick, setTick] = React.useState(0);
+  const [splits, setSplits] = React.useState<Split[]>([]);
+  const [checkpoints, setCheckpoints] = React.useState<number[]>([]);
+  const [result, setResult] = React.useState<PlayResult | null>(null);
+  const [best, setBest] = React.useState<StoredBest | null>(null);
+
+  const [ghostChoice, setGhostChoice] = React.useState<GhostChoice>("none");
+  const [ghost, setGhost] = React.useState<GhostRun | null>(null);
+  const [ghostBusy, setGhostBusy] = React.useState(false);
+  const [wrTimeMs, setWrTimeMs] = React.useState<number | null>(null);
+
+  const [settings, setSettings] = React.useState<PlayInputSettings>(DEFAULT_INPUT_SETTINGS);
+  const [showSettings, setShowSettings] = React.useState(false);
+  const [submitOpen, setSubmitOpen] = React.useState(false);
+
+  const gameRef = React.useRef<PlayGame | null>(null);
+  const canvasRef = React.useRef<PlayCanvasHandle | null>(null);
+  const geometryRef = React.useRef<SimGeometry>({ walls: [], zones: [], portals: [] });
+  const levelDataRef = React.useRef<RawLevelData | null>(null);
+  const heldRef = React.useRef<Set<string>>(new Set());
+  const touchRef = React.useRef({ left: false, right: false });
+  const inputSymbolRef = React.useRef(0);
+  const settingsRef = React.useRef(settings);
+  settingsRef.current = settings;
+  const ghostPathRef = React.useRef<GhostRun["path"] | null>(null);
+  ghostPathRef.current = ghost?.path ?? null;
+  const checkpointRef = React.useRef<number[]>([]);
+  checkpointRef.current = checkpoints;
+  const padButtonsRef = React.useRef<{ checkpoint: boolean; restart: boolean }>({
+    checkpoint: false,
+    restart: false,
+  });
+
+  const arrow: ArrowKind = arrowKind(arrowName);
+  const arrowRadius = arrowConstants(arrowName).radius ?? 16;
+  const skinColors = React.useMemo(
+    () => ({
+      body: themeColor(null),
+      trail: trailColor(null),
+    }),
+    [],
+  );
+
+  // ---- input sampling -------------------------------------------------------
+
+  const sampleInput = React.useCallback((): number => {
+    const s = settingsRef.current;
+    const kSym = resolveKeyboard(s, heldRef.current);
+    const pad = resolveGamepad(s, firstConnectedGamepad());
+    const kLeft = kSym === 2 || kSym === 3;
+    const kRight = kSym === 1 || kSym === 3;
+    const pLeft = pad.symbol === 2 || pad.symbol === 3;
+    const pRight = pad.symbol === 1 || pad.symbol === 3;
+    const left = kLeft || pLeft || touchRef.current.left;
+    const right = kRight || pRight || touchRef.current.right;
+    const brake = kSym === 3 || pad.brake;
+    const symbol = symbolFromHeld(left, right, brake);
+    inputSymbolRef.current = symbol;
+    return symbol;
+  }, []);
+
+  // ---- level loading --------------------------------------------------------
+
+  const loadLevel = React.useCallback(
+    async (id: string, arrowToUse: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${LEVELS_URL}/${encodeURIComponent(id)}`, {
+          signal: AbortSignal.timeout(20000),
+        });
+        if (!res.ok) throw new Error(`Level request failed (${res.status})`);
+        const payload = (await res.json()) as { levelInfo?: { data?: RawLevelData } };
+        const data = payload.levelInfo?.data ?? null;
+        if (!data) throw new Error("Level has no geometry");
+
+        gameRef.current?.free();
+        const game = new PlayGame({
+          data,
+          arrowName: arrowToUse,
+          sampleInput,
+          onEnd: (r) => {
+            setResult(r);
+            setPhase(game.phase);
+            setTick(game.tick);
+            if (r.finished) handleFinish(r, id, arrowToUse);
+          },
+        });
+        const ok = await game.load();
+        if (!ok) throw new Error("Physics engine failed to initialise");
+        gameRef.current = game;
+        levelDataRef.current = data;
+        geometryRef.current = game.geometry;
+        setTick(0);
+        setSplits([]);
+        setCheckpoints([]);
+        setResult(null);
+        setPhase("idle");
+        setBest(loadBest(id, arrowToUse));
+        setGhost(null);
+        setGhostChoice("none");
+        setWrTimeMs(null);
+        canvasRef.current?.redraw();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        gameRef.current = null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [sampleInput],
+  );
+
+  // (Re)load whenever the level or arrow changes.
+  React.useEffect(() => {
+    if (levelId) void loadLevel(levelId, arrowName);
+  }, [levelId, arrowName, loadLevel]);
+
+  React.useEffect(() => {
+    setSettings(loadInputSettings());
+  }, []);
+
+  // ---- the frame loop -------------------------------------------------------
+
+  React.useEffect(() => {
+    let raf = 0;
+    let last = 0;
+    let lastUi = 0;
+    const loop = (ts: number) => {
+      raf = requestAnimationFrame(loop);
+      const game = gameRef.current;
+      if (!game) return;
+      const dt = last ? Math.min(100, ts - last) : 1000 / 60;
+      last = ts;
+
+      // Gamepad action buttons are edge-triggered here (the engine loop is the
+      // natural place to poll them, once per frame).
+      const pad = firstConnectedGamepad();
+      const gp = resolveGamepad(settingsRef.current, pad);
+      if (gp.checkpoint && !padButtonsRef.current.checkpoint) game.setCheckpoint();
+      if (gp.restart && !padButtonsRef.current.restart) game.restartFromCheckpoint();
+      padButtonsRef.current = { checkpoint: gp.checkpoint, restart: gp.restart };
+
+      const ran = game.advance(dt);
+      if (ran > 0) canvasRef.current?.redraw();
+      if (ts - lastUi > 50 || game.phase !== phase) {
+        lastUi = ts;
+        setTick(game.tick);
+        setPhase(game.phase);
+        setSplits(game.splits.slice());
+        setCheckpoints(game.checkpointList);
+      }
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [phase]);
+
+  // ---- keyboard -------------------------------------------------------------
+
+  React.useEffect(() => {
+    const isTyping = (t: EventTarget | null) =>
+      t instanceof HTMLElement &&
+      (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+
+    const down = (e: KeyboardEvent) => {
+      if (isTyping(e.target)) return;
+      const action = actionForKey(settingsRef.current, e.code);
+      if (!action) return;
+      e.preventDefault();
+      if (e.repeat) return;
+      if (action === "checkpoint") {
+        gameRef.current?.setCheckpoint();
+        return;
+      }
+      if (action === "restart") {
+        gameRef.current?.restartFromCheckpoint();
+        return;
+      }
+      heldRef.current.add(e.code);
+    };
+    const up = (e: KeyboardEvent) => {
+      heldRef.current.delete(e.code);
+    };
+    const blur = () => heldRef.current.clear();
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  }, []);
+
+  // ---- run control ----------------------------------------------------------
+
+  const handleFinish = (r: PlayResult, id: string, arrowForRun: string) => {
+    const timeMs = r.tick * SIM_TICK_MS;
+    const prev = loadBest(id, arrowForRun);
+    if (!prev || timeMs < prev.timeMs) {
+      const stored: StoredBest = {
+        inputs: encodeInputSymbols(r.symbols),
+        inputCount: r.symbols.length,
+        timeMs,
+      };
+      try {
+        window.localStorage.setItem(bestKey(id, arrowForRun), JSON.stringify(stored));
+      } catch {
+        /* storage blocked — the PB just isn't kept */
+      }
+      setBest(stored);
+      if (prev) toast.success(`New personal best: ${fmtTime(timeMs / 1000)}`);
+      else toast.success(`Finished in ${fmtTime(timeMs / 1000)}`);
+    } else {
+      toast.message(`Finished in ${fmtTime(timeMs / 1000)}`, {
+        description: `PB is ${fmtTime(prev.timeMs / 1000)}`,
+      });
+    }
+  };
+
+  const start = () => {
+    const game = gameRef.current;
+    if (!game) return;
+    game.restart();
+    setResult(null);
+    setTick(0);
+    setSplits([]);
+    setPhase("running");
+  };
+
+  const pauseResume = () => {
+    const game = gameRef.current;
+    if (!game) return;
+    if (game.phase === "running") game.pause();
+    else if (game.phase === "paused") game.resume();
+    else start();
+    setPhase(game.phase);
+  };
+
+  const restartCheckpoint = () => {
+    gameRef.current?.restartFromCheckpoint();
+    setResult(null);
+    setPhase("running");
+  };
+
+  const dropCheckpoint = () => {
+    const game = gameRef.current;
+    if (!game) return;
+    game.setCheckpoint();
+    setCheckpoints([...checkpointRef.current]);
+    if (game.tick > 0) toast.message(`Checkpoint at ${fmtTime((game.tick * SIM_TICK_MS) / 1000)}`);
+  };
+
+  // ---- ghosts ---------------------------------------------------------------
+
+  const loadGhost = React.useCallback(
+    async (choice: GhostChoice, id: string, arrowForRun: string) => {
+      const data = levelDataRef.current;
+      if (!data || choice === "none") {
+        setGhost(null);
+        return;
+      }
+      setGhostBusy(true);
+      try {
+        let inputs = "";
+        let inputCount: number | undefined;
+        let timeMs = 0;
+        let label = "";
+        if (choice === "pb") {
+          const stored = loadBest(id, arrowForRun);
+          if (!stored) {
+            toast.message("No personal best on this level yet.");
+            setGhost(null);
+            setGhostChoice("none");
+            return;
+          }
+          inputs = stored.inputs;
+          inputCount = stored.inputCount;
+          timeMs = stored.timeMs;
+          label = "My PB";
+        } else {
+          const boardRes = await fetch(
+            `/api/leaderboard/${encodeURIComponent(id)}?arrowFilter=${encodeURIComponent(arrowForRun)}&limit=1`,
+            { signal: AbortSignal.timeout(20000) },
+          );
+          const board = boardRes.ok
+            ? ((await boardRes.json()) as Array<{
+                run_id?: number;
+                completion_time?: number;
+                username?: string;
+              }>)
+            : [];
+          const top = board[0];
+          if (!top?.run_id) {
+            toast.message("No world record available for this arrow.");
+            setGhost(null);
+            setGhostChoice("none");
+            return;
+          }
+          const runRes = await fetch(`/api/runs/${top.run_id}`, {
+            signal: AbortSignal.timeout(20000),
+          });
+          if (!runRes.ok) throw new Error("Could not fetch the record run");
+          const run = (await runRes.json()) as {
+            inputs?: string;
+            input_count?: number;
+            completion_time?: number;
+          };
+          inputs = run.inputs ?? "";
+          inputCount = run.input_count;
+          timeMs = (run.completion_time ?? 0) * 1000;
+          label = `${top.username ?? "WR"} WR`;
+          setWrTimeMs(timeMs);
+        }
+        const symbols = decodeInputSymbols(inputs, inputCount);
+        const sim = await simulateRun(inputs, inputCount, data, {}, arrowForRun);
+        setGhost({ label, timeMs, path: sim.path });
+        void symbols;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Ghost failed to load");
+        setGhost(null);
+        setGhostChoice("none");
+      } finally {
+        setGhostBusy(false);
+      }
+    },
+    [],
+  );
+
+  React.useEffect(() => {
+    void loadGhost(ghostChoice, levelId, arrowName);
+  }, [ghostChoice, levelId, arrowName, loadGhost]);
+
+  const getFrame = React.useCallback(
+    () => ({
+      path: gameRef.current?.path ?? [],
+      input: inputSymbolRef.current,
+      ghostPath: ghostPathRef.current,
+      markers: checkpointRef.current,
+    }),
+    [],
+  );
+
+  const runTimeMs = tick * SIM_TICK_MS;
+  const deltaMs = ghost ? runTimeMs - ghost.timeMs : null;
+  const finishedResult = result?.finished ? result : null;
+
+  const setKeybind = (action: keyof PlayInputSettings["keybinds"]) => {
+    const next: PlayInputSettings = {
+      ...settings,
+      keybinds: { ...settings.keybinds },
+    };
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        e.preventDefault();
+        next.keybinds[action] = e.code;
+        setSettings(next);
+        saveInputSettings(next);
+      },
+      { once: true },
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <Play className="w-5 h-5 text-[var(--app-accent)]" /> Play
+          </h2>
+          <p className="text-xs text-slate-500 max-w-xl">
+            Drive the arrow with the real engine. Sandbox mode — runs post to the community TAS
+            board, not the in-game leaderboard.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs gap-1.5"
+            onClick={() => setShowSettings((v) => !v)}
+          >
+            <Keyboard className="w-3.5 h-3.5" /> Controls
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        {/* Stage */}
+        <div className="space-y-3">
+          <div className="relative">
+            <PlayCanvas
+              ref={canvasRef}
+              geometry={geometryRef.current}
+              getFrame={getFrame}
+              arrow={arrow}
+              arrowRadius={arrowRadius}
+              bodyColor={skinColors.body}
+              tailColor={skinColors.trail}
+              trailColor={skinColors.trail}
+              ghostColor="rgba(148,163,184,0.55)"
+              height={440}
+            />
+            {loading && (
+              <div className="absolute inset-0 grid place-items-center rounded-lg bg-black/60">
+                <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
+              </div>
+            )}
+            {error && (
+              <div className="absolute inset-0 grid place-items-center rounded-lg bg-black/70 p-4 text-center">
+                <div className="space-y-2">
+                  <AlertCircle className="w-6 h-6 mx-auto text-red-400" />
+                  <p className="text-xs text-red-300">{error}</p>
+                </div>
+              </div>
+            )}
+            {/* Mobile touch zones: left half steers left, right half right. */}
+            <div className="absolute inset-0 flex lg:hidden">
+              {(["left", "right"] as const).map((side) => (
+                <div
+                  key={side}
+                  className="flex-1 touch-none select-none"
+                  onContextMenu={(e) => e.preventDefault()}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                    touchRef.current[side] = true;
+                  }}
+                  onPointerUp={() => (touchRef.current[side] = false)}
+                  onPointerCancel={() => (touchRef.current[side] = false)}
+                  onLostPointerCapture={() => (touchRef.current[side] = false)}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={pauseResume}
+              disabled={loading || !!error}
+            >
+              {phase === "running" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              {phase === "running" ? "Pause" : phase === "paused" ? "Resume" : "Start"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={start}
+              disabled={loading || !!error}
+            >
+              <RotateCcw className="w-4 h-4" /> Restart
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={dropCheckpoint}
+              disabled={loading || phase === "idle"}
+            >
+              <Flag className="w-4 h-4" /> Checkpoint
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={restartCheckpoint}
+              disabled={checkpoints.length === 0}
+            >
+              <RotateCcw className="w-4 h-4" /> From checkpoint
+            </Button>
+            <div className="ml-auto font-mono text-2xl tabular-nums">
+              {fmtTime(runTimeMs / 1000)}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <Badge variant="secondary" className="font-mono">
+              {arrowName}
+            </Badge>
+            <span>PB {best ? fmtTime(best.timeMs / 1000) : "—"}</span>
+            {ghost && (
+              <span className="flex items-center gap-1">
+                <Ghost className="w-3.5 h-3.5" />
+                {ghost.label} {fmtTime(ghost.timeMs / 1000)}
+                {deltaMs != null && (
+                  <span className={deltaMs <= 0 ? "text-emerald-400" : "text-red-400"}>
+                    ({deltaMs <= 0 ? "-" : "+"}
+                    {fmtTime(Math.abs(deltaMs) / 1000)})
+                  </span>
+                )}
+              </span>
+            )}
+            {ghostBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          </div>
+
+          {finishedResult && (
+            <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+              <span className="text-sm text-emerald-300 font-mono">
+                Finished in {fmtTime((finishedResult.tick * SIM_TICK_MS) / 1000)}
+              </span>
+              <Button size="sm" className="gap-1.5" onClick={() => setSubmitOpen(true)}>
+                <Send className="w-3.5 h-3.5" /> Submit to TAS board
+              </Button>
+            </div>
+          )}
+          {result && !result.finished && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+              Crashed at {fmtTime((result.tick * SIM_TICK_MS) / 1000)}.
+            </div>
+          )}
+        </div>
+
+        {/* Side panel */}
+        <div className="space-y-3">
+          <div className="rounded-lg border border-border bg-card p-3 space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Level</Label>
+              <Select
+                value={levelId}
+                onValueChange={(id) => {
+                  const lv = levels.find((l) => l.id === id);
+                  setLevelId(id);
+                  setLevelName(lv?.name ?? id);
+                }}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {levels.map((l) => (
+                    <SelectItem key={l.id} value={l.id} className="text-xs">
+                      {l.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Arrow</Label>
+              <Select value={arrowName} onValueChange={setArrowName}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ARROWS.map((a) => (
+                    <SelectItem key={a} value={a} className="text-xs">
+                      {a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs flex items-center gap-1">
+                <Ghost className="w-3.5 h-3.5" /> Ghost
+              </Label>
+              <Select value={ghostChoice} onValueChange={(v) => setGhostChoice(v as GhostChoice)}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none" className="text-xs">
+                    None
+                  </SelectItem>
+                  <SelectItem value="pb" className="text-xs">
+                    My PB
+                  </SelectItem>
+                  <SelectItem value="wr" className="text-xs">
+                    World record
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Splits */}
+          <div className="rounded-lg border border-border bg-card p-3">
+            <div className="text-xs font-semibold text-slate-300 mb-2 flex items-center gap-1">
+              <Flag className="w-3.5 h-3.5" /> Splits
+            </div>
+            {splits.length === 0 ? (
+              <p className="text-xs text-slate-500">Set a checkpoint to track splits.</p>
+            ) : (
+              <ul className="space-y-1 font-mono text-xs">
+                {splits.map((s, i) => (
+                  <li key={s.index} className="flex items-center justify-between">
+                    <span className="text-slate-400">CP{i + 1}</span>
+                    <span className="tabular-nums">{fmtTime(s.timeSec)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {showSettings && (
+            <div className="rounded-lg border border-border bg-card p-3 space-y-3">
+              <div className="text-xs font-semibold text-slate-300 flex items-center gap-1">
+                <Keyboard className="w-3.5 h-3.5" /> Controls
+              </div>
+              {(Object.keys(settings.keybinds) as Array<keyof PlayInputSettings["keybinds"]>).map(
+                (action) => (
+                  <div key={action} className="flex items-center justify-between">
+                    <span className="text-xs capitalize text-slate-400">{action}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 min-w-20 font-mono text-xs"
+                      onClick={() => setKeybind(action)}
+                    >
+                      {keyLabel(settings.keybinds[action])}
+                    </Button>
+                  </div>
+                ),
+              )}
+              <div className="flex items-center justify-between border-t border-border pt-3">
+                <span className="text-xs text-slate-400 flex items-center gap-1">
+                  <Gamepad2 className="w-3.5 h-3.5" /> Controller
+                </span>
+                <Switch
+                  checked={settings.gamepad.enabled}
+                  onCheckedChange={(v) => {
+                    const next = { ...settings, gamepad: { ...settings.gamepad, enabled: v } };
+                    setSettings(next);
+                    saveInputSettings(next);
+                  }}
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Stick left/right steers; both steer directions (or the brake button) brakes. On
+                mobile, tap the left or right half of the stage — both halves at once brakes.
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs"
+                onClick={() => {
+                  setSettings(DEFAULT_INPUT_SETTINGS);
+                  saveInputSettings(DEFAULT_INPUT_SETTINGS);
+                }}
+              >
+                Reset to defaults
+              </Button>
+            </div>
+          )}
+
+          <div className="rounded-lg border border-border bg-card p-3 text-[11px] text-slate-500 leading-relaxed">
+            <div className="flex items-center gap-1 text-slate-400 mb-1">
+              <ChevronRight className="w-3.5 h-3.5" /> Sandbox
+            </div>
+            Runs here are timed by the engine, not verified. Use the checkpoint button to practise a
+            section, then submit a clean run to the community TAS board where it can be replayed.
+          </div>
+        </div>
+      </div>
+
+      {finishedResult && (
+        <TasSubmitDialog
+          open={submitOpen}
+          onOpenChange={setSubmitOpen}
+          levelId={levelId}
+          levelName={levelName}
+          arrowName={arrowName}
+          timeMs={finishedResult.tick * SIM_TICK_MS}
+          inputs={encodeInputSymbols(finishedResult.symbols)}
+          inputCount={finishedResult.symbols.length}
+        />
+      )}
+    </div>
+  );
+}

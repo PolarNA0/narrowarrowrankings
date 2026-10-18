@@ -10,6 +10,7 @@ export const NAV_GROUPS = [
   { id: "customs", label: "Customs", items: [{ id: "customs", label: "Custom levels" }, { id: "completions", label: "Custom completions" }, { id: "random", label: "Randomizer" }] },
   { id: "skins", label: "Skins", items: [{ id: "skins", label: "Skin catalogue" }] },
   { id: "tools", label: "Tools", items: [{ id: "tas", label: "TAS editor" }, { id: "tas-board", label: "TAS leaderboard" }, { id: "brute", label: "Brute" }] },
+  { id: "play", label: "Play", items: [{ id: "play", label: "Play" }] },
 ] as const;
 
 export type NavigableView = typeof NAV_GROUPS[number]["items"][number]["id"];

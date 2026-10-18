@@ -84,7 +84,7 @@ export interface ExportOptions {
   sim: SimResult;
   geometry: SimGeometry;
   mode: RenderMode;
-  /** Output size in CSS px; the canvas is scaled by `dpr` for crisp text. */
+  /** Output size in CSS px; the encode canvas is exactly this, never dpr-scaled. */
   width: number;
   height: number;
   fps: number;
@@ -108,7 +108,6 @@ export interface ExportOptions {
    */
   showInputs?: boolean;
   ghosts?: ExportGhost[];
-  dpr?: number;
   /** Reports 0..1 as the clip records. */
   onProgress?: (fraction: number) => void;
 }
@@ -125,6 +124,32 @@ export function pickVideoMimeType(): string | null {
     "video/webm",
   ];
   return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? null;
+}
+
+/**
+ * Hard ceiling on the encode canvas, in pixels (1080p). A frame buffer at this
+ * size is ~8MB RGBA and the H.264 encoder holds several as references; going
+ * beyond it is what exhausted memory and took the host tab down. Every preset
+ * fits inside this, so the cap only ever engages as a safety net.
+ */
+export const MAX_EXPORT_PIXELS = 2_073_600;
+
+/**
+ * The actual encode resolution for a requested output size. The preset is the
+ * target, so the canvas is NOT multiplied by `devicePixelRatio` — on a Retina
+ * display that turned a "1080p" request into a 4K encode (4x the memory). The
+ * result is still clamped to `MAX_EXPORT_PIXELS` for defence in depth.
+ */
+export function resolveEncodeSize(
+  width: number,
+  height: number,
+): { width: number; height: number } {
+  const w = Math.max(2, Math.round(width));
+  const h = Math.max(2, Math.round(height));
+  const pixels = w * h;
+  if (pixels <= MAX_EXPORT_PIXELS) return { width: w, height: h };
+  const scale = Math.sqrt(MAX_EXPORT_PIXELS / pixels);
+  return { width: Math.max(2, Math.round(w * scale)), height: Math.max(2, Math.round(h * scale)) };
 }
 
 /** Whether this browser can record a canvas at all. */
@@ -509,27 +534,46 @@ async function pickEncoderCodec(
  *
  * Encoding is offline: each frame is drawn and handed to the WebCodecs
  * `VideoEncoder` at its exact timestamp, so the clip is deterministic and runs
- * as fast as the CPU allows instead of in real time. `MediaRecorder` (realtime
- * canvas capture) is only used when WebCodecs is unavailable. Rejects when the
- * browser can do neither, so the caller can show a clear message.
+ * as fast as the CPU allows instead of in real time.
+ *
+ * When WebCodecs is present it is the ONLY path taken. The realtime
+ * `MediaRecorder` fallback is deliberately not reached from here: it is far
+ * heavier (a live tab-wide capture for the whole clip) and was being entered
+ * precisely when the offline path failed — i.e. when the machine was already
+ * out of memory — which is what crashed the tab. Callers that specifically want
+ * the realtime path call `exportReplayVideoRealtime`.
  */
 export async function exportReplayVideo(opts: ExportOptions): Promise<Blob> {
   if (canExportOffline()) {
     const offline = await tryExportOffline(opts);
     if (offline) return offline;
+    throw new Error(
+      "Video encoding failed — the clip may be too large for this device. Try a smaller size or lower frame rate.",
+    );
   }
   return exportWithMediaRecorder(opts);
 }
 
-/** Offline path: render every frame, encode with WebCodecs, mux to WebM. */
+/** Explicit realtime capture, for browsers without WebCodecs. */
+export async function exportReplayVideoRealtime(opts: ExportOptions): Promise<Blob> {
+  return exportWithMediaRecorder(opts);
+}
+
+/** Offline path: render every frame, encode with WebCodecs, mux to MP4/WebM. */
 async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
-  const dpr =
-    opts.dpr ?? Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
+  const { width, height } = resolveEncodeSize(opts.width, opts.height);
+  // The canvas is exactly the output resolution. It is deliberately not scaled
+  // by devicePixelRatio: that multiplied the frame buffer by 4x on Retina
+  // displays (a "1080p" request became a 4K encode) and is what drove the
+  // memory exhaustion.
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(opts.width * dpr);
-  canvas.height = Math.round(opts.height * dpr);
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
+  // `renderScene` lays out in CSS px (`opts.width`) and applies this ratio to
+  // reach device px. It is 1 unless the size cap shrank the canvas.
+  const dpr = width / opts.width;
 
   const picked = await pickEncoderCodec(canvas.width, canvas.height);
   if (!picked) return null;
@@ -587,9 +631,12 @@ async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
       encodeError = e;
     },
   });
-  const bitrate = Math.round(opts.width * opts.height * opts.fps * 0.12);
+  const bitrate = Math.round(width * height * opts.fps * 0.12);
   const defaultDurationNs = Math.round(1e9 / opts.fps);
   const keyEvery = Math.max(1, Math.round(opts.fps * 2));
+
+  /** Yield to the event loop so the host page can paint and stay responsive. */
+  const yieldToHost = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
   try {
     encoder.configure({
@@ -611,8 +658,9 @@ async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
       frame.close();
       if (encodeError) throw encodeError;
       // Back-pressure: keep the queue shallow so the encoder's output callbacks
-      // (and the UI) get a turn between frames instead of starving behind a
-      // thousand queued frames.
+      // get a turn between frames instead of starving behind a thousand queued
+      // frames, and yield to the event loop every few frames so the page keeps
+      // painting (a tight synchronous loop here is what froze the editor).
       if (encoder.encodeQueueSize > 8) {
         await new Promise<void>((resolve) => {
           const onDequeue = () => {
@@ -627,6 +675,8 @@ async function tryExportOffline(opts: ExportOptions): Promise<Blob | null> {
             resolve();
           }, 0);
         });
+      } else if (f % 8 === 0) {
+        await yieldToHost();
       }
       if (f % 8 === 0) opts.onProgress?.(f / lastFrame);
     }
@@ -674,13 +724,13 @@ async function exportWithMediaRecorder(opts: ExportOptions): Promise<Blob> {
   const mimeType = pickVideoMimeType();
   if (!mimeType) throw new Error("This browser cannot record video from a canvas.");
 
-  const dpr =
-    opts.dpr ?? Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
+  const { width, height } = resolveEncodeSize(opts.width, opts.height);
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(opts.width * dpr);
-  canvas.height = Math.round(opts.height * dpr);
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Could not create the export canvas.");
+  const dpr = width / opts.width;
 
   // The camera is stepped once per output frame; for a follow camera that gives
   // the same smoothed motion the interactive stage shows.
