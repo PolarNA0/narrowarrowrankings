@@ -145,6 +145,9 @@ import { SkinsView } from "@/components/SkinsView";
 import { TasEditorView } from "@/components/TasEditorView";
 import { TasLeaderboardView, type TasLoadRequest } from "@/components/TasLeaderboardView";
 import { BruteView } from "@/components/BruteView";
+import { LevelEditorView } from "@/components/LevelEditorView";
+import { LevelGeneratorView } from "@/components/LevelGeneratorView";
+import type { NalvlLevel } from "@/lib/nalvl";
 import { PlayView } from "@/components/PlayView";
 import { fetchBestTasTime, fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
@@ -439,6 +442,8 @@ export default function App() {
     | "tas"
     | "tas-board"
     | "brute"
+    | "editor"
+    | "generator"
     | "play"
   >("leaderboard");
   /** A TAS entry the leaderboard asked the editor to open. */
@@ -454,6 +459,8 @@ export default function App() {
   // switching Tools tabs (which unmounts the view) keeps the selection instead
   // of snapping back to the first level.
   const [tasBoardLevelId, setTasBoardLevelId] = useState<string>(LEVELS[0]?.id ?? "");
+  /** A level the Generator asked the Editor to open. */
+  const [editorLevel, setEditorLevel] = useState<NalvlLevel | null>(null);
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<"wrs" | "hof" | "history" | "arrows">("wrs");
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -1455,6 +1462,8 @@ export default function App() {
         "tas",
         "tas-board",
         "brute",
+        "editor",
+        "generator",
       ].includes(next)
     )
       void fetchAllLevels();
@@ -2567,6 +2576,18 @@ export default function App() {
           />
         ) : view === "brute" ? (
           <BruteView />
+        ) : view === "editor" ? (
+          <LevelEditorView
+            initialLevel={editorLevel}
+            onLevelConsumed={() => setEditorLevel(null)}
+          />
+        ) : view === "generator" ? (
+          <LevelGeneratorView
+            onOpenInEditor={(level) => {
+              setEditorLevel(level);
+              navigateView("editor");
+            }}
+          />
         ) : view === "play" ? (
           <PlayView
             levels={dynamicLevels}
