@@ -157,18 +157,35 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
       if (frame.ghostPath && frame.ghostPath.length > 1) {
         ctx.save();
         ctx.globalAlpha = 0.5;
-        strokeTrail(ctx, frame.ghostPath, frame.ghostPath.length - 1, s.ghostColor, false, {
-          tx,
-          ty,
-          scale,
-          mode: s.mode,
-        });
+        strokeTrail(
+          ctx,
+          frame.ghostPath,
+          frame.ghostPath.length - 1,
+          s.ghostColor,
+          false,
+          { tx, ty, scale, mode: s.mode },
+          { w: width, h: height },
+        );
         ctx.restore();
       }
 
       ctx.save();
       ctx.globalAlpha = 0.6;
-      strokeTrail(ctx, path, path.length - 1, s.trailColor, false, { tx, ty, scale, mode: s.mode });
+      // Clip to the viewport: the follow camera only shows the recent tail, so
+      // walking back to the last on-screen point keeps the per-frame stroke
+      // bounded instead of re-tracing the whole run from spawn every frame.
+      strokeTrail(
+        ctx,
+        path,
+        path.length - 1,
+        s.trailColor,
+        false,
+        { tx, ty, scale, mode: s.mode },
+        {
+          w: width,
+          h: height,
+        },
+      );
       ctx.restore();
 
       if (frame.markers?.length) {

@@ -368,8 +368,22 @@ export function PlayView({
         lastUi = ts;
         setTick(game.tick);
         setPhase(game.phase);
-        setSplits(game.splits.slice());
-        setCheckpoints(game.checkpointList);
+        // Return the previous array when nothing changed so React bails out of
+        // the re-render instead of repainting the whole view ~20x/s.
+        const nextSplits = game.splits;
+        setSplits((prev) =>
+          prev.length === nextSplits.length &&
+          prev[prev.length - 1]?.tick === nextSplits[nextSplits.length - 1]?.tick
+            ? prev
+            : nextSplits.slice(),
+        );
+        const nextCheckpoints = game.checkpointList;
+        setCheckpoints((prev) =>
+          prev.length === nextCheckpoints.length &&
+          prev[prev.length - 1] === nextCheckpoints[nextCheckpoints.length - 1]
+            ? prev
+            : nextCheckpoints,
+        );
       }
     };
     raf = requestAnimationFrame(loop);
