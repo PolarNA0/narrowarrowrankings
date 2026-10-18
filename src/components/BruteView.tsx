@@ -234,6 +234,10 @@ function BruteSearch({
   const [refine, setRefine] = React.useState(true);
   const [entries, setEntries] = React.useState<TasEntry[]>([]);
   const [seedId, setSeedId] = React.useState<string>("auto");
+  // Which arrow's human board feeds the seed picker. "" merges all three; a
+  // specific arrow shows its own board, so a WR on a less-played arrow (which
+  // the global top-150 can miss) is still selectable as a seed.
+  const [seedArrow, setSeedArrow] = React.useState<string>("");
   // The level's real-game runs, so the search can seed from a human run when no
   // TAS submission exists yet.
   const [humanEntries, setHumanEntries] = React.useState<LeaderboardEntry[]>([]);
@@ -292,7 +296,7 @@ function BruteSearch({
       .catch(() => {
         if (!cancelled) setEntries([]);
       });
-    fetchLeaderboard(levelId)
+    fetchLeaderboard(levelId, false, false, seedArrow || undefined)
       .then((list) => {
         if (!cancelled) setHumanEntries(list);
       })
@@ -305,12 +309,15 @@ function BruteSearch({
     return () => {
       cancelled = true;
     };
-  }, [levelId]);
+  }, [levelId, seedArrow]);
 
   const seedEntry = React.useMemo(() => {
     if (entries.length === 0) return null;
     if (seedId === "auto") return entries[0];
-    return entries.find((e) => e.id === seedId) ?? entries[0];
+    // Only resolve here when the selection is actually a TAS entry; a human
+    // selection must not fall back to the fastest TAS run (that silently seeded
+    // from the TAS board and ignored the picked human run).
+    return entries.find((e) => e.id === seedId) ?? null;
   }, [entries, seedId]);
 
   const humanSeed = React.useMemo(() => {
@@ -679,45 +686,68 @@ function BruteSearch({
           </Field>
 
           <Field label="Seed run">
-            <Select value={seedId} onValueChange={setSeedId} disabled={!canSeed}>
-              <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
-                <SelectValue placeholder={canSeed ? "Fastest" : "No runs"} />
-              </SelectTrigger>
-              <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 max-h-72">
-                {entries.length > 0 && (
-                  <SelectGroup>
-                    <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
-                      TAS board
-                    </SelectLabel>
-                    <SelectItem value="auto" className="text-xs">
-                      Fastest TAS run
+            <div className="space-y-1.5">
+              <Select
+                value={seedArrow || "all"}
+                onValueChange={(v) => setSeedArrow(v === "all" ? "" : v)}
+              >
+                <SelectTrigger
+                  className="h-8 text-[11px] bg-white/5 border-white/10"
+                  aria-label="Arrow to list seed runs for"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200">
+                  <SelectItem value="all" className="text-xs">
+                    All arrows
+                  </SelectItem>
+                  {ARROWS.map((a) => (
+                    <SelectItem key={a} value={a} className="text-xs">
+                      {a}
                     </SelectItem>
-                    {entries.map((e) => (
-                      <SelectItem key={e.id} value={e.id} className="text-xs">
-                        {e.username} — {(e.timeMs / 1000).toFixed(3)}s ({e.arrowName})
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                )}
-                {humanEntries.length > 0 && (
-                  <SelectGroup>
-                    <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
-                      Human runs
-                    </SelectLabel>
-                    {entries.length === 0 && (
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={seedId} onValueChange={setSeedId} disabled={!canSeed}>
+                <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
+                  <SelectValue placeholder={canSeed ? "Fastest" : "No runs"} />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 max-h-72">
+                  {entries.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
+                        TAS board
+                      </SelectLabel>
                       <SelectItem value="auto" className="text-xs">
-                        Fastest run
+                        Fastest TAS run
                       </SelectItem>
-                    )}
-                    {humanEntries.slice(0, 25).map((h) => (
-                      <SelectItem key={h.run_id} value={`human-${h.run_id}`} className="text-xs">
-                        {h.username} — {h.completion_time.toFixed(3)}s ({h.arrow_name})
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                )}
-              </SelectContent>
-            </Select>
+                      {entries.map((e) => (
+                        <SelectItem key={e.id} value={e.id} className="text-xs">
+                          {e.username} — {(e.timeMs / 1000).toFixed(3)}s ({e.arrowName})
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {humanEntries.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
+                        {seedArrow ? `${seedArrow} runs` : "Human runs"}
+                      </SelectLabel>
+                      {entries.length === 0 && (
+                        <SelectItem value="auto" className="text-xs">
+                          Fastest run
+                        </SelectItem>
+                      )}
+                      {humanEntries.slice(0, 25).map((h) => (
+                        <SelectItem key={h.run_id} value={`human-${h.run_id}`} className="text-xs">
+                          {h.username} — {h.completion_time.toFixed(3)}s ({h.arrow_name})
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
           </Field>
 
           <Field label="Time budget">

@@ -42,7 +42,10 @@ export function hydratePersistedLeaderboards(): Record<string, LeaderboardEntry[
  */
 function writeSnapshot(boards: Record<string, LeaderboardEntry[]>) {
   const persist = (payload: Record<string, LeaderboardEntry[]>) =>
-    window.localStorage.setItem(PERSIST_KEY, JSON.stringify({ timestamp: Date.now(), boards: payload }));
+    window.localStorage.setItem(
+      PERSIST_KEY,
+      JSON.stringify({ timestamp: Date.now(), boards: payload }),
+    );
 
   const ordered = Object.entries(boards).sort((a, b) => a[1].length - b[1].length);
   // Keep at least one board; if even that won't fit, leave the previous copy.
@@ -94,28 +97,37 @@ export async function fetchAllLeaderboards(
   return boards;
 }
 
-async function requestLeaderboard(levelId: string, deep: boolean): Promise<LeaderboardEntry[]> {
+async function requestLeaderboard(
+  levelId: string,
+  deep: boolean,
+  arrowFilter?: string,
+  cacheKey = levelId,
+): Promise<LeaderboardEntry[]> {
   const encodedLevel = encodeURIComponent(levelId);
+  const params = new URLSearchParams();
+  if (deep) params.set("deep", "1");
+  if (arrowFilter) params.set("arrowFilter", arrowFilter);
+  const query = params.toString();
   let lastStatus = 0;
   for (let attempt = 0; attempt < 4; attempt++) {
-    const response = await fetch(`${BASE_URL}/${encodedLevel}${deep ? "?deep=1" : ""}`);
+    const response = await fetch(`${BASE_URL}/${encodedLevel}${query ? `?${query}` : ""}`);
     if (response.ok) {
       const data = (await response.json()) as LeaderboardEntry[];
       // Merge rather than replace: a single-board refresh must not drop PBs the
       // bulk snapshot already surfaced for this level.
       const merged = mergeLeaderboardUpdates(
-        { [levelId]: leaderboardCache[levelId]?.data ?? [] },
-        { [levelId]: data },
+        { [cacheKey]: leaderboardCache[cacheKey]?.data ?? [] },
+        { [cacheKey]: data },
       );
-      leaderboardCache[levelId] = { data: merged[levelId], timestamp: Date.now() };
-      return merged[levelId];
+      leaderboardCache[cacheKey] = { data: merged[cacheKey], timestamp: Date.now() };
+      return merged[cacheKey];
     }
     lastStatus = response.status;
     if (response.status !== 502 && response.status !== 429) break;
     await sleep(500 * 2 ** attempt + Math.random() * 250);
   }
   // Fall back to stale cached data instead of blowing up the UI.
-  if (leaderboardCache[levelId]) return leaderboardCache[levelId].data;
+  if (leaderboardCache[cacheKey]) return leaderboardCache[cacheKey].data;
   throw new Error(`Failed to fetch leaderboard for ${levelId} (status ${lastStatus})`);
 }
 
@@ -123,20 +135,23 @@ export async function fetchLeaderboard(
   levelId: string,
   forceRefresh = false,
   deep = false,
+  arrowFilter?: string,
 ): Promise<LeaderboardEntry[]> {
+  // Cache per arrow so a filtered board never overwrites the unfiltered one.
+  const cacheKey = arrowFilter ? `${levelId}|${arrowFilter}` : levelId;
   const now = Date.now();
   if (
     !forceRefresh &&
-    leaderboardCache[levelId] &&
-    now - leaderboardCache[levelId].timestamp < CACHE_TTL
+    leaderboardCache[cacheKey] &&
+    now - leaderboardCache[cacheKey].timestamp < CACHE_TTL
   ) {
-    return leaderboardCache[levelId].data;
+    return leaderboardCache[cacheKey].data;
   }
 
-  const key = `${levelId}:${deep ? "deep" : "flat"}`;
+  const key = `${cacheKey}:${deep ? "deep" : "flat"}`;
   const pending = inflight[key] as Promise<LeaderboardEntry[]> | undefined;
   if (pending) return pending;
-  const promise = requestLeaderboard(levelId, deep).finally(() => {
+  const promise = requestLeaderboard(levelId, deep, arrowFilter, cacheKey).finally(() => {
     delete inflight[key];
   });
   inflight[key] = promise;
