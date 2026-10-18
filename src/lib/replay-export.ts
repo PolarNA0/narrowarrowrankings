@@ -547,22 +547,39 @@ async function pickEncoderCodec(
  * the realtime path call `exportReplayVideoRealtime`.
  */
 export async function exportReplayVideo(opts: ExportOptions): Promise<Blob> {
-  if (canExportOffline()) {
-    const offline = await tryExportOffline(opts);
-    if (offline) return offline;
-    // H.264/MP4 is the preferred output, but a browser can pick the avc1 codec
-    // string and still fail to hand back a decoder description (or the muxed
-    // file can turn out unplayable). Rather than fall all the way back to the
-    // heavy realtime recorder, retry the offline encoder with the WebM codecs,
-    // which is still exact and lag-free and always decodable in the browsers
-    // that can export at all.
-    const webm = await tryExportOffline(opts, true);
-    if (webm) return webm;
-    throw new Error(
-      "Video encoding failed — the clip may be too large for this device. Try a smaller size or lower frame rate.",
-    );
+  // A device can run out of memory or hit an encoder limit part-way through a
+  // long or high-resolution clip (the failure lands near the end, once the
+  // encoded frames and the encoder's own buffers have accumulated). Rather than
+  // surface that as a hard failure — or a half-written file — retry the whole
+  // export at a smaller canvas, which shrinks the frame buffer quadratically.
+  const SCALES = [1, 0.7, 0.5];
+  for (const scale of SCALES) {
+    const attempt: ExportOptions =
+      scale === 1
+        ? opts
+        : {
+            ...opts,
+            width: Math.max(2, Math.round(opts.width * scale)),
+            height: Math.max(2, Math.round(opts.height * scale)),
+          };
+    if (canExportOffline()) {
+      // H.264/MP4 is the preferred output, but a browser can pick the avc1
+      // codec string and still fail to hand back a decoder description (or the
+      // muxed file can turn out unplayable). Rather than fall all the way back
+      // to the heavy realtime recorder, retry the offline encoder with the WebM
+      // codecs, which is still exact and lag-free and always decodable in the
+      // browsers that can export at all.
+      const offline = await tryExportOffline(attempt);
+      if (offline) return offline;
+      const webm = await tryExportOffline(attempt, true);
+      if (webm) return webm;
+    } else {
+      return exportWithMediaRecorder(attempt);
+    }
   }
-  return exportWithMediaRecorder(opts);
+  throw new Error(
+    "Video encoding failed — the clip may be too large for this device. Try a smaller size or lower frame rate.",
+  );
 }
 
 /** Explicit realtime capture, for browsers without WebCodecs. */
