@@ -44,6 +44,49 @@ export interface PlayFrame {
 export interface PlayCanvasHandle {
   /** Repaint from the current `getFrame()` result. */
   redraw(): void;
+  /** Multiply the live zoom by `factor`, clamped to a sane range. */
+  zoomBy(factor: number): void;
+  /** Zoom so the whole level fits the viewport, centred on its bounds. */
+  fit(): void;
+}
+
+/** Axis-aligned world bounds of a level's obstacles, padded a little. */
+function geometryBounds(geometry: SimGeometry) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const add = (x: number, y: number) => {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  };
+  for (const w of geometry.walls) {
+    const half = w.thickness / 2;
+    if (w.pivot && w.rotationSpeed) {
+      const r = Math.max(
+        Math.hypot(w.ax - w.pivot.x, w.ay - w.pivot.y),
+        Math.hypot(w.bx - w.pivot.x, w.by - w.pivot.y),
+      );
+      add(w.pivot.x - r, w.pivot.y - r);
+      add(w.pivot.x + r, w.pivot.y + r);
+    } else {
+      add(w.ax - half, w.ay - half);
+      add(w.bx + half, w.by + half);
+    }
+  }
+  for (const z of geometry.zones) {
+    add(z.x0, z.y0);
+    add(z.x1, z.y1);
+  }
+  for (const p of geometry.portals) {
+    add(p.ax, p.ay);
+    add(p.bx, p.by);
+  }
+  if (!Number.isFinite(minX)) return null;
+  const pad = 40;
+  return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
 }
 
 export interface PlayCanvasProps {
@@ -112,8 +155,37 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
   };
 
   const drawRef = React.useRef<() => void>(() => {});
+  // User zoom on top of the follow camera's speed-based zoom (1 = the camera's
+  // own zoom). The follow camera owns `zoom`; this is a separate multiplier so
+  // zooming in does not fight the dynamic-zoom easing.
+  const zoomFactorRef = React.useRef(1);
 
-  React.useImperativeHandle(ref, () => ({ redraw: () => drawRef.current() }), []);
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      redraw: () => drawRef.current(),
+      zoomBy: (factor: number) => {
+        zoomFactorRef.current = Math.max(0.1, Math.min(20, zoomFactorRef.current * factor));
+        drawRef.current();
+      },
+      fit: () => {
+        const b = geometryBounds(propsRef.current.geometry);
+        const parent = canvasRef.current?.parentElement;
+        if (!b || !parent) return;
+        const w = parent.clientWidth || window.innerWidth;
+        const h = (fill ? parent.clientHeight : height) || window.innerHeight;
+        const spanX = Math.max(1, b.maxX - b.minX);
+        const spanY = Math.max(1, b.maxY - b.minY);
+        // Express the fit as a multiple of the camera's base zoom so it holds
+        // whether or not the follow camera is easing with speed.
+        const base = settingsRef.current.zoom || 1;
+        const desired = Math.min(w / spanX, h / spanY);
+        zoomFactorRef.current = Math.max(0.1, Math.min(20, desired / base));
+        drawRef.current();
+      },
+    }),
+    [fill, height],
+  );
 
   React.useEffect(() => {
     const canvas = canvasRef.current;
@@ -169,7 +241,9 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
       const dt = SIM_TICK_MS / 1000;
       cameraRef.current.follow(p.x, p.y, (p.x - prev.x) / dt, (p.y - prev.y) / dt, dt);
       const cam = cameraRef.current;
-      scale = cam.zoom;
+      // The user's zoom multiplier scales the follow camera's own zoom, so a
+      // manual zoom-in stays put while the camera eases with speed.
+      scale = cam.zoom * zoomFactorRef.current;
       offX = width / 2 - cam.x * scale;
       offY = viewH / 2 - cam.y * scale;
       tx = (wx: number) => wx * scale + offX;

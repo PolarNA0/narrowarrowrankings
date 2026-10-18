@@ -194,6 +194,9 @@ export function PlayView({
   // A checkpoint the level load should resume from once the engine is ready.
   const pendingCheckpointRef = React.useRef<PlayCheckpoint | null>(null);
   const focusKeyRef = React.useRef<string | null>(null);
+  // Set when a handoff asks for the run to begin as soon as the level loads
+  // (e.g. the editor's "Open in Play"), so the clock starts without a Start click.
+  const autoStartRef = React.useRef(false);
 
   const gameRef = React.useRef<PlayGame | null>(null);
   const canvasRef = React.useRef<PlayCanvasHandle | null>(null);
@@ -326,6 +329,11 @@ export function PlayView({
               `Ready at checkpoint ${fmtTime((resume.tick * SIM_TICK_MS) / 1000)} — press Resume`,
             );
           }
+        } else if (autoStartRef.current) {
+          // A handoff (e.g. "Open in Play") asked to run straight away.
+          autoStartRef.current = false;
+          game.restart();
+          setPhase("running");
         }
         canvasRef.current?.redraw();
       } catch (e) {
@@ -357,6 +365,9 @@ export function PlayView({
     setLevelId(SITE_LEVEL_ID);
     setLevelName(siteLevel.level.name);
     setSiteRevision((r) => r + 1);
+    // "Open in Play" should drop straight into a running run, matching the
+    // editor's own Test play, rather than an idle spawn that needs a Start click.
+    autoStartRef.current = true;
   }, [siteLevel]);
 
   // Refresh the saved checkpoints whenever the level or arrow changes, and after
@@ -384,6 +395,8 @@ export function PlayView({
       setLevelId(focus.levelId);
       if (focus.arrowName) setArrowName(focus.arrowName);
       setSiteRevision((r) => r + 1);
+      // A bare "open" handoff (a site level's Play button) starts running.
+      autoStartRef.current = true;
       void fetchSiteLevel(siteId)
         .then((rec) => {
           if (rec) setLevelName(rec.name);
@@ -507,7 +520,9 @@ export function PlayView({
     const up = (e: KeyboardEvent) => {
       heldRef.current.delete(e.code);
     };
-    const blur = () => heldRef.current.clear();
+    const blur = () => {
+      heldRef.current.clear();
+    };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
     window.addEventListener("blur", blur);

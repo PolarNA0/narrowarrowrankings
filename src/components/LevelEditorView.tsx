@@ -290,6 +290,18 @@ export function LevelEditorView({
     gameRef.current = null;
   };
 
+  // Zoom/fit act on whichever canvas is showing: the editor while authoring, the
+  // live game while test-playing (the editor canvas is unmounted then, so
+  // targeting it alone would make the buttons silently no-op during a test run).
+  const zoomBy = (factor: number) => {
+    if (testing) playCanvasRef.current?.zoomBy(factor);
+    else canvasRef.current?.zoomBy(factor);
+  };
+  const fitView = () => {
+    if (testing) playCanvasRef.current?.fit();
+    else canvasRef.current?.fit();
+  };
+
   React.useEffect(() => {
     if (!testing) return;
     let last = 0;
@@ -596,13 +608,13 @@ export function LevelEditorView({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => canvasRef.current?.zoomBy(1.2)}>
+            <Button variant="outline" size="sm" onClick={() => zoomBy(1.2)}>
               <ZoomIn className="w-3.5 h-3.5" />
             </Button>
-            <Button variant="outline" size="sm" onClick={() => canvasRef.current?.zoomBy(1 / 1.2)}>
+            <Button variant="outline" size="sm" onClick={() => zoomBy(1 / 1.2)}>
               <ZoomOut className="w-3.5 h-3.5" />
             </Button>
-            <Button variant="outline" size="sm" onClick={() => canvasRef.current?.fit()}>
+            <Button variant="outline" size="sm" onClick={fitView}>
               <Maximize className="w-3.5 h-3.5" />
             </Button>
             <div className="flex-1" />
