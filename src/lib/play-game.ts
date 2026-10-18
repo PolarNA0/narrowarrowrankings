@@ -121,7 +121,9 @@ export class PlayGame {
   /** Rewind to the last checkpoint (or the spawn) and resume. */
   restartFromCheckpoint() {
     if (!this.engine) return;
-    const tick = [...this.checkpointTicks.keys()].sort((a, b) => b - a)[0] ?? 0;
+    // Use the dropped-checkpoint set, not the split map: a checkpoint that has
+    // not been crossed yet (just set, or seeded by `playFrom`) is still valid.
+    const tick = [...this.checkpoints].sort((a, b) => b - a)[0] ?? 0;
     this.rewindTo(tick);
     this.phase = "running";
   }
@@ -149,6 +151,45 @@ export class PlayGame {
     if (!this.engine || this.tick === 0) return;
     this.checkpoints.add(this.tick);
     if (!this.snapshots.has(this.tick)) this.snapshots.set(this.tick, this.engine.snapshot());
+  }
+
+  /**
+   * Start a run from a stored prefix: replay `symbols` to recreate the exact
+   * pose and register the end of the prefix as a checkpoint, so the player can
+   * retry that section ("From checkpoint") without redoing the run. Used by the
+   * Play tab to resume from a checkpoint saved off a watched TAS run.
+   */
+  playFrom(symbols: number[]): boolean {
+    if (!this.engine) return false;
+    this.resetRun();
+    const spawn = this.engine.reset();
+    if (spawn) this.spawnPoint = spawn;
+    this.path = spawn ? [spawn] : [];
+    this.symbols = [];
+    this.latest = spawn;
+    this.tick = 0;
+
+    for (const symbol of symbols) {
+      const code = this.engine.stepCode(symbol);
+      this.tick++;
+      this.symbols.push(symbol);
+      if (code !== 0) {
+        // The prefix itself crashes or finishes: keep what ran and stop here.
+        this.latest = this.engine.read();
+        this.path.push(this.latest);
+        this.phase = code === 1 ? "finished" : "dead";
+        return true;
+      }
+    }
+    this.latest = this.engine.read();
+    if (this.latest) this.path.push(this.latest);
+    if (this.tick > 0) {
+      this.checkpoints.add(this.tick);
+      this.snapshots.set(this.tick, this.engine.snapshot());
+    }
+    this.phase = "running";
+    this.accumulator = 0;
+    return true;
   }
 
   /** Clear every checkpoint (e.g. when the level or arrow changes). */
@@ -203,6 +244,11 @@ export class PlayGame {
   /** The latest sampled pose, or null before the first advance. */
   get current(): SimPoint | null {
     return this.latest;
+  }
+
+  /** The input symbols recorded so far, one per tick since the spawn. */
+  get recordedSymbols(): number[] {
+    return this.symbols.slice();
   }
 
   private recordSplits() {

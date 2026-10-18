@@ -24,9 +24,18 @@ export interface TasLoadRequest {
 interface TasLeaderboardViewProps {
   isAdmin?: boolean;
   onLoadRun?: (request: TasLoadRequest) => void;
+  /** Save a practice checkpoint off a watched run, for the Play tab. */
+  onMakeCheckpoint?: (request: TasCheckpointRequest) => void;
   /** Selected level, controlled by the app so it survives Tools tab switches. */
   levelId: string;
   onLevelChange: (id: string) => void;
+}
+
+/** A practice checkpoint request handed up from a watched TAS run. */
+export interface TasCheckpointRequest {
+  levelId: string;
+  arrowName: string;
+  tick: number;
 }
 
 /** One board per arrow, so each has its own winner. */
@@ -45,6 +54,7 @@ const ARROW_BOARDS: { kind: ArrowKind; label: string }[] = [
 export function TasLeaderboardView({
   isAdmin,
   onLoadRun,
+  onMakeCheckpoint,
   levelId,
   onLevelChange,
 }: TasLeaderboardViewProps) {
@@ -237,6 +247,16 @@ export function TasLeaderboardView({
                           inputCount={entry.inputCount}
                           timeMs={entry.timeMs}
                           boardEntries={compareCandidates.filter((c) => c.id !== `tas-${entry.id}`)}
+                          onMakeCheckpoint={
+                            onMakeCheckpoint
+                              ? (cp) =>
+                                  onMakeCheckpoint({
+                                    levelId,
+                                    arrowName: entry.arrowName,
+                                    tick: cp.tick,
+                                  })
+                              : undefined
+                          }
                         />
                         {onLoadRun && (
                           <Button

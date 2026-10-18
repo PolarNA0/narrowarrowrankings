@@ -8,6 +8,7 @@ import {
   RotateCcw,
   ChevronDown,
   SlidersHorizontal,
+  Flag,
 } from "lucide-react";
 import {
   Dialog,
@@ -25,7 +26,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { LEVELS } from "@/constants";
+import { savePlayCheckpoint, type NewPlayCheckpoint } from "@/lib/play-checkpoints";
 import {
   REPLAY_SYMBOLS,
   REPLAY_TICK_MS,
@@ -1520,6 +1523,12 @@ interface TasReplayViewerProps {
   className?: string;
   /** Other runs on this level's board, offered as ghosts to compare against. */
   boardEntries?: CompareCandidate[];
+  /**
+   * Hand a saved practice checkpoint to the Play tab. When set, the viewer
+   * shows a "Play from here" button that stores the run's prefix at the scrub
+   * position, so a player can practise that section in Play.
+   */
+  onMakeCheckpoint?: (cp: NewPlayCheckpoint) => void;
 }
 
 /**
@@ -1537,6 +1546,7 @@ export function TasReplayViewer({
   timeMs,
   className,
   boardEntries,
+  onMakeCheckpoint,
 }: TasReplayViewerProps) {
   const [open, setOpen] = React.useState(false);
   const [state, setState] = React.useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -1607,6 +1617,38 @@ export function TasReplayViewer({
 
   // Playback is driven inside ReplayStage via refs, so this component does not
   // advance `frame` on every animated tick.
+
+  // Save the run's prefix at the current scrub position as a Play checkpoint,
+  // so a watched TAS run can be practised from that exact spot.
+  const makeCheckpoint = React.useCallback(() => {
+    if (!sim || !onMakeCheckpoint) return;
+    const tick = Math.max(0, Math.min(Math.round(frame), (sim.path.length || 1) - 1));
+    const cp = savePlayCheckpoint({
+      levelId,
+      levelName: levelName ?? LEVELS.find((l) => l.id === levelId)?.name ?? levelId,
+      arrowName: arrowName ?? "Narrow Arrow",
+      tick,
+      sourceFinishTick: sim.finishTick,
+      inputs,
+      inputCount: inputCount ?? summary.tickCount,
+      label: `${username ? `${username} · ` : ""}${((tick * SIM_TICK_MS) / 1000).toFixed(3)}s`,
+    });
+    toast.success(`Checkpoint saved at ${((tick * SIM_TICK_MS) / 1000).toFixed(3)}s`, {
+      description: "Play tab → “From checkpoint” to practise this section.",
+    });
+    onMakeCheckpoint(cp);
+  }, [
+    sim,
+    onMakeCheckpoint,
+    frame,
+    levelId,
+    levelName,
+    arrowName,
+    inputs,
+    inputCount,
+    summary.tickCount,
+    username,
+  ]);
 
   const overlays = React.useMemo<ReplayOverlay[]>(
     () =>
@@ -1740,6 +1782,17 @@ export function TasReplayViewer({
 
             {sim && pathLength > 0 && levelData && (
               <div className="flex items-center justify-end gap-2 border-t border-white/5 pt-3">
+                {onMakeCheckpoint && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={makeCheckpoint}
+                    title="Save the run's prefix at the current position as a Play checkpoint"
+                  >
+                    <Flag className="w-3.5 h-3.5" /> Play from here
+                  </Button>
+                )}
                 <ReplayExportDialog
                   sim={sim}
                   geometry={geometry}

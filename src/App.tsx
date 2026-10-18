@@ -443,6 +443,13 @@ export default function App() {
   >("leaderboard");
   /** A TAS entry the leaderboard asked the editor to open. */
   const [tasLoad, setTasLoad] = useState<TasLoadRequest | null>(null);
+  /** A practice checkpoint a TAS viewer asked the Play tab to open. */
+  const [playFocus, setPlayFocus] = useState<{
+    levelId: string;
+    arrowName: string;
+    tick: number;
+    key: string;
+  } | null>(null);
   // The TAS leaderboard's picked level lives here, not inside the view, so
   // switching Tools tabs (which unmounts the view) keeps the selection instead
   // of snapping back to the first level.
@@ -999,7 +1006,6 @@ export default function App() {
     return result;
   }, [allLevelsData, mappedLegacyRuns, removedKeys]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const selectedPlayerStats = useMemo(
     () => (selectedPlayer ? getPlayerStats(selectedPlayer) : null),
     [
@@ -2549,11 +2555,24 @@ export default function App() {
               setTasLoad(request);
               navigateView("tas");
             }}
+            onMakeCheckpoint={(request) => {
+              setPlayFocus({
+                levelId: request.levelId,
+                arrowName: request.arrowName,
+                tick: request.tick,
+                key: `${request.levelId}:${request.arrowName}:${request.tick}:${Date.now()}`,
+              });
+              navigateView("play");
+            }}
           />
         ) : view === "brute" ? (
           <BruteView />
         ) : view === "play" ? (
-          <PlayView levels={dynamicLevels} />
+          <PlayView
+            levels={dynamicLevels}
+            focus={playFocus}
+            onFocusHandled={() => setPlayFocus(null)}
+          />
         ) : view === "score" ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">

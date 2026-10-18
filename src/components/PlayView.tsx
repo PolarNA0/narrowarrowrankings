@@ -26,6 +26,8 @@ import {
   Loader2,
   AlertCircle,
   ChevronRight,
+  Bookmark,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -55,6 +57,13 @@ import {
   type PlayInputSettings,
 } from "@/lib/play-input";
 import { decodeInputSymbols, encodeInputSymbols } from "@/lib/replay";
+import {
+  listPlayCheckpoints,
+  playCheckpointsFor,
+  deletePlayCheckpoint,
+  savePlayCheckpoint,
+  type PlayCheckpoint,
+} from "@/lib/play-checkpoints";
 import {
   arrowConstants,
   SIM_TICK_MS,
@@ -111,7 +120,16 @@ function loadBest(levelId: string, arrow: string): StoredBest | null {
   }
 }
 
-export function PlayView({ levels }: { levels: LevelOption[] }) {
+export function PlayView({
+  levels,
+  focus,
+  onFocusHandled,
+}: {
+  levels: LevelOption[];
+  /** A checkpoint handed over from a TAS viewer, to load and play immediately. */
+  focus?: { levelId: string; arrowName: string; tick: number; key: string } | null;
+  onFocusHandled?: () => void;
+}) {
   const [levelId, setLevelId] = React.useState(levels[0]?.id ?? "");
   const [levelName, setLevelName] = React.useState(levels[0]?.name ?? "");
   const [arrowName, setArrowName] = React.useState<string>(ARROWS[0]);
@@ -134,8 +152,16 @@ export function PlayView({ levels }: { levels: LevelOption[] }) {
   const [showSettings, setShowSettings] = React.useState(false);
   const [submitOpen, setSubmitOpen] = React.useState(false);
 
+  const [savedCheckpoints, setSavedCheckpoints] = React.useState<PlayCheckpoint[]>([]);
+  // A checkpoint the level load should resume from once the engine is ready.
+  const pendingCheckpointRef = React.useRef<PlayCheckpoint | null>(null);
+  const focusKeyRef = React.useRef<string | null>(null);
+
   const gameRef = React.useRef<PlayGame | null>(null);
   const canvasRef = React.useRef<PlayCanvasHandle | null>(null);
+  // Bumped on every load so a stale (superseded) load can't clobber the engine
+  // when the level/arrow changes again before its fetch resolves.
+  const loadSeqRef = React.useRef(0);
   const geometryRef = React.useRef<SimGeometry>({ walls: [], zones: [], portals: [] });
   const levelDataRef = React.useRef<RawLevelData | null>(null);
   const heldRef = React.useRef<Set<string>>(new Set());
@@ -184,6 +210,7 @@ export function PlayView({ levels }: { levels: LevelOption[] }) {
 
   const loadLevel = React.useCallback(
     async (id: string, arrowToUse: string) => {
+      const seq = ++loadSeqRef.current;
       setLoading(true);
       setError(null);
       try {
@@ -194,6 +221,7 @@ export function PlayView({ levels }: { levels: LevelOption[] }) {
         const payload = (await res.json()) as { levelInfo?: { data?: RawLevelData } };
         const data = payload.levelInfo?.data ?? null;
         if (!data) throw new Error("Level has no geometry");
+        if (seq !== loadSeqRef.current) return;
 
         gameRef.current?.free();
         const game = new PlayGame({
@@ -208,6 +236,10 @@ export function PlayView({ levels }: { levels: LevelOption[] }) {
           },
         });
         const ok = await game.load();
+        if (seq !== loadSeqRef.current) {
+          game.free();
+          return;
+        }
         if (!ok) throw new Error("Physics engine failed to initialise");
         gameRef.current = game;
         levelDataRef.current = data;
@@ -221,6 +253,22 @@ export function PlayView({ levels }: { levels: LevelOption[] }) {
         setGhost(null);
         setGhostChoice("none");
         setWrTimeMs(null);
+
+        // Resume from a handed-over checkpoint (or one queued while loading).
+        const resume = pendingCheckpointRef.current;
+        if (resume && resume.levelId === id && resume.arrowName === arrowToUse) {
+          pendingCheckpointRef.current = null;
+          if (game.playFrom(resume.prefixSymbols)) {
+            // Start paused so the player can get ready before the clock runs.
+            game.pause();
+            setTick(game.tick);
+            setCheckpoints(game.checkpointList);
+            setPhase(game.phase);
+            toast.message(
+              `Ready at checkpoint ${fmtTime((resume.tick * SIM_TICK_MS) / 1000)} — press Resume`,
+            );
+          }
+        }
         canvasRef.current?.redraw();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -236,6 +284,57 @@ export function PlayView({ levels }: { levels: LevelOption[] }) {
   React.useEffect(() => {
     if (levelId) void loadLevel(levelId, arrowName);
   }, [levelId, arrowName, loadLevel]);
+
+  // Refresh the saved checkpoints whenever the level or arrow changes, and after
+  // any save/delete (bumped through `savedCheckpoints`).
+  const refreshSaved = React.useCallback(() => {
+    setSavedCheckpoints(playCheckpointsFor(levelId, arrowName));
+  }, [levelId, arrowName]);
+  React.useEffect(() => {
+    refreshSaved();
+  }, [refreshSaved]);
+
+  // A checkpoint handed over from a TAS viewer: switch to its level+arrow and
+  // resume from it. If that level+arrow is already loaded the resume is applied
+  // here directly; otherwise it is queued for `loadLevel` (the level change
+  // re-runs the load effect, which also resets the phase, so applying here would
+  // be overwritten).
+  React.useEffect(() => {
+    if (!focus || focusKeyRef.current === focus.key) return;
+    focusKeyRef.current = focus.key;
+    const cp = listPlayCheckpoints().find(
+      (c) =>
+        c.levelId === focus.levelId && c.arrowName === focus.arrowName && c.tick === focus.tick,
+    );
+    if (!cp) {
+      onFocusHandled?.();
+      return;
+    }
+    const game = gameRef.current;
+    if (cp.levelId === levelId && cp.arrowName === arrowName && game) {
+      setResult(null);
+      if (game.playFrom(cp.prefixSymbols)) {
+        game.pause();
+        setTick(game.tick);
+        setSplits([]);
+        setCheckpoints(game.checkpointList);
+        setPhase(game.phase);
+        canvasRef.current?.redraw();
+        toast.message(
+          `Ready at checkpoint ${fmtTime((cp.tick * SIM_TICK_MS) / 1000)} — press Resume`,
+        );
+      }
+      onFocusHandled?.();
+      return;
+    }
+    // Different level/arrow: queue the resume and switch, which reloads the level.
+    pendingCheckpointRef.current = cp;
+    const option = levels.find((l) => l.id === cp.levelId);
+    setLevelId(cp.levelId);
+    setLevelName(option?.name ?? cp.levelName);
+    setArrowName(cp.arrowName);
+    onFocusHandled?.();
+  }, [focus, levels, onFocusHandled, levelId, arrowName]);
 
   React.useEffect(() => {
     setSettings(loadInputSettings());
@@ -370,6 +469,56 @@ export function PlayView({ levels }: { levels: LevelOption[] }) {
     game.setCheckpoint();
     setCheckpoints([...checkpointRef.current]);
     if (game.tick > 0) toast.message(`Checkpoint at ${fmtTime((game.tick * SIM_TICK_MS) / 1000)}`);
+  };
+
+  // ---- saved practice checkpoints -------------------------------------------
+
+  const playSaved = (cp: PlayCheckpoint) => {
+    const game = gameRef.current;
+    if (!game) return;
+    // A checkpoint from another level/arrow needs a reload; same level+arrow
+    // just re-seeds the live engine.
+    if (cp.levelId !== levelId || cp.arrowName !== arrowName) {
+      pendingCheckpointRef.current = cp;
+      setLevelId(cp.levelId);
+      setLevelName(cp.levelName);
+      setArrowName(cp.arrowName);
+      return;
+    }
+    setResult(null);
+    if (game.playFrom(cp.prefixSymbols)) {
+      game.pause();
+      setTick(game.tick);
+      setSplits([]);
+      setCheckpoints(game.checkpointList);
+      setPhase(game.phase);
+      canvasRef.current?.redraw();
+      toast.message(
+        `Ready at checkpoint ${fmtTime((cp.tick * SIM_TICK_MS) / 1000)} — press Resume`,
+      );
+    }
+  };
+
+  const saveCurrentAsCheckpoint = () => {
+    const game = gameRef.current;
+    if (!game || game.tick === 0) return;
+    savePlayCheckpoint({
+      levelId,
+      levelName,
+      arrowName,
+      tick: game.tick,
+      sourceFinishTick: null,
+      inputs: encodeInputSymbols(game.recordedSymbols),
+      inputCount: game.recordedSymbols.length,
+      label: `My run · ${fmtTime((game.tick * SIM_TICK_MS) / 1000)}`,
+    });
+    refreshSaved();
+    toast.success("Checkpoint saved");
+  };
+
+  const removeSaved = (id: string) => {
+    deletePlayCheckpoint(id);
+    refreshSaved();
   };
 
   // ---- ghosts ---------------------------------------------------------------
@@ -594,6 +743,16 @@ export function PlayView({ levels }: { levels: LevelOption[] }) {
             >
               <RotateCcw className="w-4 h-4" /> From checkpoint
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={saveCurrentAsCheckpoint}
+              disabled={loading || phase === "idle" || tick === 0}
+              title="Save the current position as a practice checkpoint"
+            >
+              <Bookmark className="w-4 h-4" /> Save
+            </Button>
             <div className="ml-auto font-mono text-2xl tabular-nums">
               {fmtTime(runTimeMs / 1000)}
             </div>
@@ -712,6 +871,47 @@ export function PlayView({ levels }: { levels: LevelOption[] }) {
                   <li key={s.index} className="flex items-center justify-between">
                     <span className="text-slate-400">CP{i + 1}</span>
                     <span className="tabular-nums">{fmtTime(s.timeSec)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Saved practice checkpoints (this level + arrow) */}
+          <div className="rounded-lg border border-border bg-card p-3">
+            <div className="text-xs font-semibold text-slate-300 mb-2 flex items-center gap-1">
+              <Bookmark className="w-3.5 h-3.5" /> Practice checkpoints
+            </div>
+            {savedCheckpoints.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                None for this level and arrow. Watch a TAS run and press “Play from here”, or drop
+                one during a run and press Save.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {savedCheckpoints.map((cp) => (
+                  <li key={cp.id} className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 justify-start gap-1.5 h-8 text-xs font-mono"
+                      onClick={() => playSaved(cp)}
+                    >
+                      <Play className="w-3.5 h-3.5" />
+                      {fmtTime((cp.tick * SIM_TICK_MS) / 1000)}
+                      <span className="ml-auto text-slate-500 truncate max-w-[8rem]">
+                        {cp.label}
+                      </span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-slate-500 hover:text-red-400"
+                      onClick={() => removeSaved(cp.id)}
+                      title="Delete checkpoint"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
                   </li>
                 ))}
               </ul>
