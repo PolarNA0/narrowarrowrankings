@@ -59,8 +59,8 @@ import {
   type SkinConfig,
 } from "@/lib/replay-visuals";
 import { arrowKind, drawArrowSprite, type ArrowKind } from "@/lib/arrow-sprites";
+import { CameraSettingsPanel } from "@/components/CameraSettingsPanel";
 import {
-  CAMERA_PRESETS,
   DEFAULT_GAME_CAMERA,
   FollowCamera,
   GAME_COLLISION_COLOR,
@@ -68,11 +68,8 @@ import {
   GAME_PORTAL_COLORS,
   GAME_THRUST_COLORS,
   GAME_WALL_THICKNESS,
-  cameraPreset,
-  checkerAt,
   gameWallColor,
   gameZoneColor,
-  type CameraPreset,
   type CameraSettings,
 } from "@/lib/replay-render";
 import {
@@ -1366,55 +1363,7 @@ export function ReplayStage({
         )}
       </div>
       {mode === "game" && showCamera && (
-        <div className="rounded-lg border border-white/10 bg-black/30 p-3 space-y-2.5">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-slate-400 w-28">Preset</span>
-            <div className="flex gap-1">
-              {(Object.keys(CAMERA_PRESETS) as CameraPreset[]).map((p) => (
-                <Button
-                  key={p}
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "h-6 px-2 text-[11px] capitalize",
-                    cameraSettings.preset === p ? "bg-white/15 text-slate-100" : "text-slate-400",
-                  )}
-                  onClick={() => setCameraSettings(cameraPreset(p))}
-                >
-                  {p}
-                </Button>
-              ))}
-            </div>
-          </div>
-          {(
-            [
-              ["Zoom", "zoom", 0.4, 5, 0.05],
-              ["Dynamic Zoom", "dynamicZoom", 0, 1.2, 0.05],
-              ["Zoom Smoothness", "zoomSmoothness", 4, 10, 0.5],
-              ["Move Ahead", "moveAhead", 0, 6, 0.1],
-              ["Movement Smoothness", "movementSmoothness", 2, 7, 0.5],
-            ] as const
-          ).map(([label, key, min, max, step]) => (
-            <label key={key} className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-400 w-28">{label}</span>
-              <input
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={cameraSettings[key]}
-                onChange={(e) =>
-                  setCameraSettings((s) => ({ ...s, [key]: Number(e.target.value) }))
-                }
-                className="flex-1 accent-[var(--app-accent)]"
-                aria-label={label}
-              />
-              <span className="font-mono text-[10px] text-slate-400 w-8 text-right">
-                {cameraSettings[key].toFixed(2)}
-              </span>
-            </label>
-          ))}
-        </div>
+        <CameraSettingsPanel settings={cameraSettings} onChange={setCameraSettings} />
       )}
       <div className="rounded-lg overflow-hidden border border-white/10 bg-[#07070b]">
         <canvas
@@ -1548,6 +1497,11 @@ interface TasReplayViewerProps {
   inputCount?: number;
   timeMs?: number;
   className?: string;
+  /**
+   * Pre-loaded level geometry. Site levels are not on the upstream level API,
+   * so their board passes the payload in rather than letting the viewer fetch it.
+   */
+  levelData?: RawLevelData | null;
   /** Other runs on this level's board, offered as ghosts to compare against. */
   boardEntries?: CompareCandidate[];
   /**
@@ -1572,6 +1526,7 @@ export function TasReplayViewer({
   inputCount,
   timeMs,
   className,
+  levelData: levelDataProp,
   boardEntries,
   onMakeCheckpoint,
 }: TasReplayViewerProps) {
@@ -1590,8 +1545,10 @@ export function TasReplayViewer({
   const loadedRef = React.useRef<string | null>(null);
 
   // Ghost compare state: the level geometry is cached so each ticked run only
-  // costs one simulation, not another geometry fetch.
-  const [levelData, setLevelData] = React.useState<RawLevelData | null>(null);
+  // costs one simulation, not another geometry fetch. A passed-in payload (site
+  // level) takes precedence over the upstream fetch.
+  const [fetchedLevelData, setFetchedLevelData] = React.useState<RawLevelData | null>(null);
+  const levelData = levelDataProp ?? fetchedLevelData;
   const [selectedGhostIds, setSelectedGhostIds] = React.useState<string[]>([]);
 
   const candidates = React.useMemo(() => boardEntries ?? [], [boardEntries]);
@@ -1609,23 +1566,29 @@ export function TasReplayViewer({
     let cancelled = false;
     setState("loading");
     setSim(null);
-    setLevelData(null);
+    setFetchedLevelData(null);
     setSelectedGhostIds([]);
     setFrame(0);
     setPlaying(true);
 
     (async () => {
       try {
-        const levelRes = await fetch(`/api/level-details/${encodeURIComponent(levelId)}`, {
-          signal: AbortSignal.timeout(20000),
-        });
-        if (!levelRes.ok) throw new Error(String(levelRes.status));
-        const payload = (await levelRes.json()) as { levelInfo?: { data?: RawLevelData } };
-        const data = payload.levelInfo?.data ?? null;
+        let data: RawLevelData | null;
+        if (levelDataProp) {
+          // A site level: its geometry was handed in, so there is nothing to fetch.
+          data = levelDataProp;
+        } else {
+          const levelRes = await fetch(`/api/level-details/${encodeURIComponent(levelId)}`, {
+            signal: AbortSignal.timeout(20000),
+          });
+          if (!levelRes.ok) throw new Error(String(levelRes.status));
+          const payload = (await levelRes.json()) as { levelInfo?: { data?: RawLevelData } };
+          data = payload.levelInfo?.data ?? null;
+        }
         if (!data) throw new Error("no geometry");
         if (cancelled) return;
         setGeometry(levelGeometry(data));
-        setLevelData(data);
+        setFetchedLevelData(data);
         const result = await simulateRun(inputs, inputCount, data, {}, arrowName);
         if (cancelled) return;
         setSim(result);
@@ -1640,7 +1603,7 @@ export function TasReplayViewer({
     return () => {
       cancelled = true;
     };
-  }, [open, levelId, inputs, inputCount, arrowName, attempt]);
+  }, [open, levelId, levelDataProp, inputs, inputCount, arrowName, attempt]);
 
   // Playback is driven inside ReplayStage via refs, so this component does not
   // advance `frame` on every animated tick.

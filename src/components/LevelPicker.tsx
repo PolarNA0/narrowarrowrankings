@@ -5,10 +5,13 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { LEVELS } from "@/constants";
+import { fetchSiteLevels } from "@/lib/site-levels";
 
 export interface PickedLevel {
   id: string;
   name: string;
+  /** True when the id refers to a site-hosted level (id is `site:<siteId>`). */
+  site?: boolean;
 }
 
 interface CommunityLevel {
@@ -17,8 +20,15 @@ interface CommunityLevel {
   name?: string;
 }
 
+/** The id prefix a site level carries through the picker. */
+export const SITE_ID_PREFIX = "site:";
+/** The raw site level id behind a `site:<id>` picker value. */
+export function siteIdOf(pickerId: string): string | null {
+  return pickerId.startsWith(SITE_ID_PREFIX) ? pickerId.slice(SITE_ID_PREFIX.length) : null;
+}
+
 /** Officials come from the bundled level list; community levels are fetched. */
-type Tab = "officials" | "community";
+type Tab = "officials" | "community" | "site";
 
 /**
  * A searchable level picker for the tools views. Officials are filtered locally
@@ -42,6 +52,7 @@ export function LevelPicker({
   const [tab, setTab] = React.useState<Tab>("officials");
   const [query, setQuery] = React.useState("");
   const [community, setCommunity] = React.useState<PickedLevel[]>([]);
+  const [site, setSite] = React.useState<PickedLevel[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -94,16 +105,53 @@ export function LevelPicker({
     };
   }, [tab, query]);
 
+  // Site levels are site-hosted, so they load in one request and are filtered
+  // locally; the picker value is prefixed so callers can tell them apart.
+  React.useEffect(() => {
+    if (tab !== "site" || site.length > 0) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetchSiteLevels()
+      .then((levels) => {
+        if (cancelled) return;
+        setSite(
+          levels.map((l) => ({
+            id: `${SITE_ID_PREFIX}${l.id}`,
+            name: l.name,
+            site: true,
+          })),
+        );
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, site.length]);
+
+  const siteMatches = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return site;
+    return site.filter((l) => l.name.toLowerCase().includes(q) || l.id.toLowerCase().includes(q));
+  }, [site, query]);
+
   const displayName = React.useMemo(() => {
     const inMemory = extra?.find((l) => l.id === value);
     if (inMemory) return inMemory.name;
     const official = LEVELS.find((l) => l.id === value);
     if (official) return official.name;
     const picked = community.find((l) => l.id === value);
-    return picked?.name ?? value;
-  }, [value, community, extra]);
+    if (picked) return picked.name;
+    const sitePicked = site.find((l) => l.id === value);
+    return sitePicked?.name ?? value;
+  }, [value, community, site, extra]);
 
-  const list = tab === "officials" ? officialMatches : community;
+  const list = tab === "officials" ? officialMatches : tab === "community" ? community : siteMatches;
 
   const pick = (level: PickedLevel) => {
     onChange(level);
@@ -131,7 +179,7 @@ export function LevelPicker({
         className="w-[22rem] p-0 bg-[#1a1a1a] border-white/10 text-slate-200"
       >
         <div className="flex items-center gap-1 border-b border-white/10 p-1">
-          {(["officials", "community"] as const).map((t) => (
+          {(["officials", "community", "site"] as const).map((t) => (
             <button
               key={t}
               className={cn(
@@ -142,7 +190,7 @@ export function LevelPicker({
               )}
               onClick={() => setTab(t)}
             >
-              {t === "officials" ? "Officials" : "Community"}
+              {t === "officials" ? "Officials" : t === "community" ? "Community" : "Site"}
             </button>
           ))}
         </div>
@@ -151,7 +199,13 @@ export function LevelPicker({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={tab === "officials" ? "Search official levels" : "Search community levels"}
+            placeholder={
+              tab === "officials"
+                ? "Search official levels"
+                : tab === "community"
+                  ? "Search community levels"
+                  : "Search site levels"
+            }
             className="h-9 border-0 bg-transparent pl-7 text-xs focus-visible:ring-0"
           />
         </div>
@@ -181,12 +235,13 @@ export function LevelPicker({
               ))}
             </>
           )}
-          {loading && tab === "community" && (
+          {loading && (tab === "community" || tab === "site") && (
             <div className="flex items-center gap-2 px-3 py-2 text-[11px] text-slate-500">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching community levels…
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {tab === "site" ? "Loading site levels…" : "Searching community levels…"}
             </div>
           )}
-          {error && tab === "community" && (
+          {error && (tab === "community" || tab === "site") && (
             <p className="px-3 py-2 text-[11px] text-red-400">{error}</p>
           )}
           {!loading && !error && list.length === 0 && (

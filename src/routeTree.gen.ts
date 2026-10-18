@@ -17,6 +17,7 @@ import { Route as ApiInGameMedalsRouteImport } from './routes/api/in-game-medals
 import { Route as ApiOfficialCreatorsRouteImport } from './routes/api/official-creators'
 import { Route as ApiProfilesRouteImport } from './routes/api/profiles'
 import { Route as ApiPublishedLevelsRouteImport } from './routes/api/published-levels'
+import { Route as ApiSiteLevelsRouteImport } from './routes/api/site-levels'
 import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
 import { Route as ApiTasLeaderboardsRouteImport } from './routes/api/tas-leaderboards'
 import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
@@ -27,6 +28,8 @@ import { Route as ApiPublicCategoryWrCheckRouteImport } from './routes/api/publi
 import { Route as ApiPublicSheetsExportRouteImport } from './routes/api/public/sheets-export'
 import { Route as ApiPublicTasWrCheckRouteImport } from './routes/api/public/tas-wr-check'
 import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
+import { Route as ApiSiteLeaderboardLevelRouteImport } from './routes/api/site-leaderboard.$level'
+import { Route as ApiSiteLevelsLevelRouteImport } from './routes/api/site-levels.$level'
 import { Route as ApiSkinsSplatRouteImport } from './routes/api/skins.$'
 import { Route as ApiTasLeaderboardLevelRouteImport } from './routes/api/tas-leaderboard.$level'
 import { Route as ApiUserUsernameRouteImport } from './routes/api/user.$username'
@@ -69,6 +72,11 @@ const ApiProfilesRoute = ApiProfilesRouteImport.update({
 const ApiPublishedLevelsRoute = ApiPublishedLevelsRouteImport.update({
   id: '/api/published-levels',
   path: '/api/published-levels',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSiteLevelsRoute = ApiSiteLevelsRouteImport.update({
+  id: '/api/site-levels',
+  path: '/api/site-levels',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiStartupDataRoute = ApiStartupDataRouteImport.update({
@@ -122,6 +130,16 @@ const ApiRunsRunIdRoute = ApiRunsRunIdRouteImport.update({
   path: '/api/runs/$runId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSiteLeaderboardLevelRoute = ApiSiteLeaderboardLevelRouteImport.update({
+  id: '/api/site-leaderboard/$level',
+  path: '/api/site-leaderboard/$level',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSiteLevelsLevelRoute = ApiSiteLevelsLevelRouteImport.update({
+  id: '/$level',
+  path: '/$level',
+  getParentRoute: () => ApiSiteLevelsRoute,
+} as any)
 const ApiSkinsSplatRoute = ApiSkinsSplatRouteImport.update({
   id: '/api/skins/$',
   path: '/api/skins/$',
@@ -147,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
+  '/api/site-levels': typeof ApiSiteLevelsRouteWithChildren
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -156,6 +175,8 @@ export interface FileRoutesByFullPath {
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
+  '/api/site-leaderboard/$level': typeof ApiSiteLeaderboardLevelRoute
+  '/api/site-levels/$level': typeof ApiSiteLevelsLevelRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
   '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
@@ -170,6 +191,7 @@ export interface FileRoutesByTo {
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
+  '/api/site-levels': typeof ApiSiteLevelsRouteWithChildren
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -179,6 +201,8 @@ export interface FileRoutesByTo {
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
+  '/api/site-leaderboard/$level': typeof ApiSiteLeaderboardLevelRoute
+  '/api/site-levels/$level': typeof ApiSiteLevelsLevelRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
   '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
@@ -194,6 +218,7 @@ export interface FileRoutesById {
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
+  '/api/site-levels': typeof ApiSiteLevelsRouteWithChildren
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -203,6 +228,8 @@ export interface FileRoutesById {
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
+  '/api/site-leaderboard/$level': typeof ApiSiteLeaderboardLevelRoute
+  '/api/site-levels/$level': typeof ApiSiteLevelsLevelRoute
   '/api/skins/$': typeof ApiSkinsSplatRoute
   '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
@@ -219,6 +246,7 @@ export interface FileRouteTypes {
     | '/api/official-creators'
     | '/api/profiles'
     | '/api/published-levels'
+    | '/api/site-levels'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
     | '/api/leaderboard/$level'
@@ -228,6 +256,8 @@ export interface FileRouteTypes {
     | '/api/public/sheets-export'
     | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
+    | '/api/site-leaderboard/$level'
+    | '/api/site-levels/$level'
     | '/api/skins/$'
     | '/api/tas-leaderboard/$level'
     | '/api/user/$username'
@@ -242,6 +272,7 @@ export interface FileRouteTypes {
     | '/api/official-creators'
     | '/api/profiles'
     | '/api/published-levels'
+    | '/api/site-levels'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
     | '/api/leaderboard/$level'
@@ -251,6 +282,8 @@ export interface FileRouteTypes {
     | '/api/public/sheets-export'
     | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
+    | '/api/site-leaderboard/$level'
+    | '/api/site-levels/$level'
     | '/api/skins/$'
     | '/api/tas-leaderboard/$level'
     | '/api/user/$username'
@@ -265,6 +298,7 @@ export interface FileRouteTypes {
     | '/api/official-creators'
     | '/api/profiles'
     | '/api/published-levels'
+    | '/api/site-levels'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
     | '/api/leaderboard/$level'
@@ -274,6 +308,8 @@ export interface FileRouteTypes {
     | '/api/public/sheets-export'
     | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
+    | '/api/site-leaderboard/$level'
+    | '/api/site-levels/$level'
     | '/api/skins/$'
     | '/api/tas-leaderboard/$level'
     | '/api/user/$username'
@@ -289,6 +325,7 @@ export interface RootRouteChildren {
   ApiOfficialCreatorsRoute: typeof ApiOfficialCreatorsRoute
   ApiProfilesRoute: typeof ApiProfilesRoute
   ApiPublishedLevelsRoute: typeof ApiPublishedLevelsRoute
+  ApiSiteLevelsRoute: typeof ApiSiteLevelsRouteWithChildren
   ApiStartupDataRoute: typeof ApiStartupDataRoute
   ApiTasLeaderboardsRoute: typeof ApiTasLeaderboardsRoute
   ApiLeaderboardLevelRoute: typeof ApiLeaderboardLevelRoute
@@ -298,6 +335,7 @@ export interface RootRouteChildren {
   ApiPublicSheetsExportRoute: typeof ApiPublicSheetsExportRoute
   ApiPublicTasWrCheckRoute: typeof ApiPublicTasWrCheckRoute
   ApiRunsRunIdRoute: typeof ApiRunsRunIdRoute
+  ApiSiteLeaderboardLevelRoute: typeof ApiSiteLeaderboardLevelRoute
   ApiSkinsSplatRoute: typeof ApiSkinsSplatRoute
   ApiTasLeaderboardLevelRoute: typeof ApiTasLeaderboardLevelRoute
   ApiUserUsernameRoute: typeof ApiUserUsernameRoute
@@ -360,6 +398,13 @@ declare module '@tanstack/react-router' {
       path: '/api/published-levels'
       fullPath: '/api/published-levels'
       preLoaderRoute: typeof ApiPublishedLevelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/site-levels': {
+      id: '/api/site-levels'
+      path: '/api/site-levels'
+      fullPath: '/api/site-levels'
+      preLoaderRoute: typeof ApiSiteLevelsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/startup-data': {
@@ -432,6 +477,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRunsRunIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/site-leaderboard/$level': {
+      id: '/api/site-leaderboard/$level'
+      path: '/api/site-leaderboard/$level'
+      fullPath: '/api/site-leaderboard/$level'
+      preLoaderRoute: typeof ApiSiteLeaderboardLevelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/site-levels/$level': {
+      id: '/api/site-levels/$level'
+      path: '/$level'
+      fullPath: '/api/site-levels/$level'
+      preLoaderRoute: typeof ApiSiteLevelsLevelRouteImport
+      parentRoute: typeof ApiSiteLevelsRoute
+    }
     '/api/skins/$': {
       id: '/api/skins/$'
       path: '/api/skins/$'
@@ -456,6 +515,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ApiSiteLevelsRouteChildren {
+  ApiSiteLevelsLevelRoute: typeof ApiSiteLevelsLevelRoute
+}
+
+const ApiSiteLevelsRouteChildren: ApiSiteLevelsRouteChildren = {
+  ApiSiteLevelsLevelRoute: ApiSiteLevelsLevelRoute,
+}
+
+const ApiSiteLevelsRouteWithChildren = ApiSiteLevelsRoute._addFileChildren(
+  ApiSiteLevelsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
@@ -465,6 +536,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOfficialCreatorsRoute: ApiOfficialCreatorsRoute,
   ApiProfilesRoute: ApiProfilesRoute,
   ApiPublishedLevelsRoute: ApiPublishedLevelsRoute,
+  ApiSiteLevelsRoute: ApiSiteLevelsRouteWithChildren,
   ApiStartupDataRoute: ApiStartupDataRoute,
   ApiTasLeaderboardsRoute: ApiTasLeaderboardsRoute,
   ApiLeaderboardLevelRoute: ApiLeaderboardLevelRoute,
@@ -474,6 +546,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicSheetsExportRoute: ApiPublicSheetsExportRoute,
   ApiPublicTasWrCheckRoute: ApiPublicTasWrCheckRoute,
   ApiRunsRunIdRoute: ApiRunsRunIdRoute,
+  ApiSiteLeaderboardLevelRoute: ApiSiteLeaderboardLevelRoute,
   ApiSkinsSplatRoute: ApiSkinsSplatRoute,
   ApiTasLeaderboardLevelRoute: ApiTasLeaderboardLevelRoute,
   ApiUserUsernameRoute: ApiUserUsernameRoute,

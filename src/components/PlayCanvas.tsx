@@ -53,6 +53,8 @@ export interface PlayCanvasProps {
   cameraSettings?: CameraSettings;
   className?: string;
   height?: number;
+  /** Fill the parent's height instead of a fixed `height` (for fullscreen play). */
+  fill?: boolean;
 }
 
 export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(function PlayCanvas(
@@ -69,6 +71,7 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
     cameraSettings = DEFAULT_GAME_CAMERA,
     className,
     height = 460,
+    fill = false,
   },
   ref,
 ) {
@@ -113,6 +116,7 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
     if (!ctx) return;
 
     let width = 0;
+    let viewH = height;
     let dpr = 1;
     let scale = 1;
     let offX = 0;
@@ -131,10 +135,11 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
       if (!parent) return;
       dpr = Math.min(2, window.devicePixelRatio || 1);
       width = parent.clientWidth;
+      viewH = fill ? Math.max(1, parent.clientHeight) : height;
       canvas.width = Math.max(1, Math.round(width * dpr));
-      canvas.height = Math.max(1, Math.round(height * dpr));
+      canvas.height = Math.max(1, Math.round(viewH * dpr));
       canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
+      canvas.style.height = `${viewH}px`;
     };
 
     const draw = () => {
@@ -152,13 +157,13 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
       const cam = cameraRef.current;
       scale = cam.zoom;
       offX = width / 2 - cam.x * scale;
-      offY = height / 2 - cam.y * scale;
+      offY = viewH / 2 - cam.y * scale;
       tx = (wx: number) => wx * scale + offX;
       ty = (wy: number) => wy * scale + offY;
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = "#07070b";
-      ctx.fillRect(0, 0, width, height);
+      ctx.fillRect(0, 0, width, viewH);
       paintZones(ctx, s.geometry, { tx, ty, scale, mode: s.mode });
       if (s.geometry.forceFields && s.geometry.forceFields.length > 0) {
         paintForceFields(
@@ -181,7 +186,7 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
           s.ghostColor,
           false,
           { tx, ty, scale, mode: s.mode },
-          { w: width, h: height },
+          { w: width, h: viewH },
         );
         ctx.restore();
       }
@@ -200,7 +205,7 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
         { tx, ty, scale, mode: s.mode },
         {
           w: width,
-          h: height,
+          h: viewH,
         },
       );
       ctx.restore();
@@ -244,7 +249,7 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
         s.tailColor,
       );
 
-      drawInputIndicator(ctx, frame.input, width, height, { color: s.trailColor });
+      drawInputIndicator(ctx, frame.input, width, viewH, { color: s.trailColor });
     };
 
     drawRef.current = draw;
@@ -259,7 +264,7 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
     draw();
 
     return () => observer.disconnect();
-  }, [height]);
+  }, [height, fill]);
 
   return (
     <div className={className}>
