@@ -13,6 +13,13 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
+import {
+  CANONICAL_ORIGIN,
+  OG_IMAGE,
+  SITE_DESCRIPTION,
+  SITE_NAME,
+  SITE_TITLE,
+} from "@/lib/site-meta";
 
 function NotFoundComponent() {
   return (
@@ -79,28 +86,23 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Narrow Arrow Rankings — Leaderboards & Player Ranks" },
-      {
-        name: "description",
-        content:
-          "Live Narrow Arrow leaderboards, player profiles, rank assignments, comparisons and custom level browsing.",
-      },
+      { title: SITE_TITLE },
+      { name: "description", content: SITE_DESCRIPTION },
+      { name: "robots", content: "index, follow" },
+      { name: "theme-color", content: "#0b0f19" },
 
-      { property: "og:title", content: "Narrow Arrow Rankings — Leaderboards & Player Ranks" },
-      {
-        property: "og:description",
-        content:
-          "Live Narrow Arrow leaderboards, player profiles, rank assignments, comparisons and custom level browsing.",
-      },
+      { property: "og:title", content: SITE_TITLE },
+      { property: "og:description", content: SITE_DESCRIPTION },
       { property: "og:type", content: "website" },
+      { property: "og:site_name", content: SITE_NAME },
+      { property: "og:url", content: CANONICAL_ORIGIN + "/" },
+      { property: "og:image", content: OG_IMAGE },
+      { property: "og:image:alt", content: SITE_TITLE },
+
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:title", content: "Narrow Arrow Rankings — Leaderboards & Player Ranks" },
-      {
-        name: "twitter:description",
-        content:
-          "Live Narrow Arrow leaderboards, player profiles, rank assignments, comparisons and custom level browsing.",
-      },
+      { name: "twitter:title", content: SITE_TITLE },
+      { name: "twitter:description", content: SITE_DESCRIPTION },
+      { name: "twitter:image", content: OG_IMAGE },
     ],
     links: [
       {
@@ -108,6 +110,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "canonical", href: CANONICAL_ORIGIN + "/" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
@@ -132,6 +135,38 @@ function RootShell({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body>
+        {/*
+          The app is client-only, so without this the served HTML contains no
+          heading and no description — a crawler (or anyone with JS off) saw the
+          bare word "Loading…". This block gives the page a real h1 and an
+          accessible summary, and is hidden once React paints over it.
+        */}
+        <div className="sr-only">
+          <h1>{SITE_TITLE}</h1>
+          <p>{SITE_DESCRIPTION}</p>
+          <p>
+            Browse every Narrow Arrow pack and community level, watch replays of the fastest runs,
+            follow player rankings, and inspect tool-assisted runs on the community TAS board.
+          </p>
+        </div>
+        <noscript>
+          <div
+            style={{
+              maxWidth: "40rem",
+              margin: "4rem auto",
+              padding: "0 1.5rem",
+              fontFamily: "system-ui, sans-serif",
+              lineHeight: 1.6,
+            }}
+          >
+            <p style={{ fontSize: "1.5rem", fontWeight: 700 }}>{SITE_TITLE}</p>
+            <p>{SITE_DESCRIPTION}</p>
+            <p>
+              This site needs JavaScript for its interactive leaderboards and replay viewer. Please
+              enable it to continue.
+            </p>
+          </div>
+        </noscript>
         {children}
         <Scripts />
       </body>
