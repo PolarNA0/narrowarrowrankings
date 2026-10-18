@@ -1,2 +1,7 @@
 User-agent: *
 Allow: /
+
+# The JSON API is not content; keep crawlers from spending budget on it.
+Disallow: /api/
+
+Sitemap: https://narrowarrowrankings.lovable.app/sitemap.xml
