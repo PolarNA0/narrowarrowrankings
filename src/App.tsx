@@ -461,6 +461,10 @@ export default function App() {
   const [tasBoardLevelId, setTasBoardLevelId] = useState<string>(LEVELS[0]?.id ?? "");
   /** A level the Generator asked the Editor to open. */
   const [editorLevel, setEditorLevel] = useState<NalvlLevel | null>(null);
+  /** A level the Editor handed to the Play tab to drive live, in place. */
+  const [playSiteLevel, setPlaySiteLevel] = useState<{ level: NalvlLevel; key: string } | null>(
+    null,
+  );
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<"wrs" | "hof" | "history" | "arrows">("wrs");
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -2580,6 +2584,10 @@ export default function App() {
           <LevelEditorView
             initialLevel={editorLevel}
             onLevelConsumed={() => setEditorLevel(null)}
+            onPlayInPlace={(level) => {
+              setPlaySiteLevel({ level, key: `${Date.now()}` });
+              navigateView("play");
+            }}
           />
         ) : view === "generator" ? (
           <LevelGeneratorView
@@ -2593,6 +2601,7 @@ export default function App() {
             levels={dynamicLevels}
             focus={playFocus}
             onFocusHandled={() => setPlayFocus(null)}
+            siteLevel={playSiteLevel}
           />
         ) : view === "score" ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (

@@ -30,6 +30,8 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize,
+  Wind,
+  Magnet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -62,6 +64,8 @@ import { themeColor, trailColor } from "@/lib/replay-visuals";
 import {
   NALVL_WALL_TYPES,
   NALVL_ZONE_TYPES,
+  DEFAULT_FIELD_DIRECTION,
+  DEFAULT_FIELD_STRENGTH,
   gameFilename,
   nalvlFilename,
   nalvlToGameFile,
@@ -81,13 +85,21 @@ export interface LevelEditorViewProps {
   /** A level handed over from the Generator (or elsewhere) to open on mount. */
   initialLevel?: NalvlLevel | null;
   onLevelConsumed?(): void;
+  /** Hand the current level to the Play tab to drive it live, in place. */
+  onPlayInPlace?(level: NalvlLevel): void;
 }
 
-export function LevelEditorView({ initialLevel, onLevelConsumed }: LevelEditorViewProps) {
+export function LevelEditorView({
+  initialLevel,
+  onLevelConsumed,
+  onPlayInPlace,
+}: LevelEditorViewProps) {
   const [level, setLevel] = React.useState<NalvlLevel>(() => starterLevel());
   const [tool, setTool] = React.useState<EditorTool>("select");
   const [wallType, setWallType] = React.useState<NalvlWallType>("normal");
   const [zoneType, setZoneType] = React.useState<NalvlZoneType>("boost");
+  const [fieldDirection, setFieldDirection] = React.useState(DEFAULT_FIELD_DIRECTION);
+  const [fieldStrength, setFieldStrength] = React.useState(DEFAULT_FIELD_STRENGTH);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [loadingLevel, setLoadingLevel] = React.useState(false);
   const [sourceLevelId, setSourceLevelId] = React.useState<string>("");
@@ -325,6 +337,8 @@ export function LevelEditorView({ initialLevel, onLevelConsumed }: LevelEditorVi
     { id: "wall", icon: <Minus className="w-4 h-4" />, label: "Wall" },
     { id: "zone", icon: <BoxSelect className="w-4 h-4" />, label: "Zone" },
     { id: "portal", icon: <DoorOpen className="w-4 h-4" />, label: "Portal" },
+    { id: "wind", icon: <Wind className="w-4 h-4" />, label: "Wind (site-only)" },
+    { id: "suction", icon: <Magnet className="w-4 h-4" />, label: "Suction (site-only)" },
     { id: "pan", icon: <Hand className="w-4 h-4" />, label: "Pan" },
   ];
 
@@ -344,7 +358,7 @@ export function LevelEditorView({ initialLevel, onLevelConsumed }: LevelEditorVi
         <div className="space-y-4">
           <div className="rounded-lg border border-white/10 bg-white/5 p-3 space-y-3">
             <Label className="text-xs">Tool</Label>
-            <div className="grid grid-cols-5 gap-1">
+            <div className="grid grid-cols-4 gap-1">
               {tools.map((t) => (
                 <Button
                   key={t.id}
@@ -389,6 +403,35 @@ export function LevelEditorView({ initialLevel, onLevelConsumed }: LevelEditorVi
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+            {(tool === "wind" || tool === "suction") && (
+              <div className="space-y-2">
+                {tool === "wind" && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Direction (°, 0 = right, 90 = down)</Label>
+                    <Input
+                      type="number"
+                      value={Math.round((fieldDirection * 180) / Math.PI)}
+                      onChange={(e) => setFieldDirection((Number(e.target.value) * Math.PI) / 180)}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Strength (world units/tick)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={fieldStrength}
+                    onChange={(e) => setFieldStrength(Number(e.target.value))}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Site-only: the game&apos;s engine has no force fields, so wind and suction are
+                  stripped from the game export but simulated here.
+                </p>
               </div>
             )}
             <p className="text-[11px] text-slate-500">
@@ -499,6 +542,8 @@ export function LevelEditorView({ initialLevel, onLevelConsumed }: LevelEditorVi
                 tool={tool}
                 wallType={wallType}
                 zoneType={zoneType}
+                fieldDirection={fieldDirection}
+                fieldStrength={fieldStrength}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 onChange={(next) => applyLevel(next)}
@@ -530,9 +575,21 @@ export function LevelEditorView({ initialLevel, onLevelConsumed }: LevelEditorVi
                 </Button>
               </>
             ) : (
-              <Button variant="secondary" size="sm" onClick={() => void startTest()}>
-                <Play className="w-3.5 h-3.5 mr-1" /> Test play
-              </Button>
+              <>
+                <Button variant="secondary" size="sm" onClick={() => void startTest()}>
+                  <Play className="w-3.5 h-3.5 mr-1" /> Test play
+                </Button>
+                {onPlayInPlace && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    title="Play this level live in the Play tab (no import needed)"
+                    onClick={() => onPlayInPlace(level)}
+                  >
+                    <Play className="w-3.5 h-3.5 mr-1" /> Open in Play
+                  </Button>
+                )}
+              </>
             )}
           </div>
           <p className="text-[11px] text-slate-500">
@@ -633,6 +690,38 @@ export function LevelEditorView({ initialLevel, onLevelConsumed }: LevelEditorVi
                     </SelectContent>
                   </Select>
                 </div>
+              )}
+              {(selected.kind === "wind" || selected.kind === "suction") && (
+                <>
+                  {selected.kind === "wind" && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Direction (°, 0 = right, 90 = down)</Label>
+                      <Input
+                        type="number"
+                        value={Math.round(((selected.fieldDirection ?? 0) * 180) / Math.PI)}
+                        onChange={(e) =>
+                          updateSelected({
+                            fieldDirection: (Number(e.target.value) * Math.PI) / 180,
+                          })
+                        }
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  )}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Strength (world units/tick)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={selected.fieldStrength ?? DEFAULT_FIELD_STRENGTH}
+                      onChange={(e) => updateSelected({ fieldStrength: Number(e.target.value) })}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Site-only force field: simulated here, stripped from the game export.
+                  </p>
+                </>
               )}
               {selected.kind === "portal" && (
                 <>

@@ -60,7 +60,20 @@ export const GAME_REQUIRED_FORMAT_VERSION = 0;
 
 export type NalvlWallType = "normal" | "death" | "bouncy" | "boost" | "finish";
 export type NalvlZoneType = "boost" | "ice" | "nosteer" | "steer" | "rail";
-export type NalvlKind = "wall" | "zone" | "portal";
+export type NalvlKind = "wall" | "zone" | "portal" | "wind" | "suction";
+
+/** Site-only force fields; they never reach the game's exporter. */
+export const NALVL_FIELD_KINDS: NalvlKind[] = ["wind", "suction"];
+
+/** True for the site-only wind/suction kinds. */
+export function isFieldKind(kind: NalvlKind): kind is "wind" | "suction" {
+  return kind === "wind" || kind === "suction";
+}
+
+/** Default wind blow direction (radians): to the right (+x), matching screen. */
+export const DEFAULT_FIELD_DIRECTION = 0;
+/** Default field strength in world units per 240Hz tick (0.05 ≈ 12 units/s). */
+export const DEFAULT_FIELD_STRENGTH = 0.05;
 
 export const NALVL_WALL_TYPES: NalvlWallType[] = ["normal", "death", "bouncy", "boost", "finish"];
 export const NALVL_ZONE_TYPES: NalvlZoneType[] = ["boost", "ice", "nosteer", "steer", "rail"];
@@ -84,6 +97,10 @@ export interface NalvlObstacle {
   portalId?: string;
   side?: string;
   speed?: number;
+  /** Wind: push direction in radians. Suction: unused (pulls to the centre). */
+  fieldDirection?: number;
+  /** Wind/suction strength in world units per 240Hz tick. */
+  fieldStrength?: number;
 }
 
 export interface NalvlLevel {
@@ -116,6 +133,13 @@ export function defaultObstacle(kind: NalvlKind, points: NalvlPoint[]): NalvlObs
   const base: NalvlObstacle = { id: nextObstacleId(), kind, points };
   if (kind === "wall") return { ...base, wallType: "normal", thickness: 8 };
   if (kind === "zone") return { ...base, zoneType: "boost", zoneDirection: 0 };
+  if (kind === "wind" || kind === "suction") {
+    return {
+      ...base,
+      fieldDirection: DEFAULT_FIELD_DIRECTION,
+      fieldStrength: DEFAULT_FIELD_STRENGTH,
+    };
+  }
   // The game links two portals by a shared `portal_id`, one on each `side`
   // ("a"/"b"); a lone portal is still importable.
   return { ...base, portalId: "p1", side: "a" };
@@ -167,9 +191,24 @@ function cleanPoints(points: unknown): NalvlPoint[] {
     .map((p) => ({ x: Math.round(p.x * 100) / 100, y: Math.round(p.y * 100) / 100 }));
 }
 
-/** Lower an authored level to the engine's `RawLevelData` payload. */
+/**
+ * Lower an authored level to the engine's `RawLevelData` payload. Unlike
+ * `nalvlToGameData`, this KEEPS the site-only wind/suction fields (as
+ * `field_type` obstacles) so the simulation layer can apply them; the engine
+ * payload builder strips them again before the engine ever sees them.
+ */
 export function nalvlToRawLevelData(level: NalvlLevel): RawLevelData {
-  return nalvlToGameData(level);
+  const data = nalvlToGameData(level);
+  const fields: NonNullable<RawLevelData["obstacles"]> = level.obstacles
+    .filter((o) => isFieldKind(o.kind))
+    .map((o) => ({
+      obstacle_type: "field",
+      field_type: o.kind,
+      ...(isNum(o.fieldDirection) ? { field_direction: o.fieldDirection } : {}),
+      field_strength: isNum(o.fieldStrength) ? o.fieldStrength : DEFAULT_FIELD_STRENGTH,
+      points: o.points.map((p) => ({ x: p.x, y: p.y })),
+    }));
+  return { ...data, obstacles: [...data.obstacles, ...fields] };
 }
 
 /**
@@ -178,35 +217,39 @@ export function nalvlToRawLevelData(level: NalvlLevel): RawLevelData {
  * taken back into the game — every obstacle gets an explicit `obstacle_type`.
  */
 export function nalvlToGameData(level: NalvlLevel): GameLevelData {
-  const obstacles: NonNullable<RawLevelData["obstacles"]> = level.obstacles.map((o) => {
-    const points = o.points.map((p) => ({ x: p.x, y: p.y }));
-    if (o.kind === "zone") {
+  const obstacles: NonNullable<RawLevelData["obstacles"]> = level.obstacles
+    // Wind/suction are site-only: the game's engine has no concept of them, so
+    // they must not appear in an export or the game would reject the file.
+    .filter((o) => !isFieldKind(o.kind))
+    .map((o) => {
+      const points = o.points.map((p) => ({ x: p.x, y: p.y }));
+      if (o.kind === "zone") {
+        return {
+          obstacle_type: "zone",
+          zone_type: o.zoneType ?? "boost",
+          points,
+          ...(isNum(o.zoneDirection) ? { zone_direction: o.zoneDirection } : {}),
+        };
+      }
+      if (o.kind === "portal") {
+        return {
+          obstacle_type: "portal",
+          portal_id: o.portalId ?? "p1",
+          side: o.side === "both" ? "a" : (o.side ?? "a"),
+          points,
+        };
+      }
       return {
-        obstacle_type: "zone",
-        zone_type: o.zoneType ?? "boost",
+        obstacle_type: "wall",
+        wall_type: o.wallType ?? "normal",
+        wall_thickness: isNum(o.thickness) ? o.thickness : 8,
         points,
-        ...(isNum(o.zoneDirection) ? { zone_direction: o.zoneDirection } : {}),
+        ...(o.rotationPivot && isNum(o.rotationPivot.x) && isNum(o.rotationPivot.y)
+          ? { rotation_pivot: { x: o.rotationPivot.x, y: o.rotationPivot.y } }
+          : {}),
+        ...(isNum(o.rotationSpeed) ? { rotation_speed: o.rotationSpeed } : {}),
       };
-    }
-    if (o.kind === "portal") {
-      return {
-        obstacle_type: "portal",
-        portal_id: o.portalId ?? "p1",
-        side: o.side === "both" ? "a" : (o.side ?? "a"),
-        points,
-      };
-    }
-    return {
-      obstacle_type: "wall",
-      wall_type: o.wallType ?? "normal",
-      wall_thickness: isNum(o.thickness) ? o.thickness : 8,
-      points,
-      ...(o.rotationPivot && isNum(o.rotationPivot.x) && isNum(o.rotationPivot.y)
-        ? { rotation_pivot: { x: o.rotationPivot.x, y: o.rotationPivot.y } }
-        : {}),
-      ...(isNum(o.rotationSpeed) ? { rotation_speed: o.rotationSpeed } : {}),
-    };
-  });
+    });
   return {
     format_version: GAME_FORMAT_VERSION,
     required_format_version: GAME_REQUIRED_FORMAT_VERSION,
@@ -250,6 +293,16 @@ export function rawLevelDataToNalvl(data: RawLevelData, name?: string): NalvlLev
   for (const o of data.obstacles ?? []) {
     const points = cleanPoints(o.points);
     if (points.length === 0) continue;
+    if (o.field_type === "wind" || o.field_type === "suction") {
+      obstacles.push({
+        id: nextObstacleId(),
+        kind: o.field_type,
+        points,
+        fieldDirection: isNum(o.field_direction) ? o.field_direction : DEFAULT_FIELD_DIRECTION,
+        fieldStrength: isNum(o.field_strength) ? o.field_strength : DEFAULT_FIELD_STRENGTH,
+      });
+      continue;
+    }
     const isZone = o.zone_type != null || o.obstacle_type === "zone";
     const isPortal = o.portal_id != null || o.obstacle_type === "portal";
     if (isZone) {

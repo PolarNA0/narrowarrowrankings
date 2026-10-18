@@ -187,6 +187,8 @@ export function LevelGeneratorView({ onOpenInEditor }: LevelGeneratorViewProps) 
               tool="pan"
               wallType="normal"
               zoneType="boost"
+              fieldDirection={0}
+              fieldStrength={0.05}
               selectedId={null}
               onSelect={() => {}}
               onChange={() => {}}

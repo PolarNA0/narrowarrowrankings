@@ -14,6 +14,7 @@
 
 import * as React from "react";
 import { wallVisual } from "@/lib/replay-visuals";
+import { paintForceFields, type FieldParticle } from "@/lib/replay-paint";
 import {
   defaultObstacle,
   levelBounds,
@@ -24,7 +25,7 @@ import {
   type NalvlZoneType,
 } from "@/lib/nalvl";
 
-export type EditorTool = "select" | "wall" | "zone" | "portal" | "pan";
+export type EditorTool = "select" | "wall" | "zone" | "portal" | "wind" | "suction" | "pan";
 
 export interface LevelEditorCanvasHandle {
   redraw(): void;
@@ -37,6 +38,10 @@ export interface LevelEditorCanvasProps {
   tool: EditorTool;
   wallType: NalvlWallType;
   zoneType: NalvlZoneType;
+  /** Direction (radians) a newly drawn wind field blows in. */
+  fieldDirection: number;
+  /** Strength (velocity/tick) of a newly drawn field. */
+  fieldStrength: number;
   selectedId: string | null;
   onSelect(id: string | null): void;
   onChange(level: NalvlLevel): void;
@@ -78,15 +83,54 @@ function pointSegDist(px: number, py: number, ax: number, ay: number, bx: number
 
 export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, LevelEditorCanvasProps>(
   function LevelEditorCanvas(
-    { level, tool, wallType, zoneType, selectedId, onSelect, onChange, height = 520, className },
+    {
+      level,
+      tool,
+      wallType,
+      zoneType,
+      fieldDirection,
+      fieldStrength,
+      selectedId,
+      onSelect,
+      onChange,
+      height = 520,
+      className,
+    },
     ref,
   ) {
     const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
     const camRef = React.useRef<Camera>({ x: 0, y: 0, scale: 0.5 });
     const dragRef = React.useRef<Drag | null>(null);
-    const propsRef = React.useRef({ level, tool, wallType, zoneType, selectedId });
-    propsRef.current = { level, tool, wallType, zoneType, selectedId };
+    const propsRef = React.useRef({
+      level,
+      tool,
+      wallType,
+      zoneType,
+      fieldDirection,
+      fieldStrength,
+      selectedId,
+    });
+    propsRef.current = {
+      level,
+      tool,
+      wallType,
+      zoneType,
+      fieldDirection,
+      fieldStrength,
+      selectedId,
+    };
     const drawRef = React.useRef<() => void>(() => {});
+
+    // Stable particle pool for the field previews (levels with no fields ignore
+    // it). Built once so a redraw does not reshuffle the particles.
+    const editorParticlesRef = React.useRef<FieldParticle[] | null>(null);
+    if (!editorParticlesRef.current) {
+      editorParticlesRef.current = Array.from({ length: 64 }, () => ({
+        seed: Math.random(),
+        phase: Math.random(),
+      }));
+    }
+    const editorParticles = editorParticlesRef.current;
 
     // screen <-> world helpers bound to the current camera + canvas size.
     const view = React.useRef({ width: 1, height: 1, dpr: 1 });
@@ -135,6 +179,47 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       (ctx: CanvasRenderingContext2D, o: NalvlObstacle, selected: boolean, cam: Camera) => {
         const pts = o.points.map(toScreen);
         if (pts.length === 0) return;
+
+        // Wind/suction fields share the "faint white area with particles"
+        // look with the replay renderer, so the editor previews exactly what
+        // test-play and Play will show.
+        if (o.kind === "wind" || o.kind === "suction") {
+          paintForceFields(
+            ctx,
+            [
+              {
+                kind: o.kind,
+                points: o.points,
+                direction: o.fieldDirection,
+                strength: o.fieldStrength ?? 0,
+              },
+            ],
+            {
+              tx: (x) => (x - cam.x) * cam.scale + view.current.width / 2,
+              ty: (y) => (y - cam.y) * cam.scale + view.current.height / 2,
+              scale: cam.scale,
+              mode: "lines",
+            },
+            editorParticles,
+            // A fixed time keeps the editor's particles still between redraws
+            // (a drag repaints at pointer rate, which would otherwise flicker).
+            0.25,
+          );
+          if (selected) {
+            ctx.save();
+            ctx.strokeStyle = "#38bdf8";
+            ctx.fillStyle = "#38bdf8";
+            ctx.lineWidth = 2;
+            for (const p of pts) {
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, HANDLE_PX / 2, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+          return;
+        }
+
         const visual = wallVisual(
           o.kind === "zone"
             ? (o.zoneType ?? "boost")
@@ -197,7 +282,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         }
         ctx.restore();
       },
-      [toScreen],
+      [toScreen, editorParticles],
     );
 
     const draw = React.useCallback(() => {
@@ -253,7 +338,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         ctx.fillStyle = "rgba(56,189,248,0.2)";
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 4]);
-        if (t === "zone") {
+        if (t === "zone" || t === "wind" || t === "suction") {
           ctx.beginPath();
           ctx.rect(pts[0].x, pts[0].y, cur.x - pts[0].x, cur.y - pts[0].y);
           ctx.fill();
@@ -426,13 +511,19 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         draw();
         return;
       }
-      const { tool: t, wallType: wt, zoneType: zt } = propsRef.current;
+      const {
+        tool: t,
+        wallType: wt,
+        zoneType: zt,
+        fieldDirection: fd,
+        fieldStrength: fs,
+      } = propsRef.current;
       const start = drag.points[0];
       const end = drag.cursor;
       const moved = Math.hypot(end.x - start.x, end.y - start.y) > 8;
       const round = (p: NalvlPoint) => ({ x: Math.round(p.x), y: Math.round(p.y) });
       const lvl = propsRef.current.level;
-      if (t === "zone") {
+      if (t === "zone" || t === "wind" || t === "suction") {
         if (!moved) {
           draw();
           return;
@@ -443,7 +534,14 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
           round(end),
           round({ x: start.x, y: end.y }),
         ];
-        const o = { ...defaultObstacle("zone", pts), zoneType: zt };
+        const o =
+          t === "zone"
+            ? { ...defaultObstacle("zone", pts), zoneType: zt }
+            : {
+                ...defaultObstacle(t, pts),
+                fieldDirection: fd,
+                fieldStrength: fs,
+              };
         onSelect(o.id);
         onChange({ ...lvl, obstacles: [...lvl.obstacles, o] });
       } else if (t === "portal") {

@@ -29,10 +29,13 @@ type Tab = "officials" | "community";
 export function LevelPicker({
   value,
   onChange,
+  extra,
   className,
 }: {
   value: string;
   onChange: (level: PickedLevel) => void;
+  /** In-memory levels (e.g. one authored in the editor) shown above the tabs. */
+  extra?: PickedLevel[];
   className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -92,11 +95,13 @@ export function LevelPicker({
   }, [tab, query]);
 
   const displayName = React.useMemo(() => {
+    const inMemory = extra?.find((l) => l.id === value);
+    if (inMemory) return inMemory.name;
     const official = LEVELS.find((l) => l.id === value);
     if (official) return official.name;
     const picked = community.find((l) => l.id === value);
     return picked?.name ?? value;
-  }, [value, community]);
+  }, [value, community, extra]);
 
   const list = tab === "officials" ? officialMatches : community;
 
@@ -151,6 +156,31 @@ export function LevelPicker({
           />
         </div>
         <div className="max-h-72 overflow-y-auto py-1">
+          {extra && extra.length > 0 && (
+            <>
+              <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                In-memory
+              </p>
+              {extra.map((level) => (
+                <button
+                  key={level.id}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-white/5",
+                    level.id === value ? "text-[var(--app-accent)]" : "text-slate-200",
+                  )}
+                  onClick={() => pick(level)}
+                >
+                  <Check
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0",
+                      level.id === value ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                  <span className="truncate">{level.name}</span>
+                </button>
+              ))}
+            </>
+          )}
           {loading && tab === "community" && (
             <div className="flex items-center gap-2 px-3 py-2 text-[11px] text-slate-500">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching community levels…

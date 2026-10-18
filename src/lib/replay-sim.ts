@@ -132,6 +132,25 @@ export interface SimZone {
   type: string;
 }
 
+/**
+ * A force field: an area that continuously pushes (wind) or pulls (suction)
+ * the arrow while it is inside. The engine has no concept of these, so they are
+ * applied by the simulation layer as a per-tick velocity delta; they are
+ * therefore a site-only mechanic and never reach the game's exporter.
+ *
+ * `strength` is the velocity added per 240Hz tick at the field's centre, in
+ * world units/tick, so it is on the same scale as the arrow's own velocity.
+ */
+export interface ForceField {
+  kind: "wind" | "suction";
+  /** The field's polygon, in world units. */
+  points: Array<{ x: number; y: number }>;
+  /** Wind: push direction in radians. Suction: unused (pulls to the centre). */
+  direction?: number;
+  /** Velocity delta per tick at the centre. */
+  strength: number;
+}
+
 /** A portal, drawn as a segment with an arrow showing the travel direction. */
 export interface SimPortal {
   ax: number;
@@ -145,6 +164,8 @@ export interface SimGeometry {
   walls: SimWall[];
   zones: SimZone[];
   portals: SimPortal[];
+  /** Site-only wind/suction fields, drawn as faint white areas with particles. */
+  forceFields?: ForceField[];
 }
 
 export interface SimResult {
@@ -170,6 +191,10 @@ export interface RawLevelData {
     portal_id?: string;
     side?: string;
     speed?: number;
+    /** Site-only force field (wind/suction); stripped before the engine sees it. */
+    field_type?: string;
+    field_direction?: number;
+    field_strength?: number;
   }>;
 }
 
@@ -187,8 +212,25 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
   const walls: SimWall[] = [];
   const zones: SimZone[] = [];
   const portals: SimPortal[] = [];
+  const forceFields: ForceField[] = [];
   for (const obstacle of data?.obstacles ?? []) {
     const pts = obstacle.points ?? [];
+
+    // Site-only force fields are neither walls nor zones: they push/pull the
+    // arrow and are applied by the simulation layer, so they must never be
+    // emitted as an engine obstacle.
+    if (isForceField(obstacle)) {
+      const valid = pts.filter((p): p is { x: number; y: number } => p?.x != null && p?.y != null);
+      if (valid.length < 3) continue;
+      forceFields.push({
+        kind: obstacle.field_type === "suction" ? "suction" : "wind",
+        points: valid.map((p) => ({ x: p.x, y: p.y })),
+        ...(isFiniteNum(obstacle.field_direction) ? { direction: obstacle.field_direction } : {}),
+        strength: isFiniteNum(obstacle.field_strength) ? obstacle.field_strength : 0,
+      });
+      continue;
+    }
+
     const isZone = obstacle.zone_type != null || obstacle.obstacle_type === "zone";
     const isPortal = obstacle.portal_id != null || obstacle.obstacle_type === "portal";
 
@@ -251,7 +293,7 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
       });
     }
   }
-  return { walls, zones, portals };
+  return { walls, zones, portals, forceFields };
 }
 
 /**
@@ -299,20 +341,98 @@ function engineObstacles(data: RawLevelData) {
     "rotation_speed",
     "speed",
   ] as const;
-  return (data.obstacles ?? []).map((o) => {
-    const out: Record<string, unknown> = {
-      obstacle_type: o.obstacle_type ?? (o.zone_type ? "zone" : o.portal_id ? "portal" : "wall"),
-      points: (o.points ?? []).map((p) => ({ x: p.x ?? 0, y: p.y ?? 0 })),
-    };
-    for (const key of fields) {
-      if (o[key] != null) out[key] = o[key];
-    }
-    return out;
-  });
+  return (data.obstacles ?? [])
+    .filter((o) => !isForceField(o))
+    .map((o) => {
+      const out: Record<string, unknown> = {
+        obstacle_type: o.obstacle_type ?? (o.zone_type ? "zone" : o.portal_id ? "portal" : "wall"),
+        points: (o.points ?? []).map((p) => ({ x: p.x ?? 0, y: p.y ?? 0 })),
+      };
+      for (const key of fields) {
+        if (o[key] != null) out[key] = o[key];
+      }
+      return out;
+    });
 }
 
 type EngineInput = { left: boolean; right: boolean };
 type EngineModule = typeof import("./physics/rust.js");
+
+/** True for a finite number (rejects NaN/Infinity, which would corrupt the sim). */
+function isFiniteNum(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+/** True for a site-only wind/suction field obstacle (not an engine obstacle). */
+export function isForceField(o: {
+  field_type?: string;
+  zone_type?: string;
+  portal_id?: string;
+  wall_type?: string;
+  obstacle_type?: string;
+}): boolean {
+  return o.field_type === "wind" || o.field_type === "suction";
+}
+
+/** The fields' force polygons must not reach the engine, which would reject them. */
+export function stripForceFields(data: RawLevelData): RawLevelData {
+  if (!data.obstacles?.some(isForceField)) return data;
+  return { ...data, obstacles: data.obstacles.filter((o) => !isForceField(o)) };
+}
+
+/** Point-in-polygon (ray casting), for deciding whether the arrow is inside a field. */
+export function pointInPolygon(
+  x: number,
+  y: number,
+  pts: Array<{ x: number; y: number }>,
+): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i];
+    const b = pts[j];
+    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * The velocity delta a set of force fields applies to an arrow at (x, y),
+ * in world units per tick. Wind adds a constant push along `direction`;
+ * suction pulls toward the field's centroid with a strength that is constant
+ * inside the area (a simple, predictable mechanic rather than an inverse-square
+ * well, which would make the edges impossibly strong).
+ */
+export function forceAt(fields: ForceField[], x: number, y: number): { x: number; y: number } {
+  let dx = 0;
+  let dy = 0;
+  for (const f of fields) {
+    if (!pointInPolygon(x, y, f.points)) continue;
+    if (f.kind === "suction") {
+      let cx = 0;
+      let cy = 0;
+      for (const p of f.points) {
+        cx += p.x;
+        cy += p.y;
+      }
+      cx /= f.points.length;
+      cy /= f.points.length;
+      const vx = cx - x;
+      const vy = cy - y;
+      const len = Math.hypot(vx, vy);
+      if (len > 1e-6) {
+        dx += (vx / len) * f.strength;
+        dy += (vy / len) * f.strength;
+      }
+    } else {
+      const dir = f.direction ?? 0;
+      dx += Math.cos(dir) * f.strength;
+      dy += Math.sin(dir) * f.strength;
+    }
+  }
+  return { x: dx, y: dy };
+}
 
 /** Minimal shape of the engine state the replay reads. */
 interface EnginePlayerState {
@@ -322,6 +442,8 @@ interface EnginePlayerState {
     state?: string;
     /** Engine's current thrust level (0..1); drives the flame length. */
     thrust_power?: number;
+    /** Velocity in world units/tick; force fields add to this per tick. */
+    velocity?: { x: number; y: number; r?: number };
   };
 }
 
@@ -415,6 +537,14 @@ export async function createReplayEngine(
     };
   };
 
+  // Wind/suction fields are not part of the engine, so they are applied here as
+  // a per-tick velocity delta: step, then add the field's force to the arrow's
+  // velocity and rebuild the engine from that state. The rebuild is ~25x the
+  // cost of a raw step, so it is skipped entirely on levels with no fields and
+  // whenever the arrow is outside every field.
+  const fields = levelGeometry(data).forceFields ?? [];
+  const hasFields = fields.length > 0;
+
   let engine: InstanceType<EngineModule["GameMechanicsEngine"]>;
   try {
     engine = new mod.GameMechanicsEngine(state());
@@ -422,14 +552,28 @@ export async function createReplayEngine(
     return null;
   }
 
+  /** Apply the fields' force at the arrow's current pose, if any apply. */
+  const applyFields = (): void => {
+    const s = JSON.parse(engine.state) as EnginePlayerState;
+    const f = forceAt(fields, s.player.translation.x, s.player.translation.y);
+    if (f.x === 0 && f.y === 0) return;
+    const v = s.player.velocity ?? { x: 0, y: 0, r: 0 };
+    s.player.velocity = { ...v, x: v.x + f.x, y: v.y + f.y };
+    engine.free();
+    engine = new mod.GameMechanicsEngine(s as never);
+  };
+
   return {
     step(symbol) {
       engine.process_ticks([symbolToInput(symbol)]);
+      if (hasFields && engine.player_state_code() === 0) applyFields();
       return read(engine);
     },
     stepCode(symbol) {
       engine.process_ticks([symbolToInput(symbol)]);
-      return engine.player_state_code();
+      const code = engine.player_state_code();
+      if (hasFields && code === 0) applyFields();
+      return code;
     },
     reset() {
       engine.free();

@@ -75,7 +75,14 @@ import {
   type CameraPreset,
   type CameraSettings,
 } from "@/lib/replay-render";
-import { drawGameThrust, paintWalls, paintZones, strokeTrail } from "@/lib/replay-paint";
+import {
+  drawGameThrust,
+  paintForceFields,
+  paintWalls,
+  paintZones,
+  strokeTrail,
+  type FieldParticle,
+} from "@/lib/replay-paint";
 import { ghostColor } from "@/lib/compare-ghosts";
 import { ReplayExportDialog } from "@/components/ReplayExportDialog";
 import { GhostPicker } from "@/components/CompareGhosts";
@@ -909,6 +916,24 @@ export function ReplayStage({
     const paintWallsLocal = (g: CanvasRenderingContext2D, walls: SimWall[], tick: number) =>
       paintWalls(g, walls, tick, { tx, ty, scale, mode });
 
+    // Stable particle pool for the wind/suction field previews (levels that use
+    // them are site-authored only; official levels have none).
+    const fieldParticles: FieldParticle[] = Array.from({ length: 64 }, () => ({
+      seed: Math.random(),
+      phase: Math.random(),
+    }));
+    const paintFieldsLocal = (g: CanvasRenderingContext2D) => {
+      const fields = geometry.forceFields;
+      if (!fields || fields.length === 0) return;
+      paintForceFields(
+        g,
+        fields,
+        { tx, ty, scale, mode },
+        fieldParticles,
+        performance.now() / 1000,
+      );
+    };
+
     /** Paint everything that never changes as the frame advances onto an offscreen layer. */
     const paintBase = () => {
       const c = document.createElement("canvas");
@@ -922,6 +947,7 @@ export function ReplayStage({
 
       // Zones and portals first, then the walls that are baked once.
       paintZonesLocal(g);
+      paintFieldsLocal(g);
       paintWallsLocal(g, staticWalls, 0);
       return c;
     };
@@ -988,6 +1014,7 @@ export function ReplayStage({
         ctx.fillStyle = "#07070b";
         ctx.fillRect(0, 0, width, HEIGHT);
         paintZonesLocal(ctx);
+        paintFieldsLocal(ctx);
         paintWallsLocal(ctx, geometry.walls, upto);
         for (const o of overlays) {
           const gp = o.sim.path;

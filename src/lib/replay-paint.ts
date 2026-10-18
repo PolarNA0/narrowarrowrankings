@@ -21,7 +21,7 @@ import {
   gameWallColor,
   gameZoneColor,
 } from "@/lib/replay-render";
-import type { SimGeometry, SimPortal, SimResult, SimWall } from "@/lib/replay-sim";
+import type { ForceField, SimGeometry, SimPortal, SimResult, SimWall } from "@/lib/replay-sim";
 
 export type RenderMode = "lines" | "game";
 
@@ -160,6 +160,135 @@ export function paintZones(ctx: CanvasRenderingContext2D, geometry: SimGeometry,
   }
   for (const p of geometry.portals) {
     drawPortal(ctx, p, tx, ty, mode === "game");
+  }
+}
+
+/** One drifting particle inside a field; `seed`/`phase` are stable per particle. */
+export interface FieldParticle {
+  /** 0..1, its stable position along the flow. */
+  seed: number;
+  /** 0..1, its lane offset across the flow. */
+  phase: number;
+}
+
+/** How many particles a field draws (scaled down for small fields). */
+const FIELD_PARTICLES = 26;
+
+/**
+ * Wind/suction fields: a faint white area with tiny arrow particles flowing
+ * through it. Wind particles march along `direction`; suction particles march
+ * inward toward the centroid. `time` is in seconds so the drift is smooth and
+ * independent of frame rate; `particles` is a stable pool so the field does not
+ * jitter between frames.
+ *
+ * This is a site-only mechanic (the engine has no force fields), so the render
+ * is purely a preview of the simulation layer's per-tick velocity delta.
+ */
+export function paintForceFields(
+  ctx: CanvasRenderingContext2D,
+  fields: ForceField[],
+  pc: PaintCtx,
+  particles: FieldParticle[],
+  time = 0,
+) {
+  const { tx, ty } = pc;
+  for (const f of fields) {
+    const pts = f.points;
+    if (pts.length < 3) continue;
+    const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+    const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+
+    // Faint white area enclosing the field.
+    ctx.save();
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const X = tx(p.x);
+      const Y = ty(p.y);
+      if (i === 0) ctx.moveTo(X, Y);
+      else ctx.lineTo(X, Y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.28)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // A unit vector along the flow at each point (wind: `direction`; suction:
+    // toward the centroid). Particles are advected from a random start point.
+    const flowAt = (x: number, y: number): { x: number; y: number } => {
+      if (f.kind === "suction") {
+        const vx = cx - x;
+        const vy = cy - y;
+        const len = Math.hypot(vx, vy) || 1;
+        return { x: vx / len, y: vy / len };
+      }
+      const dir = f.direction ?? 0;
+      return { x: Math.cos(dir), y: Math.sin(dir) };
+    };
+
+    // Bounds of the field in world units, for seeding particles.
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of pts) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+    const span = Math.max(1, Math.hypot(maxX - minX, maxY - minY));
+    const count = Math.max(6, Math.min(FIELD_PARTICLES, Math.round(span / 60)));
+    // Wind marches the particle fully across the field and wraps; suction runs
+    // from the edge to the centre and resets, so the pull always reads inward.
+    const speed = Math.min(1, Math.abs(f.strength) * 20 + 0.25);
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 1.4;
+    ctx.lineCap = "round";
+    for (let i = 0; i < count; i++) {
+      const p = particles[i % particles.length];
+      // `t` advances with time so the particle marches across the field; the
+      // start point is a stable hash of the particle's seed, so the field
+      // shimmers instead of jumping between frames.
+      const t = (p.seed + time * speed * (0.5 + 0.5 * p.phase)) % 1;
+      let sx = minX + (((p.seed * 9301 + 49297) % 233280) / 233280) * (maxX - minX);
+      let sy = minY + (((p.phase * 9301 + 12345) % 233280) / 233280) * (maxY - minY);
+      if (f.kind === "suction") {
+        // Start on the box edge and travel to the centre.
+        sx = sx * (1 - t) + cx * t;
+        sy = sy * (1 - t) + cy * t;
+      } else {
+        const flow = flowAt(sx, sy);
+        const travel = (t - 0.5) * span;
+        sx += flow.x * travel;
+        sy += flow.y * travel;
+      }
+      const X = tx(sx);
+      const Y = ty(sy);
+      const flow = flowAt(sx, sy);
+      const head = 7;
+      ctx.beginPath();
+      ctx.moveTo(X - flow.x * head, Y - flow.y * head);
+      ctx.lineTo(X, Y);
+      ctx.stroke();
+      // Arrowhead.
+      const ang = Math.atan2(flow.y, flow.x);
+      const h = 3.2;
+      ctx.beginPath();
+      ctx.moveTo(X, Y);
+      ctx.lineTo(X - Math.cos(ang - 0.5) * h, Y - Math.sin(ang - 0.5) * h);
+      ctx.lineTo(X - Math.cos(ang + 0.5) * h, Y - Math.sin(ang + 0.5) * h);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
   }
 }
 

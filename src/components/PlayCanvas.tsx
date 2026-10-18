@@ -15,9 +15,11 @@ import { FollowCamera, DEFAULT_GAME_CAMERA, type CameraSettings } from "@/lib/re
 import {
   drawGameThrust,
   drawInputIndicator,
+  paintForceFields,
   paintWalls,
   paintZones,
   strokeTrail,
+  type FieldParticle,
   type RenderMode,
 } from "@/lib/replay-paint";
 import { drawArrowSprite, type ArrowKind } from "@/lib/arrow-sprites";
@@ -118,6 +120,12 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
     let tx = (x: number) => x;
     let ty = (y: number) => y;
 
+    // Stable particle pool for wind/suction fields (site-authored levels only).
+    const fieldParticles: FieldParticle[] = Array.from({ length: 64 }, () => ({
+      seed: Math.random(),
+      phase: Math.random(),
+    }));
+
     const resize = () => {
       const parent = canvas.parentElement;
       if (!parent) return;
@@ -152,6 +160,15 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
       ctx.fillStyle = "#07070b";
       ctx.fillRect(0, 0, width, height);
       paintZones(ctx, s.geometry, { tx, ty, scale, mode: s.mode });
+      if (s.geometry.forceFields && s.geometry.forceFields.length > 0) {
+        paintForceFields(
+          ctx,
+          s.geometry.forceFields,
+          { tx, ty, scale, mode: s.mode },
+          fieldParticles,
+          performance.now() / 1000,
+        );
+      }
       paintWalls(ctx, s.geometry.walls, path.length - 1, { tx, ty, scale, mode: s.mode });
 
       if (frame.ghostPath && frame.ghostPath.length > 1) {

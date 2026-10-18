@@ -44,6 +44,7 @@ import {
 import { PlayCanvas, type PlayCanvasHandle } from "@/components/PlayCanvas";
 import { LevelPicker } from "@/components/LevelPicker";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
+import { nalvlToRawLevelData, type NalvlLevel } from "@/lib/nalvl";
 import { PlayGame, type PlayResult, type Split } from "@/lib/play-game";
 import {
   actionForKey,
@@ -106,6 +107,16 @@ function fmtTime(sec: number): string {
 
 const bestKey = (levelId: string, arrow: string) => `naPlayBest:${levelId}:${arrow}`;
 
+/** The pseudo-level id used when playing a level authored in the editor. */
+const SITE_LEVEL_ID = "__site__";
+
+/**
+ * Site-level handoffs already auto-selected. Module-level so a later visit to
+ * the Play tab defaults to the normal level list instead of snapping back to
+ * the editor level — the level stays pickable under "In-memory" either way.
+ */
+const consumedSiteKeys = new Set<string>();
+
 interface StoredBest {
   inputs: string;
   inputCount: number;
@@ -125,14 +136,23 @@ export function PlayView({
   levels,
   focus,
   onFocusHandled,
+  siteLevel,
 }: {
   levels: LevelOption[];
   /** A checkpoint handed over from a TAS viewer, to load and play immediately. */
   focus?: { levelId: string; arrowName: string; tick: number; key: string } | null;
   onFocusHandled?: () => void;
+  /**
+   * A level authored in the editor, handed over to play in place. It is played
+   * from the in-memory payload — no import, no server round-trip — and shows up
+   * as a pseudo-entry in the level list.
+   */
+  siteLevel?: { level: NalvlLevel; key: string } | null;
 }) {
   const [levelId, setLevelId] = React.useState(levels[0]?.id ?? "");
   const [levelName, setLevelName] = React.useState(levels[0]?.name ?? "");
+  const siteLevelRef = React.useRef<{ level: NalvlLevel; data: RawLevelData } | null>(null);
+  const [siteRevision, setSiteRevision] = React.useState(0);
   const [arrowName, setArrowName] = React.useState<string>(ARROWS[0]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -215,13 +235,20 @@ export function PlayView({
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${LEVELS_URL}/${encodeURIComponent(id)}`, {
-          signal: AbortSignal.timeout(20000),
-        });
-        if (!res.ok) throw new Error(`Level request failed (${res.status})`);
-        const payload = (await res.json()) as { levelInfo?: { data?: RawLevelData } };
-        const data = payload.levelInfo?.data ?? null;
-        if (!data) throw new Error("Level has no geometry");
+        let data: RawLevelData | null;
+        if (id === SITE_LEVEL_ID && siteLevelRef.current) {
+          // A level authored in the editor: play the in-memory payload directly,
+          // with no import and no server round-trip.
+          data = siteLevelRef.current.data;
+        } else {
+          const res = await fetch(`${LEVELS_URL}/${encodeURIComponent(id)}`, {
+            signal: AbortSignal.timeout(20000),
+          });
+          if (!res.ok) throw new Error(`Level request failed (${res.status})`);
+          const payload = (await res.json()) as { levelInfo?: { data?: RawLevelData } };
+          data = payload.levelInfo?.data ?? null;
+          if (!data) throw new Error("Level has no geometry");
+        }
         if (seq !== loadSeqRef.current) return;
 
         gameRef.current?.free();
@@ -281,10 +308,26 @@ export function PlayView({
     [sampleInput],
   );
 
-  // (Re)load whenever the level or arrow changes.
+  // (Re)load whenever the level or arrow changes. `siteRevision` forces a
+  // reload when the editor hands over the same level again after edits.
   React.useEffect(() => {
     if (levelId) void loadLevel(levelId, arrowName);
-  }, [levelId, arrowName, loadLevel]);
+  }, [levelId, arrowName, siteRevision, loadLevel]);
+
+  // A level handed over from the editor: keep its payload in a ref (so the
+  // async load can read it without a fetch) and select it. Handing over the
+  // same level again after edits bumps `siteRevision` to reload it in place.
+  React.useEffect(() => {
+    if (!siteLevel) return;
+    siteLevelRef.current = { level: siteLevel.level, data: nalvlToRawLevelData(siteLevel.level) };
+    // Only auto-select a fresh handoff; a later mount keeps the last selection
+    // (the level is still available under "In-memory" in the picker).
+    if (consumedSiteKeys.has(siteLevel.key)) return;
+    consumedSiteKeys.add(siteLevel.key);
+    setLevelId(SITE_LEVEL_ID);
+    setLevelName(siteLevel.level.name);
+    setSiteRevision((r) => r + 1);
+  }, [siteLevel]);
 
   // Refresh the saved checkpoints whenever the level or arrow changes, and after
   // any save/delete (bumped through `savedCheckpoints`).
@@ -798,9 +841,15 @@ export function PlayView({
               <span className="text-sm text-emerald-300 font-mono">
                 Finished in {fmtTime((finishedResult.tick * SIM_TICK_MS) / 1000)}
               </span>
-              <Button size="sm" className="gap-1.5" onClick={() => setSubmitOpen(true)}>
-                <Send className="w-3.5 h-3.5" /> Submit to TAS board
-              </Button>
+              {levelId === SITE_LEVEL_ID ? (
+                <span className="text-[11px] text-emerald-300/70">
+                  Editor levels aren&apos;t on the TAS board
+                </span>
+              ) : (
+                <Button size="sm" className="gap-1.5" onClick={() => setSubmitOpen(true)}>
+                  <Send className="w-3.5 h-3.5" /> Submit to TAS board
+                </Button>
+              )}
             </div>
           )}
           {result && !result.finished && (
@@ -821,6 +870,7 @@ export function PlayView({
                   setLevelId(l.id);
                   setLevelName(l.name);
                 }}
+                extra={[{ id: SITE_LEVEL_ID, name: levelName || "Editor level" }]}
                 className="w-full"
               />
             </div>
@@ -983,7 +1033,7 @@ export function PlayView({
         </div>
       </div>
 
-      {finishedResult && (
+      {finishedResult && levelId !== SITE_LEVEL_ID && (
         <TasSubmitDialog
           open={submitOpen}
           onOpenChange={setSubmitOpen}
