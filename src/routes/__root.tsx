@@ -8,7 +8,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -139,16 +139,14 @@ function RootShell({ children }: { children: ReactNode }) {
           The app is client-only, so without this the served HTML contains no
           heading and no description — a crawler (or anyone with JS off) saw the
           bare word "Loading…". This block gives the page a real h1 and an
-          accessible summary, and is hidden once React paints over it.
+          accessible summary.
+
+          It is removed once React has mounted: the app header already renders
+          an <h1>, and leaving both in place made the hydrated page ship two of
+          them. Server HTML keeps the crawler-facing copy; the live page keeps
+          the real header.
         */}
-        <div className="sr-only">
-          <h1>{SITE_TITLE}</h1>
-          <p>{SITE_DESCRIPTION}</p>
-          <p>
-            Browse every Narrow Arrow pack and community level, watch replays of the fastest runs,
-            follow player rankings, and inspect tool-assisted runs on the community TAS board.
-          </p>
-        </div>
+        <ServerOnlyIntro />
         <noscript>
           <div
             style={{
@@ -171,6 +169,22 @@ function RootShell({ children }: { children: ReactNode }) {
         <Scripts />
       </body>
     </html>
+  );
+}
+
+function ServerOnlyIntro() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (mounted) return null;
+  return (
+    <div className="sr-only">
+      <h1>{SITE_TITLE}</h1>
+      <p>{SITE_DESCRIPTION}</p>
+      <p>
+        Browse every Narrow Arrow pack and community level, watch replays of the fastest runs,
+        follow player rankings, and inspect tool-assisted runs on the community TAS board.
+      </p>
+    </div>
   );
 }
 
