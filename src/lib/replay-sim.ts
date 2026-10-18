@@ -255,6 +255,30 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
 }
 
 /**
+ * The centre of the finish wall, used as the target the optimizer's DNF
+ * proximity signal steers toward. Returns null for a level with no finish wall
+ * (custom levels the engine finishes some other way), in which case the search
+ * falls back to a plain finish/DNF score.
+ */
+export function finishTarget(
+  data: RawLevelData | null | undefined,
+): { x: number; y: number } | null {
+  let sx = 0;
+  let sy = 0;
+  let n = 0;
+  for (const obstacle of data?.obstacles ?? []) {
+    if (obstacle.wall_type !== "finish") continue;
+    for (const p of obstacle.points ?? []) {
+      if (p?.x == null || p?.y == null) continue;
+      sx += p.x;
+      sy += p.y;
+      n++;
+    }
+  }
+  return n > 0 ? { x: sx / n, y: sy / n } : null;
+}
+
+/**
  * Build the obstacle list the engine expects. `ApiObstacle` is an internally
  * tagged enum: walls carry `wall_type`/`wall_thickness`, zones carry
  * `zone_type` (boost/ice/nosteer/steer/rail) plus an optional

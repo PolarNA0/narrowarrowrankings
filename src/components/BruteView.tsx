@@ -64,12 +64,12 @@ const EMPTY_SIM: SimResult = {
 /** Quick-pick budgets (seconds). A typed amount is authoritative; `0` = no cap. */
 const BUDGET_PRESETS = [15, 30, 60, 120, 300, 600];
 
-/** Annealing start temperature presets, matching the reference tool. */
+/** Search presets: broad strokes at a high temperature vs fine, careful ones. */
 const INTENSITIES = [
-  { label: "Focused", t0: 2.5, hint: "stays near the seed" },
-  { label: "Balanced", t0: 6, hint: "the default" },
-  { label: "Exploratory", t0: 12, hint: "roams further, slower to settle" },
-];
+  { label: "Fast", t0: 12, scale: 1.6, hint: "broad strokes, quick to explore" },
+  { label: "Balanced", t0: 6, scale: 1, hint: "the default" },
+  { label: "Slow", t0: 2.5, scale: 0.45, hint: "fine strokes, thorough polish" },
+] as const;
 
 const fmt = (tick: number | null) =>
   tick === null ? "—" : `${((tick * SIM_TICK_MS) / 1000).toFixed(3)}s`;
@@ -230,6 +230,7 @@ function BruteSearch({
   const [levelName, setLevelName] = React.useState(LEVELS[0]?.name ?? "");
   const [budgetSecs, setBudgetSecs] = React.useState(30);
   const [t0, setT0] = React.useState(6);
+  const [scale, setScale] = React.useState(1);
   const [refine, setRefine] = React.useState(true);
   const [entries, setEntries] = React.useState<TasEntry[]>([]);
   const [seedId, setSeedId] = React.useState<string>("auto");
@@ -507,6 +508,15 @@ function BruteSearch({
       // seed escapes it. Every worker runs off-thread, so the page stays live.
       const n = workerCount();
       const workers: Worker[] = [];
+      // Each basin gets a spread of temperature/scale around the chosen mode, so
+      // the parallel workers explore different neighbourhoods instead of all
+      // retreading the same one.
+      const BASIN_SPREAD = [
+        { dt: 1.8, ds: 1.35 },
+        { dt: 1, ds: 1 },
+        { dt: 0.55, ds: 0.6 },
+        { dt: 0.9, ds: 1.1 },
+      ];
       for (let i = 0; i < n; i++) {
         workers.push(
           new Worker(new URL("../lib/tas-brute.worker.ts", import.meta.url), { type: "module" }),
@@ -580,6 +590,7 @@ function BruteSearch({
               else reject(new Error(ev.message || "A search worker crashed."));
             }
           };
+          const basin = BASIN_SPREAD[i % BASIN_SPREAD.length];
           worker.postMessage({
             type: "start",
             options: {
@@ -587,7 +598,8 @@ function BruteSearch({
               levelData,
               arrowName: seedArrow,
               budgetMs,
-              t0,
+              t0: t0 * basin.dt,
+              scale: scale * basin.ds,
               refine,
               rngSeed: (Date.now() ^ ((i + 1) * 0x9e3779b9)) & 0x7fffffff,
             },
@@ -761,7 +773,14 @@ function BruteSearch({
           </Field>
 
           <Field label="Intensity">
-            <Select value={String(t0)} onValueChange={(v) => setT0(Number(v))}>
+            <Select
+              value={String(t0)}
+              onValueChange={(v) => {
+                const preset = INTENSITIES.find((i) => String(i.t0) === v);
+                setT0(Number(v));
+                if (preset) setScale(preset.scale);
+              }}
+            >
               <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
                 <SelectValue />
               </SelectTrigger>
