@@ -171,8 +171,25 @@ export interface FieldParticle {
   phase: number;
 }
 
-/** How many particles a field draws (scaled down for small fields). */
-const FIELD_PARTICLES = 26;
+/** Target spacing between particles, in canvas px (so density is zoom-independent). */
+const FIELD_PARTICLE_SPACING = 26;
+/** Cap per field so a huge zone cannot spawn thousands of particles. */
+const FIELD_PARTICLES_MAX = 220;
+
+/** The polygon's bounding box. */
+function fieldBounds(pts: Array<{ x: number; y: number }>) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of pts) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+}
 
 /**
  * Wind/suction fields: a faint white area with tiny arrow particles flowing
@@ -230,19 +247,15 @@ export function paintForceFields(
       return { x: Math.cos(dir), y: Math.sin(dir) };
     };
 
-    // Bounds of the field in world units, for seeding particles.
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const p of pts) {
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x);
-      maxY = Math.max(maxY, p.y);
-    }
-    const span = Math.max(1, Math.hypot(maxX - minX, maxY - minY));
-    const count = Math.max(6, Math.min(FIELD_PARTICLES, Math.round(span / 60)));
+    // Seed particles on a grid that covers the field's screen bounds, so the
+    // whole zone fills evenly at any zoom. Grid spacing is in canvas px, so a
+    // wider zone simply gets more particles; the pool is read modulo its length
+    // so the same stable seeds are reused as the grid grows.
+    const b = fieldBounds(pts);
+    const stepPx = FIELD_PARTICLE_SPACING;
+    const cols = Math.max(1, Math.round((b.w * pc.scale) / stepPx) + 1);
+    const rows = Math.max(1, Math.round((b.h * pc.scale) / stepPx) + 1);
+    const span = Math.max(1, Math.hypot(b.w, b.h));
     // Wind marches the particle fully across the field and wraps; suction runs
     // from the edge to the centre and resets, so the pull always reads inward.
     const speed = Math.min(1, Math.abs(f.strength) * 20 + 0.25);
@@ -252,41 +265,45 @@ export function paintForceFields(
     ctx.fillStyle = "rgba(255,255,255,0.5)";
     ctx.lineWidth = 1.4;
     ctx.lineCap = "round";
-    for (let i = 0; i < count; i++) {
-      const p = particles[i % particles.length];
-      // `t` advances with time so the particle marches across the field; the
-      // start point is a stable hash of the particle's seed, so the field
-      // shimmers instead of jumping between frames.
-      const t = (p.seed + time * speed * (0.5 + 0.5 * p.phase)) % 1;
-      let sx = minX + (((p.seed * 9301 + 49297) % 233280) / 233280) * (maxX - minX);
-      let sy = minY + (((p.phase * 9301 + 12345) % 233280) / 233280) * (maxY - minY);
-      if (f.kind === "suction") {
-        // Start on the box edge and travel to the centre.
-        sx = sx * (1 - t) + cx * t;
-        sy = sy * (1 - t) + cy * t;
-      } else {
+    let drawn = 0;
+    for (let gy = 0; gy < rows && drawn < FIELD_PARTICLES_MAX; gy++) {
+      for (let gx = 0; gx < cols && drawn < FIELD_PARTICLES_MAX; gx++) {
+        const p = particles[drawn % particles.length];
+        drawn++;
+        // `t` advances with time so the particle marches across the field; the
+        // start point is a stable hash of the grid cell, so the field shimmers
+        // instead of jumping between frames.
+        const t = (p.seed + time * speed * (0.5 + 0.5 * p.phase)) % 1;
+        let sx = b.minX + ((gx + 0.5) / cols) * b.w;
+        let sy = b.minY + ((gy + 0.5) / rows) * b.h;
+        if (f.kind === "suction") {
+          // Start on the box edge and travel to the centre.
+          sx = sx * (1 - t) + cx * t;
+          sy = sy * (1 - t) + cy * t;
+        } else {
+          const flow = flowAt(sx, sy);
+          const travel = (t - 0.5) * span;
+          sx += flow.x * travel;
+          sy += flow.y * travel;
+        }
+        const X = tx(sx);
+        const Y = ty(sy);
         const flow = flowAt(sx, sy);
-        const travel = (t - 0.5) * span;
-        sx += flow.x * travel;
-        sy += flow.y * travel;
+        const head = 7;
+        ctx.beginPath();
+        ctx.moveTo(X - flow.x * head, Y - flow.y * head);
+        ctx.lineTo(X, Y);
+        ctx.stroke();
+        // Arrowhead.
+        const ang = Math.atan2(flow.y, flow.x);
+        const h = 3.2;
+        ctx.beginPath();
+        ctx.moveTo(X, Y);
+        ctx.lineTo(X - Math.cos(ang - 0.5) * h, Y - Math.sin(ang - 0.5) * h);
+        ctx.lineTo(X - Math.cos(ang + 0.5) * h, Y - Math.sin(ang + 0.5) * h);
+        ctx.closePath();
+        ctx.fill();
       }
-      const X = tx(sx);
-      const Y = ty(sy);
-      const flow = flowAt(sx, sy);
-      const head = 7;
-      ctx.beginPath();
-      ctx.moveTo(X - flow.x * head, Y - flow.y * head);
-      ctx.lineTo(X, Y);
-      ctx.stroke();
-      // Arrowhead.
-      const ang = Math.atan2(flow.y, flow.x);
-      const h = 3.2;
-      ctx.beginPath();
-      ctx.moveTo(X, Y);
-      ctx.lineTo(X - Math.cos(ang - 0.5) * h, Y - Math.sin(ang - 0.5) * h);
-      ctx.lineTo(X - Math.cos(ang + 0.5) * h, Y - Math.sin(ang + 0.5) * h);
-      ctx.closePath();
-      ctx.fill();
     }
     ctx.restore();
   }

@@ -32,6 +32,7 @@ import {
   Maximize,
   Wind,
   Magnet,
+  Globe,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ import {
   type LevelEditorCanvasHandle,
 } from "@/components/LevelEditorCanvas";
 import { LevelPicker } from "@/components/LevelPicker";
+import { SitePublishDialog } from "@/components/SitePublishDialog";
 import { PlayCanvas, type PlayCanvasHandle } from "@/components/PlayCanvas";
 import { PlayGame } from "@/lib/play-game";
 import {
@@ -100,9 +102,12 @@ export function LevelEditorView({
   const [zoneType, setZoneType] = React.useState<NalvlZoneType>("boost");
   const [fieldDirection, setFieldDirection] = React.useState(DEFAULT_FIELD_DIRECTION);
   const [fieldStrength, setFieldStrength] = React.useState(DEFAULT_FIELD_STRENGTH);
+  // Grid snapping is on by default so zones/walls come out symmetrical.
+  const [snap, setSnap] = React.useState<number>(10);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [loadingLevel, setLoadingLevel] = React.useState(false);
   const [sourceLevelId, setSourceLevelId] = React.useState<string>("");
+  const [publishOpen, setPublishOpen] = React.useState(false);
 
   // Undo/redo history of whole levels (small, so a plain stack is fine).
   const historyRef = React.useRef<{ past: NalvlLevel[]; future: NalvlLevel[] }>({
@@ -349,9 +354,19 @@ export function LevelEditorView({
         <p className="text-slate-500 text-sm">
           Draw walls, zones and portals, then test-play against the real engine. Export for game
           writes the level in the game&apos;s own format (importable in the app); Export .nalvl
-          saves the site format.
+          saves the site format. Publish as a site level to share it with the community board.
         </p>
       </div>
+
+      <SitePublishDialog
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+        level={level}
+        onPublished={(id) => {
+          setSourceLevelId(id);
+          toast.success("Site level published — it is on the Levels tab and in Play.");
+        }}
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr_300px] gap-4">
         {/* Left: tools + level actions */}
@@ -434,6 +449,26 @@ export function LevelEditorView({
                 </p>
               </div>
             )}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Grid snap (world units)</Label>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={snap > 0}
+                  onCheckedChange={(v) => setSnap(v ? 10 : 0)}
+                  aria-label="Toggle grid snapping"
+                />
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={snap || 10}
+                  disabled={snap === 0}
+                  onChange={(e) => setSnap(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+                  className="h-8 w-20 text-xs"
+                />
+                <span className="text-[11px] text-slate-500">on by default</span>
+              </div>
+            </div>
             <p className="text-[11px] text-slate-500">
               Drag to draw; shift-drag or middle-drag to pan; scroll to zoom. With Select, drag a
               body to move it or a handle to reshape.
@@ -484,6 +519,14 @@ export function LevelEditorView({
             </Button>
             <Button variant="outline" size="sm" className="w-full" onClick={exportNalvl}>
               <Download className="w-3.5 h-3.5 mr-2" /> Export .nalvl
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setPublishOpen(true)}
+            >
+              <Globe className="w-3.5 h-3.5 mr-2" /> Publish as site level
             </Button>
             <Button
               variant="outline"
@@ -544,6 +587,7 @@ export function LevelEditorView({
                 zoneType={zoneType}
                 fieldDirection={fieldDirection}
                 fieldStrength={fieldStrength}
+                snap={snap}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 onChange={(next) => applyLevel(next)}

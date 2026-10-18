@@ -144,6 +144,7 @@ import { ReplayViewer } from "@/components/ReplayViewer";
 import { SkinsView } from "@/components/SkinsView";
 import { TasEditorView } from "@/components/TasEditorView";
 import { TasLeaderboardView, type TasLoadRequest } from "@/components/TasLeaderboardView";
+import { SiteLevelsView } from "@/components/SiteLevelsView";
 import { BruteView } from "@/components/BruteView";
 import { LevelEditorView } from "@/components/LevelEditorView";
 import { LevelGeneratorView } from "@/components/LevelGeneratorView";
@@ -419,6 +420,7 @@ export default function App() {
 
   const [view, setView] = useState<
     | "leaderboard"
+    | "site-levels"
     | "profile"
     | "compare"
     | "average"
@@ -2557,6 +2559,32 @@ export default function App() {
           </div>
         ) : view === "skins" ? (
           <SkinsView />
+        ) : view === "site-levels" ? (
+          <SiteLevelsView
+            isAdmin={isAdmin}
+            onLoadRun={(request) => {
+              setTasLoad(request);
+              navigateView("tas");
+            }}
+            onMakeCheckpoint={(request) => {
+              setPlayFocus({
+                levelId: `site:${request.levelId}`,
+                arrowName: request.arrowName,
+                tick: request.tick,
+                key: `${request.levelId}:${request.arrowName}:${request.tick}:${Date.now()}`,
+              });
+              navigateView("play");
+            }}
+            onPlay={(levelId) => {
+              setPlayFocus({
+                levelId: `site:${levelId}`,
+                arrowName: "",
+                tick: -1,
+                key: `${levelId}:play:${Date.now()}`,
+              });
+              navigateView("play");
+            }}
+          />
         ) : view === "tas" ? (
           <TasEditorView loadRequest={tasLoad} />
         ) : view === "tas-board" ? (

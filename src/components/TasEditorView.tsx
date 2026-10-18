@@ -50,8 +50,9 @@ import { arrowKind, type ArrowKind } from "@/lib/arrow-sprites";
 import { ReplayStage } from "@/components/ReplayViewer";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
+import { fetchSiteScores } from "@/lib/site-levels";
 import { TasReplayViewer } from "@/components/ReplayViewer";
-import { LevelPicker } from "@/components/LevelPicker";
+import { LevelPicker, siteIdOf } from "@/components/LevelPicker";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 import type { TasLoadRequest } from "@/components/TasLeaderboardView";
 
@@ -204,12 +205,24 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
   }, []);
 
   const loadLevel = React.useCallback(async (id: string, arrow: string): Promise<Loaded | null> => {
-    const res = await fetch(`/api/level-details/${encodeURIComponent(id)}`, {
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!res.ok) throw new Error(`Level request failed (${res.status})`);
-    const payload = (await res.json()) as { levelInfo?: { data?: RawLevelData } };
-    const levelData = payload.levelInfo?.data ?? null;
+    const siteId = siteIdOf(id);
+    let levelData: RawLevelData | null;
+    if (siteId) {
+      // Site levels live on the site, not the upstream level API.
+      const res = await fetch(`/api/site-levels/${encodeURIComponent(siteId)}`, {
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!res.ok) throw new Error(`Site level request failed (${res.status})`);
+      const payload = (await res.json()) as { level?: { data?: RawLevelData } };
+      levelData = payload.level?.data ?? null;
+    } else {
+      const res = await fetch(`/api/level-details/${encodeURIComponent(id)}`, {
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!res.ok) throw new Error(`Level request failed (${res.status})`);
+      const payload = (await res.json()) as { levelInfo?: { data?: RawLevelData } };
+      levelData = payload.levelInfo?.data ?? null;
+    }
     if (!levelData) throw new Error("Level has no geometry");
     const engine = await createReplayEngine(levelData, arrow);
     if (!engine) throw new Error("Physics engine failed to initialise");
@@ -343,11 +356,12 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
     void loadTasEntry(loadRequest);
   }, [loadRequest, loadTasEntry]);
 
-  /** Refresh the community TAS board for the loaded level. */
+  /** Refresh the community TAS board for the loaded level (site levels use their own board). */
   const refreshTas = React.useCallback(async (id: string) => {
     if (!id) return;
     try {
-      setTasEntries(await fetchTasBoard(id));
+      const siteId = siteIdOf(id);
+      setTasEntries(siteId ? await fetchSiteScores(siteId) : await fetchTasBoard(id));
     } catch {
       setTasEntries([]);
     }
@@ -1011,12 +1025,13 @@ export function TasEditorView({ loadRequest }: { loadRequest?: TasLoadRequest | 
         <TasSubmitDialog
           open={tasOpen}
           onOpenChange={setTasOpen}
-          levelId={levelId}
+          levelId={siteIdOf(levelId) ?? levelId}
           levelName={loaded.mapName}
           arrowName={loaded.arrowName}
           timeMs={finishTick * SIM_TICK_MS}
           inputs={encodeInputSymbols(symbolsRef.current)}
           inputCount={symbols.length}
+          kind={siteIdOf(levelId) ? "site" : "tas"}
           onSubmitted={() => void refreshTas(levelId)}
         />
       )}

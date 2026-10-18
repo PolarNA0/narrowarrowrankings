@@ -42,6 +42,8 @@ export interface LevelEditorCanvasProps {
   fieldDirection: number;
   /** Strength (velocity/tick) of a newly drawn field. */
   fieldStrength: number;
+  /** Snap every placed/dragged point to this world-unit grid (0 = free). */
+  snap: number;
   selectedId: string | null;
   onSelect(id: string | null): void;
   onChange(level: NalvlLevel): void;
@@ -90,6 +92,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       zoneType,
       fieldDirection,
       fieldStrength,
+      snap,
       selectedId,
       onSelect,
       onChange,
@@ -108,6 +111,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       zoneType,
       fieldDirection,
       fieldStrength,
+      snap,
       selectedId,
     });
     propsRef.current = {
@@ -117,6 +121,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       zoneType,
       fieldDirection,
       fieldStrength,
+      snap,
       selectedId,
     };
     const drawRef = React.useRef<() => void>(() => {});
@@ -149,6 +154,13 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         x: (sx - view.current.width / 2) / cam.scale + cam.x,
         y: (sy - view.current.height / 2) / cam.scale + cam.y,
       };
+    }, []);
+
+    // Snap a world point to the editor's grid (no-op when snap is 0/off).
+    const snapWorld = React.useCallback((p: NalvlPoint): NalvlPoint => {
+      const s = propsRef.current.snap;
+      if (!s) return p;
+      return { x: Math.round(p.x / s) * s, y: Math.round(p.y / s) * s };
     }, []);
 
     const fit = React.useCallback(() => {
@@ -298,8 +310,9 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       ctx.fillStyle = "#07070b";
       ctx.fillRect(0, 0, width, h);
 
-      // World grid every 100 units, snapped so it scrolls with the camera.
-      const step = 100;
+      // World grid at the current snap spacing, snapped so it scrolls with the
+      // camera; falls back to 100 units when snapping is off.
+      const step = propsRef.current.snap || 100;
       const tl = toWorld(0, 0);
       const br = toWorld(width, h);
       ctx.strokeStyle = "rgba(148,163,184,0.10)";
@@ -434,7 +447,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
-      const world = toWorld(sx, sy);
+      const world = snapWorld(toWorld(sx, sy));
       const t = propsRef.current.tool;
       canvas.setPointerCapture(e.pointerId);
 
@@ -477,7 +490,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
-      const world = toWorld(sx, sy);
+      const world = snapWorld(toWorld(sx, sy));
       if (drag.kind === "pan") {
         const cam = camRef.current;
         cam.x = drag.camX - (sx - drag.startX) / cam.scale;
@@ -521,7 +534,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       const start = drag.points[0];
       const end = drag.cursor;
       const moved = Math.hypot(end.x - start.x, end.y - start.y) > 8;
-      const round = (p: NalvlPoint) => ({ x: Math.round(p.x), y: Math.round(p.y) });
+      const round = (p: NalvlPoint) => snapWorld({ x: Math.round(p.x), y: Math.round(p.y) });
       const lvl = propsRef.current.level;
       if (t === "zone" || t === "wind" || t === "suction") {
         if (!moved) {

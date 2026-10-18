@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { submitTasRun } from "@/lib/tas-leaderboard";
+import { submitSiteRun } from "@/lib/site-levels";
 
 interface Props {
   open: boolean;
@@ -23,14 +24,16 @@ interface Props {
   timeMs: number;
   inputs: string;
   inputCount: number;
+  /** "tas" (default) posts to the TAS board; "site" to a site level's board. */
+  kind?: "tas" | "site";
   /** Called after a successful submit so the board can refresh. */
   onSubmitted?: () => void;
 }
 
 /**
- * Submit a finished TAS run to the community board. The name and time are
- * typed here; the input string is attached automatically so the run can be
- * reproduced and loaded back into the editor.
+ * Submit a finished run. The name and time are typed here; the input string is
+ * attached automatically so the run can be reproduced and loaded back into the
+ * editor. Used for both the community TAS board and site level leaderboards.
  */
 export function TasSubmitDialog({
   open,
@@ -41,6 +44,7 @@ export function TasSubmitDialog({
   timeMs,
   inputs,
   inputCount,
+  kind = "tas",
   onSubmitted,
 }: Props) {
   const [name, setName] = React.useState("");
@@ -58,21 +62,16 @@ export function TasSubmitDialog({
     }
     setSubmitting(true);
     try {
-      const result = await submitTasRun({
-        levelId,
-        username,
-        arrowName,
-        timeMs,
-        inputs,
-        inputCount,
-      });
+      const payload = { levelId, username, arrowName, timeMs, inputs, inputCount };
+      const result = kind === "site" ? await submitSiteRun(payload) : await submitTasRun(payload);
+      const board = kind === "site" ? "site leaderboard" : "TAS board";
       if (result.isRecord) {
-        toast.success(`New TAS record! ${username} — ${(timeMs / 1000).toFixed(3)}s`, {
+        toast.success(`New record! ${username} — ${(timeMs / 1000).toFixed(3)}s`, {
           description: `Fastest time on ${levelName}.`,
           duration: 6000,
         });
       } else {
-        toast.success(`TAS submitted — rank #${result.rank} on ${levelName}`, {
+        toast.success(`Submitted — rank #${result.rank} on ${board}`, {
           description: `${(timeMs / 1000).toFixed(3)}s`,
         });
       }
@@ -89,7 +88,9 @@ export function TasSubmitDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-[#121212] border-white/10 text-slate-200 sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-white">Submit TAS run</DialogTitle>
+          <DialogTitle className="text-white">
+            {kind === "site" ? "Submit run" : "Submit TAS run"}
+          </DialogTitle>
           <DialogDescription className="text-slate-500 text-xs">
             {levelName} · {arrowName} · {inputCount} inputs · {(timeMs / 1000).toFixed(3)}s. Your
             input string is attached automatically.

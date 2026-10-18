@@ -28,8 +28,13 @@ import {
   ChevronRight,
   Bookmark,
   Trash2,
+  Maximize2,
+  Minimize2,
+  SlidersHorizontal,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -42,7 +47,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PlayCanvas, type PlayCanvasHandle } from "@/components/PlayCanvas";
-import { LevelPicker } from "@/components/LevelPicker";
+import { CameraSettingsPanel } from "@/components/CameraSettingsPanel";
+import { DEFAULT_GAME_CAMERA, type CameraSettings } from "@/lib/replay-render";
+import { LevelPicker, siteIdOf } from "@/components/LevelPicker";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { nalvlToRawLevelData, type NalvlLevel } from "@/lib/nalvl";
 import { PlayGame, type PlayResult, type Split } from "@/lib/play-game";
@@ -59,6 +66,7 @@ import {
   type PlayInputSettings,
 } from "@/lib/play-input";
 import { decodeInputSymbols, encodeInputSymbols } from "@/lib/replay";
+import { fetchSiteLevel } from "@/lib/site-levels";
 import {
   listPlayCheckpoints,
   playCheckpointsFor,
@@ -173,6 +181,15 @@ export function PlayView({
   const [showSettings, setShowSettings] = React.useState(false);
   const [submitOpen, setSubmitOpen] = React.useState(false);
 
+  // Fullscreen play: an immersive overlay with a big canvas, a top-centre clock,
+  // a pause button whose popover carries the camera settings, and an exit button.
+  const [fullscreen, setFullscreen] = React.useState(false);
+  const [cameraSettings, setCameraSettings] = React.useState<CameraSettings>(DEFAULT_GAME_CAMERA);
+  const [cameraOpen, setCameraOpen] = React.useState(false);
+  // True while a "press a key" capture is armed, so Escape hands the key to the
+  // capture instead of leaving fullscreen.
+  const keybindCaptureRef = React.useRef(false);
+
   const [savedCheckpoints, setSavedCheckpoints] = React.useState<PlayCheckpoint[]>([]);
   // A checkpoint the level load should resume from once the engine is ready.
   const pendingCheckpointRef = React.useRef<PlayCheckpoint | null>(null);
@@ -240,6 +257,19 @@ export function PlayView({
           // A level authored in the editor: play the in-memory payload directly,
           // with no import and no server round-trip.
           data = siteLevelRef.current.data;
+        } else if (siteIdOf(id)) {
+          // A published site level: its payload lives on the site, so it loads
+          // through our own API rather than the upstream level endpoint.
+          const res = await fetch(`/api/site-levels/${encodeURIComponent(siteIdOf(id)!)}`, {
+            signal: AbortSignal.timeout(20000),
+          });
+          if (!res.ok) throw new Error(`Site level request failed (${res.status})`);
+          const payload = (await res.json()) as {
+            level?: { data?: RawLevelData };
+            error?: string;
+          };
+          if (!payload.level?.data) throw new Error(payload.error ?? "Level has no geometry");
+          data = payload.level.data;
         } else {
           const res = await fetch(`${LEVELS_URL}/${encodeURIComponent(id)}`, {
             signal: AbortSignal.timeout(20000),
@@ -346,6 +376,24 @@ export function PlayView({
   React.useEffect(() => {
     if (!focus || focusKeyRef.current === focus.key) return;
     focusKeyRef.current = focus.key;
+    // A site level asked to just be opened (its "Play" button): no checkpoint to
+    // resume, so switch to it directly. Site levels are not in the `levels`
+    // list, so the name has to come from a fetch.
+    const siteId = siteIdOf(focus.levelId);
+    if (siteId && focus.tick < 0) {
+      setLevelId(focus.levelId);
+      if (focus.arrowName) setArrowName(focus.arrowName);
+      setSiteRevision((r) => r + 1);
+      void fetchSiteLevel(siteId)
+        .then((rec) => {
+          if (rec) setLevelName(rec.name);
+        })
+        .catch(() => {
+          /* the loader surfaces any real error */
+        });
+      onFocusHandled?.();
+      return;
+    }
     const cp = listPlayCheckpoints().find(
       (c) =>
         c.levelId === focus.levelId && c.arrowName === focus.arrowName && c.tick === focus.tick,
@@ -673,6 +721,38 @@ export function PlayView({
   const deltaMs = ghost ? runTimeMs - ghost.timeMs : null;
   const finishedResult = result?.finished ? result : null;
 
+  // Escape leaves fullscreen; locking body scroll keeps the overlay fixed while
+  // the page behind it stays put. Escape is ignored while a dialog is open or a
+  // keybind is being captured, so those own the key first.
+  React.useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (keybindCaptureRef.current) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [fullscreen]);
+
+  // Keep the canvas centred when the window (or fullscreen) changes size.
+  React.useEffect(() => {
+    if (!fullscreen) return;
+    const onResize = () => canvasRef.current?.redraw();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [fullscreen]);
+
+  React.useEffect(() => {
+    canvasRef.current?.redraw();
+  }, [cameraSettings]);
+
   const setKeybind = (action: keyof PlayInputSettings["keybinds"]) => {
     const next: PlayInputSettings = {
       ...settings,
@@ -685,10 +765,64 @@ export function PlayView({
         next.keybinds[action] = e.code;
         setSettings(next);
         saveInputSettings(next);
+        keybindCaptureRef.current = false;
       },
       { once: true },
     );
+    keybindCaptureRef.current = true;
   };
+
+  // The stage canvas is rendered in two places (inline and the fullscreen
+  // overlay). Only one exists at a time, so both share this single ref.
+  const stage = (
+    <>
+      <PlayCanvas
+        ref={canvasRef}
+        geometry={geometryRef.current}
+        getFrame={getFrame}
+        arrow={arrow}
+        arrowRadius={arrowRadius}
+        bodyColor={skinColors.body}
+        tailColor={skinColors.trail}
+        trailColor={skinColors.trail}
+        ghostColor="rgba(148,163,184,0.55)"
+        cameraSettings={cameraSettings}
+        height={440}
+        fill={fullscreen}
+      />
+      {loading && (
+        <div className="absolute inset-0 grid place-items-center rounded-lg bg-black/60">
+          <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
+        </div>
+      )}
+      {error && (
+        <div className="absolute inset-0 grid place-items-center rounded-lg bg-black/70 p-4 text-center">
+          <div className="space-y-2">
+            <AlertCircle className="w-6 h-6 mx-auto text-red-400" />
+            <p className="text-xs text-red-300">{error}</p>
+          </div>
+        </div>
+      )}
+      {/* Mobile touch zones: left half steers left, right half right. */}
+      <div className="absolute inset-0 flex lg:hidden">
+        {(["left", "right"] as const).map((side) => (
+          <div
+            key={side}
+            className="flex-1 touch-none select-none"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              (e.target as HTMLElement).setPointerCapture(e.pointerId);
+              touchRef.current[side] = true;
+            }}
+            onPointerUp={() => (touchRef.current[side] = false)}
+            onPointerCancel={() => (touchRef.current[side] = false)}
+            onLostPointerCapture={() => (touchRef.current[side] = false)}
+          />
+        ))}
+      </div>
+    </>
+  );
 
   return (
     <div className="space-y-4">
@@ -711,57 +845,22 @@ export function PlayView({
           >
             <Keyboard className="w-3.5 h-3.5" /> Controls
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs gap-1.5"
+            onClick={() => setFullscreen(true)}
+            disabled={loading || !!error}
+          >
+            <Maximize2 className="w-3.5 h-3.5" /> Fullscreen
+          </Button>
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         {/* Stage */}
         <div className="space-y-3">
-          <div className="relative">
-            <PlayCanvas
-              ref={canvasRef}
-              geometry={geometryRef.current}
-              getFrame={getFrame}
-              arrow={arrow}
-              arrowRadius={arrowRadius}
-              bodyColor={skinColors.body}
-              tailColor={skinColors.trail}
-              trailColor={skinColors.trail}
-              ghostColor="rgba(148,163,184,0.55)"
-              height={440}
-            />
-            {loading && (
-              <div className="absolute inset-0 grid place-items-center rounded-lg bg-black/60">
-                <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
-              </div>
-            )}
-            {error && (
-              <div className="absolute inset-0 grid place-items-center rounded-lg bg-black/70 p-4 text-center">
-                <div className="space-y-2">
-                  <AlertCircle className="w-6 h-6 mx-auto text-red-400" />
-                  <p className="text-xs text-red-300">{error}</p>
-                </div>
-              </div>
-            )}
-            {/* Mobile touch zones: left half steers left, right half right. */}
-            <div className="absolute inset-0 flex lg:hidden">
-              {(["left", "right"] as const).map((side) => (
-                <div
-                  key={side}
-                  className="flex-1 touch-none select-none"
-                  onContextMenu={(e) => e.preventDefault()}
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-                    touchRef.current[side] = true;
-                  }}
-                  onPointerUp={() => (touchRef.current[side] = false)}
-                  onPointerCancel={() => (touchRef.current[side] = false)}
-                  onLostPointerCapture={() => (touchRef.current[side] = false)}
-                />
-              ))}
-            </div>
-          </div>
+          {!fullscreen && <div className="relative">{stage}</div>}
 
           {/* Controls */}
           <div className="flex flex-wrap items-center gap-2">
@@ -843,11 +942,12 @@ export function PlayView({
               </span>
               {levelId === SITE_LEVEL_ID ? (
                 <span className="text-[11px] text-emerald-300/70">
-                  Editor levels aren&apos;t on the TAS board
+                  Editor levels aren&apos;t on the leaderboard
                 </span>
               ) : (
                 <Button size="sm" className="gap-1.5" onClick={() => setSubmitOpen(true)}>
-                  <Send className="w-3.5 h-3.5" /> Submit to TAS board
+                  <Send className="w-3.5 h-3.5" />
+                  {siteIdOf(levelId) ? "Submit to leaderboard" : "Submit to TAS board"}
                 </Button>
               )}
             </div>
@@ -1033,16 +1133,100 @@ export function PlayView({
         </div>
       </div>
 
+      {fullscreen && (
+        <div className="fixed inset-0 z-[70] bg-black">
+          {/* Stage fills the viewport. */}
+          <div className="absolute inset-0">{stage}</div>
+
+          {/* Clock, top centre. */}
+          <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+            <div className="rounded-full border border-white/15 bg-black/60 px-4 py-1 font-mono text-2xl tabular-nums text-white backdrop-blur">
+              {fmtTime(runTimeMs / 1000)}
+            </div>
+          </div>
+
+          {/* Top-right: pause (with camera settings) and exit. */}
+          <div className="absolute right-3 top-3 flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 border-white/20 bg-black/60 text-slate-100 backdrop-blur hover:bg-black/80"
+              onClick={pauseResume}
+              disabled={loading || !!error}
+            >
+              {phase === "running" ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              {phase === "running" ? "Pause" : phase === "paused" ? "Resume" : "Start"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-9 gap-1.5 border-white/20 bg-black/60 text-slate-100 backdrop-blur hover:bg-black/80",
+                cameraOpen && "bg-white/15",
+              )}
+              onClick={() => setCameraOpen((v) => !v)}
+              aria-expanded={cameraOpen}
+            >
+              <SlidersHorizontal className="w-4 h-4" /> Camera
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 border-white/20 bg-black/60 text-slate-100 backdrop-blur hover:bg-black/80"
+              onClick={() => {
+                setCameraOpen(false);
+                setFullscreen(false);
+              }}
+            >
+              <X className="w-4 h-4" /> Exit
+            </Button>
+          </div>
+
+          {/* Camera settings, tucked under the pause button. */}
+          {cameraOpen && (
+            <CameraSettingsPanel
+              settings={cameraSettings}
+              onChange={setCameraSettings}
+              className="absolute right-3 top-14 w-80 bg-black/80 backdrop-blur"
+            />
+          )}
+
+          {/* Bottom-centre: the in-run readout (PB, ghost delta). */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+            <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/60 px-3 py-1 text-xs text-slate-300 backdrop-blur">
+              <Badge variant="secondary" className="font-mono">
+                {arrowName}
+              </Badge>
+              <span>PB {best ? fmtTime(best.timeMs / 1000) : "—"}</span>
+              {ghost && (
+                <span className="flex items-center gap-1">
+                  <Ghost className="w-3.5 h-3.5" />
+                  {fmtTime(ghost.timeMs / 1000)}
+                  {deltaMs != null && (
+                    <span className={deltaMs <= 0 ? "text-emerald-400" : "text-red-400"}>
+                      ({deltaMs <= 0 ? "-" : "+"}
+                      {fmtTime(Math.abs(deltaMs) / 1000)})
+                    </span>
+                  )}
+                </span>
+              )}
+              <span className="text-slate-500">Esc to exit</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {finishedResult && levelId !== SITE_LEVEL_ID && (
         <TasSubmitDialog
           open={submitOpen}
           onOpenChange={setSubmitOpen}
-          levelId={levelId}
+          levelId={siteIdOf(levelId) ?? levelId}
           levelName={levelName}
           arrowName={arrowName}
           timeMs={finishedResult.tick * SIM_TICK_MS}
           inputs={encodeInputSymbols(finishedResult.symbols)}
           inputCount={finishedResult.symbols.length}
+          kind={siteIdOf(levelId) ? "site" : "tas"}
         />
       )}
     </div>
