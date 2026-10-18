@@ -6,7 +6,21 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", ".output", ".vinxi"] },
+  {
+    ignores: [
+      "dist",
+      ".output",
+      ".vinxi",
+      // The game renderer is a verbatim copy of the game's own shaders/renderer
+      // (see src/lib/game-renderer/README.md). Reformatting it would make the
+      // diff unreviewable against the original, so it is linted as-is upstream.
+      "src/lib/game-renderer/gl.js",
+      "src/lib/game-renderer/render.js",
+      "src/lib/game-renderer/shaders.js",
+      "src/lib/game-renderer/trail-shaders.js",
+      "src/lib/game-renderer/arrows.js",
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
