@@ -42,6 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PlayCanvas, type PlayCanvasHandle } from "@/components/PlayCanvas";
+import { LevelPicker } from "@/components/LevelPicker";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { PlayGame, type PlayResult, type Split } from "@/lib/play-game";
 import {
@@ -800,25 +801,14 @@ export function PlayView({
           <div className="rounded-lg border border-border bg-card p-3 space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Level</Label>
-              <Select
+              <LevelPicker
                 value={levelId}
-                onValueChange={(id) => {
-                  const lv = levels.find((l) => l.id === id);
-                  setLevelId(id);
-                  setLevelName(lv?.name ?? id);
+                onChange={(l) => {
+                  setLevelId(l.id);
+                  setLevelName(l.name);
                 }}
-              >
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {levels.map((l) => (
-                    <SelectItem key={l.id} value={l.id} className="text-xs">
-                      {l.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                className="w-full"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Arrow</Label>
