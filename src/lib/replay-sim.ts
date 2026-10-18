@@ -1,4 +1,4 @@
-import type { ApiMap } from "./physics/rust";
+import type { ApiEffects, ApiMap } from "./physics/rust";
 /**
  * Replay trajectory reconstruction.
  *
@@ -445,6 +445,10 @@ interface EnginePlayerState {
     /** Velocity in world units/tick; force fields add to this per tick. */
     velocity?: { x: number; y: number; r?: number };
   };
+  /** The engine's live obstacle list, with rotations already applied. */
+  map?: ApiMap;
+  /** Per-tick effects (wall contact, thrust) the shaders are driven from. */
+  effects?: ApiEffects;
 }
 
 let enginePromise: Promise<EngineModule> | null = null;
@@ -483,6 +487,13 @@ export interface ReplayEngine {
    * parse on every 240Hz tick.
    */
   read(): SimPoint;
+  /**
+   * The engine's current full state, including the live obstacle list (with
+   * rotations applied) and this tick's effects. The WebGL renderer needs those
+   * two — it draws the map the physics actually used, so rotating walls and
+   * portals animate — where `read` only carries the pose.
+   */
+  readFull(): EnginePlayerState;
   /**
    * The engine's terminal-state code at the current tick, without stepping:
    * 0 playing, 1 finish, 2 dead. `step` already advanced, so callers that need
@@ -582,6 +593,9 @@ export async function createReplayEngine(
     },
     read() {
       return read(engine);
+    },
+    readFull() {
+      return JSON.parse(engine.state) as EnginePlayerState;
     },
     code() {
       return engine.player_state_code();

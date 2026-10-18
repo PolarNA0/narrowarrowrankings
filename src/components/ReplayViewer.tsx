@@ -81,7 +81,9 @@ import {
   type FieldParticle,
 } from "@/lib/replay-paint";
 import { ghostColor } from "@/lib/compare-ghosts";
+import type { RenderMode } from "@/lib/replay-paint";
 import { ReplayExportDialog } from "@/components/ReplayExportDialog";
+import { GameCanvas } from "@/components/GameCanvas";
 import { GhostPicker } from "@/components/CompareGhosts";
 import { ghostLabel, useCompareGhosts, type CompareCandidate } from "@/hooks/useCompareGhosts";
 import bounceIcon from "@/assets/game/bounce.svg";
@@ -371,6 +373,10 @@ export function ReplayViewer({
                 onSpeed={setSpeed}
                 onFrameCommit={setFrame}
                 overlays={overlays}
+                levelData={levelData}
+                inputs={meta?.inputs ?? ""}
+                inputCount={meta?.input_count}
+                arrowName={meta?.arrow_name}
               />
             ) : (
               <div className="rounded-lg border border-white/5 bg-black/30 py-10 text-center text-slate-500 text-xs italic">
@@ -639,10 +645,19 @@ interface StageProps {
   drawnPath?: { x: number; y: number }[];
   /** Colour of the drawn trace; defaults to the app accent. */
   drawColor?: string;
+  /**
+   * The level payload and the raw inputs, needed only by the `webgl` mode: the
+   * game's own renderer drives a private engine instance, so it needs the level
+   * and the recorded input symbols rather than the sampled `sim`.
+   */
+  levelData?: RawLevelData | null;
+  inputs?: string;
+  inputCount?: number;
+  arrowName?: string | null;
 }
 
 /** "lines" is the schematic stroke look; "game" mirrors the real game's render. */
-export type ReplayRenderMode = "lines" | "game";
+export type ReplayRenderMode = "lines" | "game" | "webgl";
 
 /** Stable empty list so `overlays = []` never re-fires the draw effect. */
 const NO_OVERLAYS: ReplayOverlay[] = [];
@@ -681,6 +696,10 @@ export function ReplayStage({
   onDrawPath,
   drawnPath,
   drawColor = "var(--app-accent)",
+  levelData,
+  inputs,
+  inputCount,
+  arrowName,
 }: StageProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   // How the stage draws: the schematic line look, or a render matching the game.
@@ -770,6 +789,10 @@ export function ReplayStage({
     if (!parent) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+
+    // The 2D helpers only know the schematic and game looks; "webgl" draws in
+    // its own canvas, which unmounts this one, so map it to "game" here.
+    const paintMode: RenderMode = mode === "lines" ? "lines" : "game";
 
     const HEIGHT = 340;
     let width = 0;
@@ -883,7 +906,7 @@ export function ReplayStage({
 
     /** Zones and portals, drawn under the walls in both modes. */
     const paintZonesLocal = (g: CanvasRenderingContext2D) =>
-      paintZones(g, geometry, { tx, ty, scale, mode });
+      paintZones(g, geometry, { tx, ty, scale, mode: paintMode });
 
     /** Stroke a run's trail in full at the current transform (game mode). */
     const strokeTrailLocal = (
@@ -892,7 +915,7 @@ export function ReplayStage({
       upto: number,
       color: string,
       glow: boolean,
-    ) => strokeTrail(g, path, upto, color, glow, { tx, ty, scale, mode });
+    ) => strokeTrail(g, path, upto, color, glow, { tx, ty, scale, mode: paintMode });
 
     /**
      * The game's thrust flame, anchored behind the arrow. `scale` is folded in
@@ -911,7 +934,7 @@ export function ReplayStage({
     ) => drawGameThrust(g, kind, x, y, rot, radius, scale, tx, ty, power, tick);
 
     const paintWallsLocal = (g: CanvasRenderingContext2D, walls: SimWall[], tick: number) =>
-      paintWalls(g, walls, tick, { tx, ty, scale, mode });
+      paintWalls(g, walls, tick, { tx, ty, scale, mode: paintMode });
 
     // Stable particle pool for the wind/suction field previews (levels that use
     // them are site-authored only; official levels have none).
@@ -925,7 +948,7 @@ export function ReplayStage({
       paintForceFields(
         g,
         fields,
-        { tx, ty, scale, mode },
+        { tx, ty, scale, mode: paintMode },
         fieldParticles,
         performance.now() / 1000,
       );
@@ -1346,6 +1369,9 @@ export function ReplayStage({
               <SelectItem value="game" className="text-xs">
                 Game
               </SelectItem>
+              <SelectItem value="webgl" className="text-xs">
+                Game (WebGL)
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -1366,14 +1392,24 @@ export function ReplayStage({
         <CameraSettingsPanel settings={cameraSettings} onChange={setCameraSettings} />
       )}
       <div className="rounded-lg overflow-hidden border border-white/10 bg-[#07070b]">
-        <canvas
-          ref={canvasRef}
-          onPointerDown={beginStroke}
-          onPointerMove={extendStroke}
-          onPointerUp={endStroke}
-          onPointerCancel={endStroke}
-          className={onDrawPath ? "cursor-crosshair touch-none" : undefined}
-        />
+        {mode === "webgl" ? (
+          <GameCanvas
+            data={levelData ?? null}
+            inputs={inputs ?? ""}
+            inputCount={inputCount}
+            arrowName={arrowName}
+            background="grid"
+          />
+        ) : (
+          <canvas
+            ref={canvasRef}
+            onPointerDown={beginStroke}
+            onPointerMove={extendStroke}
+            onPointerUp={endStroke}
+            onPointerCancel={endStroke}
+            className={onDrawPath ? "cursor-crosshair touch-none" : undefined}
+          />
+        )}
       </div>
       {mode === "lines" && <ReplayLegend geometry={geometry} />}
       {!hideControls && (
@@ -1754,6 +1790,10 @@ export function TasReplayViewer({
                 onSpeed={setSpeed}
                 onFrameCommit={setFrame}
                 overlays={overlays}
+                levelData={levelData}
+                inputs={inputs}
+                inputCount={inputCount}
+                arrowName={arrowName}
               />
             ) : (
               <div className="rounded-lg border border-white/5 bg-black/30 py-10 text-center text-slate-500 text-xs italic">
