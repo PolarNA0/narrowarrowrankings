@@ -27,9 +27,29 @@ interface SubmitBody {
 export const Route = createFileRoute("/api/tas-leaderboard/$level")({
   server: {
     handlers: {
-      GET: async ({ params }) => {
+      GET: async ({ params, request }) => {
+        const url = new URL(request.url);
+
+        // `?entry=<id>` returns a single run *with* its input string. The board
+        // list no longer ships inputs (see `summary`), so this is how a viewer
+        // pulls the one stream it is about to play.
+        const entryId = url.searchParams.get("entry");
+        if (entryId) {
+          const entries = await readTasBoardPublic(params.level);
+          const found = entries.find((e) => e.id === entryId) ?? null;
+          if (!found) return Response.json({ error: "No such entry" }, { status: 404 });
+          return Response.json(found, { headers: { "cache-control": "no-store" } });
+        }
+
         const entries = await readTasBoardPublic(params.level);
-        return Response.json(sortTasEntries(entries), {
+        const sorted = sortTasEntries(entries);
+        // `?summary=1` strips the input blobs. The main leaderboard only needs
+        // the best time and the record tracker needs a timeline, so shipping a
+        // ~2KB base64 stream per run for a single number is pure egress — the
+        // per-level board view is the only caller that needs `inputs`.
+        const summary = url.searchParams.get("summary") === "1";
+        const payload = summary ? sorted.map(({ inputs: _inputs, ...rest }) => rest) : sorted;
+        return Response.json(payload, {
           headers: { "cache-control": "no-store" },
         });
       },

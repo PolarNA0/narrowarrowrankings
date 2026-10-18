@@ -24,6 +24,10 @@ interface Props {
   timeMs: number;
   inputs: string;
   inputCount: number;
+  /** Prefill for the name field — the name this browser used last time. */
+  defaultName?: string;
+  /** Called with the submitted name so it can be remembered for next time. */
+  onNameUsed?: (name: string) => void;
   /** "tas" (default) posts to the TAS board; "site" to a site level's board. */
   kind?: "tas" | "site";
   /** Called after a successful submit so the board can refresh. */
@@ -44,15 +48,19 @@ export function TasSubmitDialog({
   timeMs,
   inputs,
   inputCount,
+  defaultName,
+  onNameUsed,
   kind = "tas",
   onSubmitted,
 }: Props) {
   const [name, setName] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
 
+  // Remember the name across submissions: retyping it every time was the most
+  // repeated chore in the flow. Still fully editable.
   React.useEffect(() => {
-    if (open) setName("");
-  }, [open]);
+    if (open) setName(defaultName ?? "");
+  }, [open, defaultName]);
 
   const submit = async () => {
     const username = name.trim();
@@ -65,6 +73,7 @@ export function TasSubmitDialog({
       const payload = { levelId, username, arrowName, timeMs, inputs, inputCount };
       const result = kind === "site" ? await submitSiteRun(payload) : await submitTasRun(payload);
       const board = kind === "site" ? "site leaderboard" : "TAS board";
+      onNameUsed?.(username);
       if (result.isRecord) {
         toast.success(`New record! ${username} — ${(timeMs / 1000).toFixed(3)}s`, {
           description: `Fastest time on ${levelName}.`,
