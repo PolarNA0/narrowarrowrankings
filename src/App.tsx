@@ -39,6 +39,7 @@ import {
   Download,
   UserRound,
   Sparkles,
+  Link as LinkIcon,
 } from "lucide-react";
 import {
   doc,
@@ -135,6 +136,7 @@ import { toast } from "sonner";
 import { ArrowRecordsView } from "@/components/ArrowRecordsView";
 import {
   GroupedNavigation,
+  NAV_GROUPS,
   SectionNavigation,
   type NavigableView,
 } from "@/components/GroupedNavigation";
@@ -149,18 +151,31 @@ import { LevelEditorView } from "@/components/LevelEditorView";
 import { LevelGeneratorView } from "@/components/LevelGeneratorView";
 import type { NalvlLevel } from "@/lib/nalvl";
 import { PlayView } from "@/components/PlayView";
-import { fetchBestTasTime, fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
+import { fetchTasBoardSummary, type TasSummary } from "@/lib/tas-leaderboard";
+import { readUrlState, writeUrlState, shareUrl } from "@/lib/url-state";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 import { useInGameMedals } from "@/hooks/useInGameMedals";
 import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
 
+/** Every top-level view the shell can show. Most are nav items; `profile` and
+ * `compare` are reached from a player instead. */
+type AppView =
+  | NavigableView
+  | "profile"
+  | "compare";
+
 export default function App() {
+  // Seed the shareable bits of state from the URL once, so a pasted link opens
+  // on the view/level/player it names instead of the default level.
+  const initialUrlState = React.useMemo(() => readUrlState(), []);
   const { isAdmin, user: adminUser } = useAdminAuth();
   const { removedKeys } = useRemovedRuns();
   const { medals: inGameMedals, loading: inGameMedalsLoading } = useInGameMedals();
   const [dynamicPacks, setDynamicPacks] = useState<LevelPack[]>(LEVEL_PACKS);
   const [dynamicLevels, setDynamicLevels] = useState<LevelInfo[]>(LEVELS);
-  const [selectedLevel, setSelectedLevel] = useState<string>(LEVELS[0]?.id || "");
+  const [selectedLevel, setSelectedLevel] = useState<string>(
+    initialUrlState.level || LEVELS[0]?.id || "",
+  );
   const [selectedPack, setSelectedPack] = useState<string>("all");
   const [selectedAveragePack, setSelectedAveragePack] = useState<string>("all");
   const [averageSearchQuery, setAverageSearchQuery] = useState<string>("");
@@ -417,35 +432,21 @@ export default function App() {
     saveMyProfile,
   } = usePlayerProfiles(adminUser?.id);
 
-  const [view, setView] = useState<
-    | "leaderboard"
-    | "profile"
-    | "compare"
-    | "average"
-    | "wrs"
-    | "random"
-    | "customs"
-    | "score"
-    | "completions"
-    | "tracker"
-    | "points"
-    | "voting"
-    | "rating"
-    | "position"
-    | "insights"
-    | "rivalries"
-    | "fame"
-    | "targets"
-    | "clubs"
-    | "medal-ease"
-    | "skins"
-    | "tas"
-    | "tas-board"
-    | "brute"
-    | "editor"
-    | "generator"
-    | "play"
-  >("leaderboard");
+  const [view, setView] = useState<AppView>(() => {
+    const fromUrl = initialUrlState.view;
+    if (!fromUrl) return "leaderboard";
+    // `profile` and `compare` are real views but live outside the nav groups
+    // (they are reached from a player), so they are listed explicitly. They
+    // also need a player to render, which is why a link without one falls back.
+    const known =
+      NAV_GROUPS.some((g) => g.items.some((i) => i.id === fromUrl)) ||
+      fromUrl === "profile" ||
+      fromUrl === "compare";
+    if (!known) return "leaderboard";
+    if ((fromUrl === "profile" || fromUrl === "compare") && !initialUrlState.player)
+      return "leaderboard";
+    return fromUrl as AppView;
+  });
   /** A TAS entry the leaderboard asked the editor to open. */
   const [tasLoad, setTasLoad] = useState<TasLoadRequest | null>(null);
   /** A practice checkpoint a TAS viewer asked the Play tab to open. */
@@ -458,7 +459,9 @@ export default function App() {
   // The TAS leaderboard's picked level lives here, not inside the view, so
   // switching Tools tabs (which unmounts the view) keeps the selection instead
   // of snapping back to the first level.
-  const [tasBoardLevelId, setTasBoardLevelId] = useState<string>(LEVELS[0]?.id ?? "");
+  const [tasBoardLevelId, setTasBoardLevelId] = useState<string>(
+    initialUrlState.level || LEVELS[0]?.id || "",
+  );
   /** A level the Generator asked the Editor to open. */
   const [editorLevel, setEditorLevel] = useState<NalvlLevel | null>(null);
   /** A level the Editor handed to the Play tab to drive live, in place. */
@@ -468,7 +471,9 @@ export default function App() {
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<"wrs" | "hof" | "history" | "arrows">("wrs");
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
-  const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
+  const [selectedPlayer, setSelectedPlayer] = useState<string | null>(
+    initialUrlState.player ?? null,
+  );
   const [player2ToCompare, setPlayer2ToCompare] = useState<string | null>(null);
   const [allLevelsData, setAllLevelsData] = useState<Record<string, LeaderboardEntry[]>>(() =>
     hydratePersistedLeaderboards(),
@@ -497,7 +502,7 @@ export default function App() {
   /** The level's best community TAS time (ms), or null when none exists. */
   const [tasBestTime, setTasBestTime] = useState<number | null>(null);
   /** The level's TAS board, used to offer TAS runs as compare ghosts. */
-  const [tasEntries, setTasEntries] = useState<TasEntry[]>([]);
+  const [tasEntries, setTasEntries] = useState<TasSummary[]>([]);
   const [overallRankConfig, setOverallRankConfig] =
     useState<Record<string, RankInfo>>(DEFAULT_OVERALL_RANKS);
   const [allPackOverallConfigs, setAllPackOverallConfigs] = useState<
@@ -688,7 +693,7 @@ export default function App() {
     let cancelled = false;
     setTasBestTime(null);
     setTasEntries([]);
-    fetchTasBoard(selectedLevel)
+    fetchTasBoardSummary(selectedLevel)
       .then((entries) => {
         if (cancelled) return;
         setTasEntries(entries);
@@ -1404,14 +1409,18 @@ export default function App() {
     const tas: CompareCandidate[] = tasEntries.map((e) => ({
       id: `tas-${e.id}`,
       username: e.username,
-      inputs: e.inputs,
+      // The board list carries no input blobs, so the ghost loads its own
+      // stream on demand via `tasEntryId`/`tasLevelId`.
+      inputs: "",
       inputCount: e.inputCount,
       arrowName: e.arrowName,
       timeMs: e.timeMs,
+      tasEntryId: e.id,
+      tasLevelId: selectedLevel,
       kind: "tas" as const,
     }));
     return [...human, ...tas];
-  }, [sortedAndFilteredData, tasEntries]);
+  }, [sortedAndFilteredData, tasEntries, selectedLevel]);
 
   const handleSort = (key: keyof LeaderboardEntry | "rank") => {
     setSortConfig((prev) => ({
@@ -1473,6 +1482,27 @@ export default function App() {
       void fetchAllLevels();
   };
 
+  // Keep the URL in step with the shareable state, so the address bar is always
+  // a link to what is on screen (and can be copied or bookmarked). The TAS board
+  // has its own level picker, so its selection is what the URL carries while it
+  // is the open view.
+  useEffect(() => {
+    const level = view === "tas-board" ? tasBoardLevelId : selectedLevel;
+    writeUrlState({ view, level, player: selectedPlayer ?? undefined });
+  }, [view, selectedLevel, tasBoardLevelId, selectedPlayer]);
+
+  /** Copy the current view as a link, for sharing a level or profile. */
+  const copyShareLink = async () => {
+    const level = view === "tas-board" ? tasBoardLevelId : selectedLevel;
+    const url = shareUrl({ view, level, player: selectedPlayer ?? undefined });
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied to clipboard.");
+    } catch {
+      window.prompt("Copy this link:", url);
+    }
+  };
+
   return (
     <div className="na-shell min-h-screen text-slate-200 font-sans selection:bg-[var(--app-accent)]/30">
       <SettingsPanel
@@ -1524,6 +1554,15 @@ export default function App() {
           <div className="flex items-center gap-1.5 md:gap-4 shrink-0">
             <GroupedNavigation view={view} onNavigate={navigateView} />
 
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Copy a link to this view"
+              onClick={() => void copyShareLink()}
+              className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
+            >
+              <LinkIcon className="w-4 h-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"

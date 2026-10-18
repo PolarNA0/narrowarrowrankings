@@ -83,12 +83,12 @@ export function TasLeaderboardView({
   // The level's real-game runs, so a TAS run can be compared against a human one.
   const [humanEntries, setHumanEntries] = React.useState<LeaderboardEntry[]>([]);
 
-  const load = React.useCallback(async (id: string) => {
+  const load = React.useCallback(async (id: string, force = false) => {
     if (!id) return;
     setLoading(true);
     setError(null);
     try {
-      setEntries(await fetchTasBoard(id));
+      setEntries(await fetchTasBoard(id, { force }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setEntries([]);
@@ -529,7 +529,7 @@ export function TasLeaderboardView({
             size="sm"
             variant="outline"
             className="h-9 text-xs"
-            onClick={() => void load(levelId)}
+            onClick={() => void load(levelId, true)}
             disabled={loading}
           >
             {loading ? (
