@@ -11,7 +11,12 @@
  */
 
 import * as React from "react";
-import { FollowCamera, DEFAULT_GAME_CAMERA, type CameraSettings } from "@/lib/replay-render";
+import {
+  FollowCamera,
+  DEFAULT_GAME_CAMERA,
+  GAME_COLLISION_COLOR,
+  type CameraSettings,
+} from "@/lib/replay-render";
 import {
   drawGameThrust,
   drawInputIndicator,
@@ -24,6 +29,7 @@ import {
 } from "@/lib/replay-paint";
 import { drawArrowSprite, type ArrowKind } from "@/lib/arrow-sprites";
 import { SIM_TICK_MS, type SimGeometry, type SimPoint } from "@/lib/replay-sim";
+import { cn } from "@/lib/utils";
 
 export interface PlayFrame {
   /** The live path; `path[0]` is the spawn and `path[i]` the pose after i ticks. */
@@ -134,8 +140,16 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
       const parent = canvas.parentElement;
       if (!parent) return;
       dpr = Math.min(2, window.devicePixelRatio || 1);
-      width = parent.clientWidth;
-      viewH = fill ? Math.max(1, parent.clientHeight) : height;
+      if (fill) {
+        // In fullscreen the wrapper is `h-full`, so the parent carries the
+        // overlay's height. Fall back to the viewport if layout has not settled
+        // yet, otherwise the first paint would size to 0 and show black bars.
+        width = parent.clientWidth || window.innerWidth;
+        viewH = Math.max(1, parent.clientHeight || window.innerHeight);
+      } else {
+        width = parent.clientWidth;
+        viewH = height;
+      }
       canvas.width = Math.max(1, Math.round(width * dpr));
       canvas.height = Math.max(1, Math.round(viewH * dpr));
       canvas.style.width = `${width}px`;
@@ -234,6 +248,22 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
         p.thrustPower ?? 0,
         path.length - 1,
       );
+      // The arrow's collision circle, drawn faintly under the sprite in game
+      // mode so the true hitbox is visible (matches the replay stage).
+      if (s.mode === "game") {
+        ctx.save();
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = GAME_COLLISION_COLOR;
+        ctx.beginPath();
+        ctx.arc(tx(p.x), ty(p.y), Math.max(2, s.arrowRadius * scale), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = GAME_COLLISION_COLOR;
+        ctx.lineWidth = Math.max(1.2, scale * 0.9);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       // `drawArrowSprite` takes screen px, so map the pose through tx/ty like
       // every other painter here. Passing world coords put the sprite at its raw
       // world position (top-left of the canvas) instead of on the arrow.
@@ -267,10 +297,13 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
   }, [height, fill]);
 
   return (
-    <div className={className}>
+    <div className={cn(fill && "h-full w-full", className)}>
       <canvas
         ref={canvasRef}
-        className="block w-full rounded-lg border border-border bg-[#07070b]"
+        className={cn(
+          "block w-full bg-[#07070b]",
+          fill ? "h-full" : "rounded-lg border border-border",
+        )}
       />
     </div>
   );
