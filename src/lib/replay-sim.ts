@@ -34,6 +34,13 @@ import type { ApiMap } from "./physics/rust";
 export const SIM_TICK_MS = 1000 / 240;
 
 /**
+ * Cosine threshold for the accelerator wire: the boost only fires while the
+ * arrow's heading is within ~76° of the thrust direction. Beyond that a spin or
+ * a zig-zag starves the charge, so the player can slow down or break off.
+ */
+export const ACCELERATOR_MIN_ALIGN = 0.25;
+
+/**
  * The engine ships only a neutral default, but the three playable arrows each
  * have their own physics. These are the exact constants the game client feeds
  * the engine, recovered from its compiled Dart (`bui`), keyed by arrow name.
@@ -160,15 +167,15 @@ export interface ForceField {
 /**
  * An accelerator wire: a one-shot trigger the arrow crosses (segment
  * intersection against the previous tick's position, so a fast arrow cannot
- * tunnel through it). Crossing it arms a global accelerator that pushes along
- * the velocity direction captured at that instant, and keeps pushing every tick
- * until the arrow reaches `targetSpeed` — then it disarms for good.
+ * tunnel through it). Crossing it arms a charge that thrusts the arrow along
+ * `dirX`/`dirY` — the wire's normal, oriented the way the arrow was already
+ * going.
  *
- * Because the push is fixed to the captured direction, spinning or zigzagging
- * after the wire bleeds speed while the push keeps feeding along the original
- * line; a player can hold themselves under the target to carry the boost to a
- * part of the level where top speed is usable. `accel` is a velocity delta per
- * 240Hz tick, on the same scale as the arrow's own velocity.
+ * The charge is deliberately controllable: it only fires while the arrow's
+ * heading stays aligned with that thrust and the player is not braking. A spin,
+ * a zig-zag or a held brake therefore starve the boost and let the arrow slow
+ * down to clear a wall. `accel` is the velocity delta per 240Hz tick at full
+ * thrust, on the same scale as the arrow's own velocity.
  */
 export interface SimTrigger {
   /** The wire's endpoints, in world units. */
@@ -176,9 +183,12 @@ export interface SimTrigger {
   ay: number;
   bx: number;
   by: number;
-  /** Speed at which the accelerator disarms, in world units/tick. */
+  /** Unit normal of the wire, oriented along the crossing velocity. */
+  dirX: number;
+  dirY: number;
+  /** Speed at which the thrust fades out, in world units/tick. */
   targetSpeed: number;
-  /** Velocity delta per tick, in world units/tick. */
+  /** Velocity delta per tick at full thrust, in world units/tick. */
   accel: number;
 }
 
@@ -191,11 +201,13 @@ export interface SimPortal {
 }
 
 /**
- * The live accelerator charge: which way it pushes (the velocity direction
- * captured when the wire was crossed), how fast it stops feeding, and how much
- * it adds per tick. `armed` is false once the target speed is reached, and the
- * whole struct travels inside the snapshot envelope so a checkpoint restores
- * the charge exactly.
+ * The live accelerator charge: the thrust direction captured when the wire was
+ * crossed (a unit vector perpendicular to the wire, pointing the way the arrow
+ * was already going), the thrust target and strength. There is no "spent" flag
+ * — the charge is a standing property of the level, so any run that crosses the
+ * wire gets it and a checkpoint always restores it. Whether it thrusts on a
+ * given tick is decided from the arrow's live heading and input (see
+ * `applyWire`), which keeps the boost in the player's hands.
  */
 export interface WireState {
   armed: boolean;
@@ -326,16 +338,24 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
     }
 
     // Accelerator wires are the same: a site-only trigger the sim reads, never
-    // an engine obstacle. Authored as a two-point segment.
+    // an engine obstacle. Authored as a two-point segment; the thrust direction
+    // is the wire's normal, and the sim orients it along the crossing velocity.
     if (isAcceleratorTrigger(obstacle)) {
       const a = pts[0];
       const b = pts[1];
       if (a?.x != null && a?.y != null && b?.x != null && b?.y != null) {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy);
         triggers.push({
           ax: a.x,
           ay: a.y,
           bx: b.x,
           by: b.y,
+          // Perpendicular to the wire: (-dy, dx) / len. Which of the two
+          // directions is "forward" is decided per crossing.
+          dirX: len > 0 ? -dy / len : 0,
+          dirY: len > 0 ? dx / len : 1,
           targetSpeed: obstacle.accelerator_speed as number,
           accel: obstacle.accelerator_accel as number,
         });
@@ -830,58 +850,70 @@ export async function createReplayEngine(
   };
 
   // The accelerator is the first mechanic here with *memory*: crossing a wire
-  // captures the push direction and arms a global charge that lasts until the
-  // arrow reaches the target speed. That flag lives in this closure and travels
-  // in the snapshot envelope (see `snapshot`/`restore`), because the editor and
-  // the brute-forcer both re-simulate through a wire from a checkpoint taken
-  // before it — a flag the snapshot did not carry would silently re-arm a spent
-  // charge and diverge from the live run.
+  // captures the thrust direction and arms a charge. That charge lives in this
+  // closure and travels in the snapshot envelope (see `snapshot`/`restore`),
+  // because the editor and the brute-forcer both re-simulate through a wire from
+  // a checkpoint taken before it — state the snapshot did not carry would
+  // silently change the run and diverge from the live one.
   let wire: WireState = { armed: false, dirX: 0, dirY: 0, targetSpeed: 0, accel: 0 };
 
   /**
    * Detect a wire crossing against the previous tick's position (segment
-   * intersection, so a fast arrow cannot tunnel through), capture the velocity
-   * direction, then push along that fixed direction while under the target.
+   * intersection, so a fast arrow cannot tunnel through). On a crossing, arm
+   * the charge with the wire's normal oriented the way the arrow is already
+   * going.
    */
-  const applyWire = (prevX: number, prevY: number): void => {
+  const armWire = (prevX: number, prevY: number): void => {
     const s = JSON.parse(engine.state) as EnginePlayerState;
     const t = s.player.translation;
     const v = s.player.velocity ?? { x: 0, y: 0, r: 0 };
-
-    if (!wire.armed) {
-      for (const trig of triggers) {
-        const hit = segmentsIntersect(
-          { x: prevX, y: prevY },
-          { x: t.x, y: t.y },
-          { x: trig.ax, y: trig.ay },
-          { x: trig.bx, y: trig.by },
-        );
-        if (!hit) continue;
-        const speed = Math.hypot(v.x, v.y);
-        // No heading to capture (a dead stop): the wire stays unarmed.
-        if (speed <= 0) return;
-        wire = {
-          armed: true,
-          dirX: v.x / speed,
-          dirY: v.y / speed,
-          targetSpeed: trig.targetSpeed,
-          accel: trig.accel,
-        };
-        return;
-      }
-      return;
-    }
-
     const speed = Math.hypot(v.x, v.y);
-    if (speed >= wire.targetSpeed) {
-      // Reached the target: the charge is spent and never re-arms.
-      wire = { ...wire, armed: false };
+    // No heading to orient by (a dead stop): the wire stays unarmed.
+    if (speed <= 0) return;
+    for (const trig of triggers) {
+      const hit = segmentsIntersect(
+        { x: prevX, y: prevY },
+        { x: t.x, y: t.y },
+        { x: trig.ax, y: trig.ay },
+        { x: trig.bx, y: trig.by },
+      );
+      if (!hit) continue;
+      const along = v.x * trig.dirX + v.y * trig.dirY >= 0 ? 1 : -1;
+      wire = {
+        armed: true,
+        dirX: trig.dirX * along,
+        dirY: trig.dirY * along,
+        targetSpeed: trig.targetSpeed,
+        accel: trig.accel,
+      };
       return;
     }
+  };
+
+  /**
+   * Thrust the armed charge for one tick. The boost stays in the player's hands:
+   * it only fires while the player is coasting straight, so any steering input —
+   * a brake, a turn, a zig-zag or a spin — cuts the thrust and hands the arrow
+   * back to its own (draggy) physics, letting it slow down to clear a wall. The
+   * heading must also stay aligned with the thrust, so residual spin momentum
+   * cannot re-fire it, and the push fades linearly to zero as the speed nears
+   * `targetSpeed` so the ceiling is soft, never a hard cap.
+   */
+  const applyWire = (symbol: number): void => {
+    if (!wire.armed) return;
+    if (symbol !== 0) return; // any steer or brake starves the charge
+    const s = JSON.parse(engine.state) as EnginePlayerState;
+    const v = s.player.velocity ?? { x: 0, y: 0, r: 0 };
+    const speed = Math.hypot(v.x, v.y);
+    if (speed <= 0) return;
+    const align = (v.x * wire.dirX + v.y * wire.dirY) / speed;
+    if (align <= ACCELERATOR_MIN_ALIGN) return; // heading off the thrust: no boost
+    const fade = Math.min(1, Math.max(0, 1 - speed / wire.targetSpeed));
+    const push = wire.accel * align * fade;
     s.player.velocity = {
       ...v,
-      x: v.x + wire.dirX * wire.accel,
-      y: v.y + wire.dirY * wire.accel,
+      x: v.x + wire.dirX * push,
+      y: v.y + wire.dirY * push,
     };
     engine.free();
     engine = new mod.GameMechanicsEngine(s as never);
@@ -894,7 +926,10 @@ export async function createReplayEngine(
       if (engine.player_state_code() === 0) {
         if (hasMotions) applyMotions();
         if (hasFields) applyFields();
-        if (hasTriggers) applyWire(before.x, before.y);
+        if (hasTriggers) {
+          armWire(before.x, before.y);
+          applyWire(symbol);
+        }
       }
       return read(engine);
     },
@@ -905,7 +940,10 @@ export async function createReplayEngine(
       if (code === 0) {
         if (hasMotions) applyMotions();
         if (hasFields) applyFields();
-        if (hasTriggers) applyWire(before.x, before.y);
+        if (hasTriggers) {
+          armWire(before.x, before.y);
+          applyWire(symbol);
+        }
       }
       return code;
     },

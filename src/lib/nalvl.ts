@@ -129,10 +129,12 @@ export interface NalvlObstacle {
   /** Wind/suction strength in world units per 240Hz tick. */
   fieldStrength?: number;
   /**
-   * Accelerator wire (site-only). A one-shot trigger: crossing the segment
-   * captures the arrow's velocity direction and arms a global push along it,
-   * which keeps feeding until the arrow reaches `acceleratorSpeed`. Like
-   * wind/suction it never reaches the game's exporter.
+   * Accelerator wire (site-only). A one-shot trigger: crossing the segment arms
+   * a thrust along the wire's normal, oriented the way the arrow was already
+   * going, which feeds while the player coasts straight and fades out near
+   * `acceleratorSpeed`. Braking, turning or spinning cuts the boost, so the run
+   * can always slow back down. Like wind/suction it never reaches the game's
+   * exporter.
    */
   acceleratorSpeed?: number;
   acceleratorAccel?: number;

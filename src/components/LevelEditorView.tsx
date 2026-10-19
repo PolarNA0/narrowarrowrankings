@@ -490,9 +490,11 @@ export function LevelEditorView({
                   />
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Draw a line the run crosses. On crossing, the push direction is captured from the
-                  arrow&apos;s velocity and held until it reaches the target speed, then it stops.
-                  Site-only — the engine has no triggers, so it is stripped from a game export.
+                  Draw a line the run crosses. It thrusts the arrow along the wire&apos;s normal,
+                  the way it was already going, while the player coasts straight; any brake, turn or
+                  spin cuts the boost so the arrow can slow down again. Thrust fades out near the
+                  target speed. Site-only — the engine has no triggers, so it is stripped from a
+                  game export.
                 </p>
               </div>
             )}
@@ -894,8 +896,8 @@ export function LevelEditorView({
                     />
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    Crossing this line captures the arrow&apos;s direction and pushes along it until
-                    the target speed, then stops. Site-only: stripped from the game export.
+                    Thrusts along the wire&apos;s normal while the player coasts straight; braking,
+                    turning or spinning cuts the boost. Site-only: stripped from the game export.
                   </p>
                 </>
               )}

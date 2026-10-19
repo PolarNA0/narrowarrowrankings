@@ -1,9 +1,10 @@
 /**
  * Verify the accelerator wire against the REAL site sim (createReplayEngine):
- * crossing arms a charge, the charge pushes along the captured direction until
- * the target speed, and the armed flag survives snapshot/restore — including a
- * checkpoint taken *before* the wire, which the editor and brute-forcer both
- * re-simulate through.
+ * crossing arms a charge, the charge thrusts along the wire's normal, the boost
+ * is controllable (braking and off-axis spins starve it, the target speed is a
+ * soft fade not a hard cap), and the armed charge survives snapshot/restore —
+ * including a checkpoint taken *before* the wire, which the editor and
+ * brute-forcer both re-simulate through.
  */
 import { readFileSync } from "node:fs";
 import { initSync } from "@/lib/physics/rust.js";
@@ -71,26 +72,35 @@ function level(wire?: { y: number; targetSpeed: number; accel: number }): RawLev
   };
 }
 
-/** Fly straight (coast) for `ticks`, returning the path. */
-async function fly(data: RawLevelData, ticks: number, steerFrom = Infinity, steer = 0) {
+/** Fly `ticks` ticks, choosing the input symbol per tick via `symAt`. Returns the
+ *  per-tick path (index 0 is the spawn pose). */
+async function flyPattern(data: RawLevelData, ticks: number, symAt: (i: number) => number) {
   const engine = await createReplayEngine(data, "narrow");
   if (!engine) throw new Error("engine failed to initialise");
   engine.reset();
   const path: Array<{ x: number; y: number }> = [{ x: engine.read().x, y: engine.read().y }];
   for (let i = 0; i < ticks; i++) {
-    const p = engine.step(i >= steerFrom ? steer : 0);
+    const p = engine.step(symAt(i));
     path.push({ x: p.x, y: p.y });
   }
   engine.free();
   return path;
 }
 
+/** Fly straight (coast), optionally holding one steer from `steerFrom` on. */
+const fly = (data: RawLevelData, ticks: number, steerFrom = Infinity, steer = 0) =>
+  flyPattern(data, ticks, (i) => (i >= steerFrom ? steer : 0));
+
+/** Speed between two consecutive path samples, in world units/tick. */
+const speedAt = (path: Array<{ x: number; y: number }>, i: number) =>
+  i <= 0 ? 0 : Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+
 const TICKS = 1400;
 const WIRE_Y = -150;
 const ACCEL = 0.05;
 // The arrow reaches the wire around tick 500 at roughly 0.4 units/tick, so these
-// targets bracket its speed: NEVER never disarms, 0.5 disarms just past the
-// wire, 2.0 keeps feeding for a long tail.
+// targets bracket its speed: a huge target keeps feeding with a full-strength
+// push, while a small one fades out almost immediately (a soft speed ceiling).
 const NEVER = 1000;
 const GATE_LOW = 0.5;
 const GATE_HIGH = 2.0;
@@ -108,7 +118,7 @@ console.log(
     `gated@${GATE_LOW} ${gatedLow[TICKS].y.toFixed(1)}, gated@${GATE_HIGH} ${gatedHigh[TICKS].y.toFixed(1)}`,
 );
 
-// --- Crossing arms a real, persistent push. ---------------------------------
+// --- Crossing arms a real, persistent thrust. -------------------------------
 check("the baseline actually crosses the wire", crossTick > 0, `tick ${crossTick}`);
 check(
   "crossing the wire accelerates the arrow",
@@ -116,18 +126,43 @@ check(
   `${(baseY - armed[TICKS].y).toFixed(1)} units further`,
 );
 
-// --- The charge is speed-gated: a lower target disarms sooner. --------------
+// --- The target speed is a soft ceiling, not a hard stop. -------------------
 check(
-  "a lower target speed stops the charge sooner",
+  "a lower target speed throttles the charge sooner",
   gatedLow[TICKS].y > gatedHigh[TICKS].y,
   `gated@${GATE_LOW} ${gatedLow[TICKS].y.toFixed(1)} > gated@${GATE_HIGH} ${gatedHigh[TICKS].y.toFixed(1)}`,
 );
-check("the never-disarming charge outruns the gated one", armed[TICKS].y < gatedHigh[TICKS].y);
-check("a gated charge still beats no wire", gatedHigh[TICKS].y < baseY);
+check("the full-strength charge outruns the throttled one", armed[TICKS].y < gatedHigh[TICKS].y);
+check("a throttled charge still beats no wire", gatedHigh[TICKS].y < baseY);
 
 // --- A wire never crossed does nothing. -------------------------------------
 const untouched = await fly(level({ y: -100000, targetSpeed: NEVER, accel: ACCEL }), TICKS);
 check("an uncrossed wire is inert", Math.abs(untouched[TICKS].y - baseY) < 1e-9);
+
+// --- The boost is controllable: braking, turning and spinning starve it. ----
+const END = TICKS;
+const wireLevel = level({ y: WIRE_Y, targetSpeed: NEVER, accel: ACCEL });
+const after = crossTick + 40;
+const braked = await flyPattern(wireLevel, END, (i) => (i >= after ? 3 : 0));
+const spun = await flyPattern(wireLevel, END, (i) => (i >= after ? 1 : 0)); // hold a steer: a spin
+const zig = await flyPattern(wireLevel, END, (i) =>
+  i >= after ? (Math.floor((i - after) / 15) % 2 ? 1 : 2) : 0,
+);
+check(
+  "holding the brake after the wire kills the boost",
+  speedAt(braked, END) < speedAt(armed, END) - 0.1,
+  `braked ${speedAt(braked, END).toFixed(3)} vs armed ${speedAt(armed, END).toFixed(3)}`,
+);
+check(
+  "spinning off-axis after the wire bleeds the speed",
+  speedAt(spun, END) < speedAt(armed, END) - 0.1,
+  `spun ${speedAt(spun, END).toFixed(3)} vs armed ${speedAt(armed, END).toFixed(3)}`,
+);
+check(
+  "zig-zagging after the wire bleeds the speed",
+  speedAt(zig, END) < speedAt(armed, END) - 0.1,
+  `zig ${speedAt(zig, END).toFixed(3)} vs armed ${speedAt(armed, END).toFixed(3)}`,
+);
 
 // --- Geometry exposes the wire and never lets the engine see it. ------------
 const geom = levelGeometry(level({ y: WIRE_Y, targetSpeed: NEVER, accel: ACCEL }));
@@ -165,9 +200,9 @@ async function snapshotFidelity(cutAt: number): Promise<boolean> {
 check("restore from a checkpoint BEFORE the wire matches", await snapshotFidelity(crossTick - 50));
 check("restore from a checkpoint AFTER the wire matches", await snapshotFidelity(crossTick + 100));
 
-// --- Direction is captured at the crossing, then fixed. ---------------------
-// Steer hard away from the wire's line after crossing: the push must keep adding
-// along the original -y direction even though the heading no longer points down.
+// --- The thrust direction is the wire's normal, oriented by the crossing. ---
+// Steer hard after crossing but stay roughly on-axis: the charge must keep
+// thrusting along -y, so the run still beats the same line with no wire.
 const steerAt = crossTick + 30;
 const steered = await fly(
   level({ y: WIRE_Y, targetSpeed: NEVER, accel: ACCEL }),
@@ -177,9 +212,25 @@ const steered = await fly(
 );
 const steeredBase = await fly(level(), TICKS, steerAt, 2);
 check(
-  "the push follows the captured direction, not the current heading",
+  "the thrust follows the wire's normal while on-axis",
   steered[TICKS].y < steeredBase[TICKS].y - 50,
   `${(steeredBase[TICKS].y - steered[TICKS].y).toFixed(1)} units further after steering`,
+);
+
+// The wire exposes a unit normal perpendicular to its segment (the thrust axis);
+// the sim orients it along the crossing velocity.
+const wireGeom = levelGeometry(level({ y: WIRE_Y, targetSpeed: NEVER, accel: ACCEL }));
+const trig = wireGeom.triggers?.[0];
+const segX = trig ? trig.bx - trig.ax : 0;
+const segY = trig ? trig.by - trig.ay : 0;
+const perp = trig ? Math.abs(segX * trig.dirX + segY * trig.dirY) : 1;
+check(
+  "the wire's thrust axis is its unit normal",
+  !!trig &&
+    Math.abs(Math.hypot(trig.dirX, trig.dirY) - 1) < 1e-9 &&
+    perp < 1e-9 &&
+    Math.abs(trig.dirY) > 0.99,
+  `normal (${trig?.dirX.toFixed(3)}, ${trig?.dirY.toFixed(3)})`,
 );
 
 // --- Authoring round-trip: nalvl ↔ raw, and stripped from the game export. --
