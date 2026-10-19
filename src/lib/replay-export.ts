@@ -375,7 +375,7 @@ function renderScene(
   }
   const tx = (x: number) => x * scale + offX;
   const ty = (y: number) => y * scale + offY;
-  const pc: PaintCtx = { tx, ty, scale, mode };
+  const pc: PaintCtx = { tx, ty, scale, mode, motions: geometry.movingBlocks };
 
   // In follow mode the viewport is a small window that moves with the arrow, so
   // the trail (and each ghost's trail) is only stroked where it can be seen —

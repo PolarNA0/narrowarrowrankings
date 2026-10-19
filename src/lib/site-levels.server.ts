@@ -24,6 +24,10 @@ export interface SiteLevelObstacle {
   field_type?: string;
   field_direction?: number;
   field_strength?: number;
+  /** Site-only moving block (offset reached at motion_period / 2 ticks, then back). */
+  motion_dx?: number;
+  motion_dy?: number;
+  motion_period?: number;
 }
 
 export interface SiteLevelData {
@@ -193,11 +197,7 @@ export async function removeSiteLevel(id: string): Promise<SiteLevelSummary[]> {
     return next;
   }
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  await supabaseAdmin
-    .from("app_docs")
-    .delete()
-    .eq("collection", LEVEL_COLLECTION)
-    .eq("doc_id", id);
+  await supabaseAdmin.from("app_docs").delete().eq("collection", LEVEL_COLLECTION).eq("doc_id", id);
   await writeManifest(next);
   return next;
 }

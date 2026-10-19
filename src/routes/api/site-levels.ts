@@ -77,6 +77,21 @@ function parseLevelData(raw: unknown): SiteLevelData | { error: string } {
         : {}),
       ...(typeof ob.portal_id === "string" ? { portal_id: ob.portal_id } : {}),
       ...(typeof ob.side === "string" ? { side: ob.side } : {}),
+      // Rotation and site-only motion: walls carry these, and the whitelist
+      // would otherwise silently drop them on publish.
+      ...(Number.isFinite(Number(ob.rotation_speed))
+        ? { rotation_speed: Number(ob.rotation_speed) }
+        : {}),
+      ...(ob.rotation_pivot &&
+      Number.isFinite(Number(ob.rotation_pivot.x)) &&
+      Number.isFinite(Number(ob.rotation_pivot.y))
+        ? { rotation_pivot: { x: Number(ob.rotation_pivot.x), y: Number(ob.rotation_pivot.y) } }
+        : {}),
+      ...(Number.isFinite(Number(ob.motion_dx)) ? { motion_dx: Number(ob.motion_dx) } : {}),
+      ...(Number.isFinite(Number(ob.motion_dy)) ? { motion_dy: Number(ob.motion_dy) } : {}),
+      ...(Number.isFinite(Number(ob.motion_period)) && Number(ob.motion_period) > 0
+        ? { motion_period: Number(ob.motion_period) }
+        : {}),
     });
   }
 
@@ -103,10 +118,14 @@ export const Route = createFileRoute("/api/site-levels")({
         }
 
         const name = validName(body.name);
-        if (!name) return Response.json({ error: "Give the level a name (1-48 chars)." }, { status: 400 });
+        if (!name)
+          return Response.json({ error: "Give the level a name (1-48 chars)." }, { status: 400 });
         const author = validName(body.author, 32);
         if (!author) {
-          return Response.json({ error: "Enter a valid author name (1-32 chars)." }, { status: 400 });
+          return Response.json(
+            { error: "Enter a valid author name (1-32 chars)." },
+            { status: 400 },
+          );
         }
         const arrowName = validName(body.arrowName, 32) ?? "Narrow Arrow";
 

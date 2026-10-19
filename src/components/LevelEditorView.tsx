@@ -725,6 +725,57 @@ export function LevelEditorView({
                       />
                     </div>
                   )}
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Moving</Label>
+                    <Switch
+                      checked={selected.motionPeriod != null}
+                      onCheckedChange={(on) =>
+                        updateSelected(
+                          on
+                            ? { motionDx: 120, motionDy: 0, motionPeriod: 240 }
+                            : { motionDx: undefined, motionDy: undefined, motionPeriod: undefined },
+                        )
+                      }
+                    />
+                  </div>
+                  {selected.motionPeriod != null && (
+                    <div className="space-y-1.5">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Offset X</Label>
+                          <Input
+                            type="number"
+                            value={selected.motionDx ?? 0}
+                            onChange={(e) => updateSelected({ motionDx: Number(e.target.value) })}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Offset Y</Label>
+                          <Input
+                            type="number"
+                            value={selected.motionDy ?? 0}
+                            onChange={(e) => updateSelected({ motionDy: Number(e.target.value) })}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Period (ticks, there &amp; back)</Label>
+                        <Input
+                          type="number"
+                          min={2}
+                          value={selected.motionPeriod}
+                          onChange={(e) => updateSelected({ motionPeriod: Number(e.target.value) })}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        Slides to the offset and back. Site-only — the game engine cannot move a
+                        block, so this is stripped from a game export.
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
               {selected.kind === "zone" && (

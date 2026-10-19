@@ -94,6 +94,16 @@ export interface NalvlObstacle {
   thickness?: number;
   rotationPivot?: NalvlPoint | null;
   rotationSpeed?: number | null;
+  /**
+   * Moving block (site-only). The wall slides from its drawn position out to
+   * `+motionDx, +motionDy` world units at half of `motionPeriod` ticks, then back
+   * (a there-and-back sweep). The engine cannot move an obstacle, so the
+   * simulation layer rebuilds the engine each tick with the wall offset; like
+   * wind/suction, these fields never reach the game's exporter.
+   */
+  motionDx?: number;
+  motionDy?: number;
+  motionPeriod?: number;
   portalId?: string;
   side?: string;
   speed?: number;
@@ -199,6 +209,21 @@ function cleanPoints(points: unknown): NalvlPoint[] {
  */
 export function nalvlToRawLevelData(level: NalvlLevel): RawLevelData {
   const data = nalvlToGameData(level);
+  // Re-attach the site-only motion fields. `nalvlToGameData` strips them so they
+  // never reach the game's exporter; the non-field obstacles are in the same
+  // order in both lists, so the motion rides on its own wall.
+  const nonField = level.obstacles.filter((o) => !isFieldKind(o.kind));
+  const obstacles = data.obstacles.map((o, i) => {
+    const src = nonField[i];
+    if (!src || !isNum(src.motionPeriod) || src.motionPeriod <= 0) return o;
+    if (!isNum(src.motionDx) && !isNum(src.motionDy)) return o;
+    return {
+      ...o,
+      ...(isNum(src.motionDx) ? { motion_dx: src.motionDx } : {}),
+      ...(isNum(src.motionDy) ? { motion_dy: src.motionDy } : {}),
+      motion_period: src.motionPeriod,
+    };
+  });
   const fields: NonNullable<RawLevelData["obstacles"]> = level.obstacles
     .filter((o) => isFieldKind(o.kind))
     .map((o) => ({
@@ -208,7 +233,7 @@ export function nalvlToRawLevelData(level: NalvlLevel): RawLevelData {
       field_strength: isNum(o.fieldStrength) ? o.fieldStrength : DEFAULT_FIELD_STRENGTH,
       points: o.points.map((p) => ({ x: p.x, y: p.y })),
     }));
-  return { ...data, obstacles: [...data.obstacles, ...fields] };
+  return { ...data, obstacles: [...obstacles, ...fields] };
 }
 
 /**
@@ -335,6 +360,15 @@ export function rawLevelDataToNalvl(data: RawLevelData, name?: string): NalvlLev
         ? { rotationPivot: { x: o.rotation_pivot.x, y: o.rotation_pivot.y } }
         : {}),
       ...(isNum(o.rotation_speed) ? { rotationSpeed: o.rotation_speed } : {}),
+      ...(isNum(o.motion_period) &&
+      o.motion_period > 0 &&
+      (isNum(o.motion_dx) || isNum(o.motion_dy))
+        ? {
+            ...(isNum(o.motion_dx) ? { motionDx: o.motion_dx } : {}),
+            ...(isNum(o.motion_dy) ? { motionDy: o.motion_dy } : {}),
+            motionPeriod: o.motion_period,
+          }
+        : {}),
     });
   }
   return {

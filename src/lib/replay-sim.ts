@@ -115,6 +115,12 @@ export interface SimWall {
   pivot?: { x: number; y: number };
   /** Rotation rate in radians per 240Hz tick; absent when the wall is static. */
   rotationSpeed?: number;
+  /**
+   * Index into `SimGeometry.movingBlocks` when this wall is a moving block, or
+   * -1/undefined otherwise. The renderer translates the segment by that
+   * motion's offset at the current tick.
+   */
+  motion?: number;
 }
 
 /**
@@ -159,6 +165,22 @@ export interface SimPortal {
   by: number;
 }
 
+/**
+ * A moving block: an obstacle the simulation layer translates on a there-and-
+ * back line, since the engine can only spin an obstacle, not slide one. Indexed
+ * by the obstacle's position in `data.obstacles` so the sim can offset exactly
+ * that entry when it rebuilds the engine state.
+ */
+export interface SimMotion {
+  /** Index into the level's obstacle list. */
+  obstacleIndex: number;
+  /** Offset in world units reached at `period / 2` ticks, then back to zero. */
+  dx: number;
+  dy: number;
+  /** Ticks for a full there-and-back cycle. */
+  period: number;
+}
+
 /** Everything the renderer needs, split by how each obstacle is drawn. */
 export interface SimGeometry {
   walls: SimWall[];
@@ -166,6 +188,8 @@ export interface SimGeometry {
   portals: SimPortal[];
   /** Site-only wind/suction fields, drawn as faint white areas with particles. */
   forceFields?: ForceField[];
+  /** Site-only moving blocks, drawn at their current-tick offset. */
+  movingBlocks?: SimMotion[];
 }
 
 export interface SimResult {
@@ -195,6 +219,18 @@ export interface RawLevelData {
     field_type?: string;
     field_direction?: number;
     field_strength?: number;
+    /**
+     * Site-only motion for a moving block: the wall eases out to an offset of
+     * `motion_dx`/`motion_dy` world units at half of `motion_period` ticks, then
+     * back to its start at `motion_period` (a there-and-back sweep). The engine
+     * cannot move an obstacle (it only spins one), so the simulation layer
+     * rebuilds the engine each tick with the obstacle's points offset by the
+     * animation curve; the engine never sees these fields, exactly like the
+     * wind/suction fields.
+     */
+    motion_dx?: number;
+    motion_dy?: number;
+    motion_period?: number;
   }>;
 }
 
@@ -213,7 +249,13 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
   const zones: SimZone[] = [];
   const portals: SimPortal[] = [];
   const forceFields: ForceField[] = [];
-  for (const obstacle of data?.obstacles ?? []) {
+  const obstacles = data?.obstacles ?? [];
+  const motionByObstacle = new Map<number, number>();
+  for (let i = 0; i < obstacles.length; i++) {
+    if (isMovingBlock(obstacles[i])) motionByObstacle.set(i, motionByObstacle.size);
+  }
+  for (let obstacleIndex = 0; obstacleIndex < obstacles.length; obstacleIndex++) {
+    const obstacle = obstacles[obstacleIndex];
     const pts = obstacle.points ?? [];
 
     // Site-only force fields are neither walls nor zones: they push/pull the
@@ -268,6 +310,11 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
         : undefined;
     const rotationSpeed = obstacle.rotation_speed ?? undefined;
 
+    // A moving block also slides; the renderer reads its motion from
+    // `movingBlocks` (this wall's slot in that dense list) and translates the
+    // segment at draw time.
+    const motion = motionByObstacle.get(obstacleIndex) ?? -1;
+
     // Some obstacles carry a single point, not a polyline: the editor lets you
     // drop a wall as a dot, and the engine still collides with it (a
     // zero-length segment with the same thickness). Rendering it as a dot keeps
@@ -275,7 +322,17 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
     const valid = pts.filter((p): p is { x: number; y: number } => p?.x != null && p?.y != null);
     if (valid.length === 1) {
       const p = valid[0];
-      walls.push({ ax: p.x, ay: p.y, bx: p.x, by: p.y, type, thickness, pivot, rotationSpeed });
+      walls.push({
+        ax: p.x,
+        ay: p.y,
+        bx: p.x,
+        by: p.y,
+        type,
+        thickness,
+        pivot,
+        rotationSpeed,
+        motion,
+      });
       continue;
     }
     for (let i = 0; i + 1 < valid.length; i++) {
@@ -290,10 +347,11 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
         thickness,
         pivot,
         rotationSpeed,
+        motion,
       });
     }
   }
-  return { walls, zones, portals, forceFields };
+  return { walls, zones, portals, forceFields, movingBlocks: levelMotions(data) };
 }
 
 /**
@@ -372,6 +430,53 @@ export function isForceField(o: {
   obstacle_type?: string;
 }): boolean {
   return o.field_type === "wind" || o.field_type === "suction";
+}
+
+/** True for an obstacle the sim translates (site-only motion fields present). */
+export function isMovingBlock(o: {
+  motion_period?: number;
+  motion_dx?: number;
+  motion_dy?: number;
+}): boolean {
+  if (!isFiniteNum(o.motion_period) || o.motion_period <= 0) return false;
+  return (
+    (isFiniteNum(o.motion_dx) && o.motion_dx !== 0) ||
+    (isFiniteNum(o.motion_dy) && o.motion_dy !== 0)
+  );
+}
+
+/**
+ * A moving block's offset at `tick`, in world units. The block eases to the far
+ * end over the first half of its period and back over the second, so it is
+ * momentarily still at each end (a smooth there-and-back rather than a snap).
+ */
+export function motionOffsetAt(
+  dx: number,
+  dy: number,
+  period: number,
+  tick: number,
+): { x: number; y: number } {
+  if (!isFiniteNum(period) || period <= 0) return { x: 0, y: 0 };
+  const phase = (((tick % period) + period) % period) / period; // 0..1
+  const k = phase < 0.5 ? phase * 2 : 2 - phase * 2; // 0..1..0
+  return { x: dx * k, y: dy * k };
+}
+
+/** Every moving block in a level, with the obstacle index the sim offsets. */
+export function levelMotions(data: RawLevelData | null | undefined): SimMotion[] {
+  const motions: SimMotion[] = [];
+  const obstacles = data?.obstacles ?? [];
+  for (let i = 0; i < obstacles.length; i++) {
+    const o = obstacles[i];
+    if (!isMovingBlock(o)) continue;
+    motions.push({
+      obstacleIndex: i,
+      dx: isFiniteNum(o.motion_dx) ? o.motion_dx : 0,
+      dy: isFiniteNum(o.motion_dy) ? o.motion_dy : 0,
+      period: o.motion_period as number,
+    });
+  }
+  return motions;
 }
 
 /** The fields' force polygons must not reach the engine, which would reject them. */
@@ -545,12 +650,66 @@ export async function createReplayEngine(
   const fields = levelGeometry(data).forceFields ?? [];
   const hasFields = fields.length > 0;
 
+  // Moving blocks are the same story on the geometry side: the engine can spin
+  // an obstacle but not slide one, so each tick we rebuild the engine from its
+  // own state with the block's points offset by the animation curve. A block is
+  // authored as a plain wall, so its base points are known from the level and
+  // the offset is a pure function of the tick — which also keeps `snapshot`
+  // clean (see below).
+  const allObstacles = data.obstacles ?? [];
+  // Engine obstacle index for each authored index; force fields are stripped
+  // before the engine sees the list, so the two indices diverge when a field
+  // precedes a block.
+  const engineIndexOf: number[] = [];
+  let engineCount = 0;
+  for (const o of allObstacles) {
+    if (isForceField(o)) {
+      engineIndexOf.push(-1);
+    } else {
+      engineIndexOf.push(engineCount);
+      engineCount++;
+    }
+  }
+  const engineObstacleList = engineObstacles(data);
+  const motions = levelMotions(data)
+    .map((m) => {
+      const engineIndex = engineIndexOf[m.obstacleIndex] ?? -1;
+      const base = (engineObstacleList[engineIndex]?.points ?? []) as Array<{
+        x: number;
+        y: number;
+      }>;
+      return { ...m, engineIndex, base };
+    })
+    .filter((m) => m.engineIndex >= 0 && m.base.length > 0);
+  const hasMotions = motions.length > 0;
+
   let engine: InstanceType<EngineModule["GameMechanicsEngine"]>;
   try {
     engine = new mod.GameMechanicsEngine(state());
   } catch {
     return null;
   }
+
+  /** Translate every moving block to its offset at the engine's current tick. */
+  const applyMotions = (): void => {
+    const tick = engine.get_ticks();
+    const s = JSON.parse(engine.state) as EnginePlayerState & {
+      map?: { obstacles?: Array<{ points?: Array<{ x: number; y: number }> }> };
+    };
+    const obs = s.map?.obstacles;
+    if (!obs) return;
+    let changed = false;
+    for (const m of motions) {
+      const o = obs[m.engineIndex];
+      if (!o) continue;
+      const off = motionOffsetAt(m.dx, m.dy, m.period, tick);
+      o.points = m.base.map((p) => ({ x: p.x + off.x, y: p.y + off.y }));
+      changed = true;
+    }
+    if (!changed) return;
+    engine.free();
+    engine = new mod.GameMechanicsEngine(s as never);
+  };
 
   /** Apply the fields' force at the arrow's current pose, if any apply. */
   const applyFields = (): void => {
@@ -566,18 +725,25 @@ export async function createReplayEngine(
   return {
     step(symbol) {
       engine.process_ticks([symbolToInput(symbol)]);
-      if (hasFields && engine.player_state_code() === 0) applyFields();
+      if (engine.player_state_code() === 0) {
+        if (hasMotions) applyMotions();
+        if (hasFields) applyFields();
+      }
       return read(engine);
     },
     stepCode(symbol) {
       engine.process_ticks([symbolToInput(symbol)]);
       const code = engine.player_state_code();
-      if (hasFields && code === 0) applyFields();
+      if (code === 0) {
+        if (hasMotions) applyMotions();
+        if (hasFields) applyFields();
+      }
       return code;
     },
     reset() {
       engine.free();
       engine = new mod.GameMechanicsEngine(state());
+      if (hasMotions) applyMotions();
       return read(engine);
     },
     read() {

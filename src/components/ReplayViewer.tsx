@@ -790,20 +790,34 @@ export function ReplayStage({
     let maxX = -Infinity;
     let maxY = -Infinity;
     const reach = (w: SimWall) => {
-      if (w.pivot && w.rotationSpeed) {
-        const r = Math.max(
-          Math.hypot(w.ax - w.pivot.x, w.ay - w.pivot.y),
-          Math.hypot(w.bx - w.pivot.x, w.by - w.pivot.y),
-        );
-        return { x0: w.pivot.x - r, x1: w.pivot.x + r, y0: w.pivot.y - r, y1: w.pivot.y + r };
+      const m = w.motion != null && w.motion >= 0 ? geometry.movingBlocks?.[w.motion] : undefined;
+      const box =
+        w.pivot && w.rotationSpeed
+          ? (() => {
+              const r = Math.max(
+                Math.hypot(w.ax - w.pivot.x, w.ay - w.pivot.y),
+                Math.hypot(w.bx - w.pivot.x, w.by - w.pivot.y),
+              );
+              return { x0: w.pivot.x - r, x1: w.pivot.x + r, y0: w.pivot.y - r, y1: w.pivot.y + r };
+            })()
+          : (() => {
+              const half = w.thickness / 2;
+              return {
+                x0: Math.min(w.ax, w.bx) - half,
+                x1: Math.max(w.ax, w.bx) + half,
+                y0: Math.min(w.ay, w.by) - half,
+                y1: Math.max(w.ay, w.by) + half,
+              };
+            })();
+      // A moving block sweeps to base + (dx, dy), so the camera must include
+      // both ends or it slides off-screen.
+      if (m) {
+        box.x0 += Math.min(0, m.dx);
+        box.x1 += Math.max(0, m.dx);
+        box.y0 += Math.min(0, m.dy);
+        box.y1 += Math.max(0, m.dy);
       }
-      const half = w.thickness / 2;
-      return {
-        x0: Math.min(w.ax, w.bx) - half,
-        x1: Math.max(w.ax, w.bx) + half,
-        y0: Math.min(w.ay, w.by) - half,
-        y1: Math.max(w.ay, w.by) + half,
-      };
+      return box;
     };
     for (const w of geometry.walls) {
       const b = reach(w);
@@ -911,7 +925,7 @@ export function ReplayStage({
     ) => drawGameThrust(g, kind, x, y, rot, radius, scale, tx, ty, power, tick);
 
     const paintWallsLocal = (g: CanvasRenderingContext2D, walls: SimWall[], tick: number) =>
-      paintWalls(g, walls, tick, { tx, ty, scale, mode });
+      paintWalls(g, walls, tick, { tx, ty, scale, mode, motions: geometry.movingBlocks });
 
     // Stable particle pool for the wind/suction field previews (levels that use
     // them are site-authored only; official levels have none).
@@ -1466,9 +1480,16 @@ function ReplayLegend({ geometry }: { geometry: SimGeometry }) {
     return [...seen].filter((t) => LEGEND_ICONS[t]);
   }, [geometry]);
 
-  if (types.length === 0) return null;
+  if (types.length === 0 && !(geometry.movingBlocks && geometry.movingBlocks.length > 0))
+    return null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      {geometry.movingBlocks && geometry.movingBlocks.length > 0 && (
+        <span className="flex items-center gap-1.5 text-[10px] text-amber-300">
+          <span className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: "#fbbf24" }} />
+          moving
+        </span>
+      )}
       {types.map((type) => {
         const visual = wallVisual(type);
         return (

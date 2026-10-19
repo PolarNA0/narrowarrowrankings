@@ -262,7 +262,13 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
           performance.now() / 1000,
         );
       }
-      paintWalls(ctx, s.geometry.walls, path.length - 1, { tx, ty, scale, mode: s.mode });
+      paintWalls(ctx, s.geometry.walls, path.length - 1, {
+        tx,
+        ty,
+        scale,
+        mode: s.mode,
+        motions: s.geometry.movingBlocks,
+      });
 
       if (frame.ghostPath && frame.ghostPath.length > 1) {
         ctx.save();

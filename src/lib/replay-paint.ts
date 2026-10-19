@@ -21,7 +21,15 @@ import {
   gameWallColor,
   gameZoneColor,
 } from "@/lib/replay-render";
-import type { ForceField, SimGeometry, SimPortal, SimResult, SimWall } from "@/lib/replay-sim";
+import type {
+  ForceField,
+  SimGeometry,
+  SimMotion,
+  SimPortal,
+  SimResult,
+  SimWall,
+} from "@/lib/replay-sim";
+import { motionOffsetAt } from "@/lib/replay-sim";
 
 export type RenderMode = "lines" | "game";
 
@@ -32,6 +40,11 @@ export interface PaintCtx {
   /** World→px scale, used for stroke widths and sprites. */
   scale: number;
   mode: RenderMode;
+  /**
+   * The level's moving blocks, indexed by `SimWall.motion`. Absent for levels
+   * with none; a moving wall is drawn translated by its offset at the tick.
+   */
+  motions?: SimMotion[];
 }
 
 const wallColorFor = (type: string, mode: RenderMode) =>
@@ -323,6 +336,18 @@ export function paintWalls(
     let ay = w.ay;
     let bx = w.bx;
     let by = w.by;
+    // A moving block is drawn at its offset for this tick, so the rendered wall
+    // tracks the geometry the engine actually collides against.
+    if (pc.motions && w.motion != null && w.motion >= 0) {
+      const m = pc.motions[w.motion];
+      if (m) {
+        const off = motionOffsetAt(m.dx, m.dy, m.period, tick);
+        ax += off.x;
+        ay += off.y;
+        bx += off.x;
+        by += off.y;
+      }
+    }
     if (w.pivot && w.rotationSpeed) {
       const ang = w.rotationSpeed * tick;
       const cosA = Math.cos(ang);

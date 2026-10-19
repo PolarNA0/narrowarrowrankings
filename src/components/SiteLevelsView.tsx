@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Globe,
   Loader2,
+  MoveHorizontal,
   Pencil,
   Play,
   RefreshCw,
@@ -377,10 +378,17 @@ function SiteLevelDetail({
         <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-[11px] text-slate-400 font-mono flex flex-wrap gap-x-5 gap-y-1">
           <span>{record.data.obstacles.length} obstacles</span>
           <span>{entries.length} runs</span>
-          {entries.length > 0 && <span className="text-[var(--app-accent)]">WR {fmt(entries[0].timeMs)}</span>}
+          {entries.length > 0 && (
+            <span className="text-[var(--app-accent)]">WR {fmt(entries[0].timeMs)}</span>
+          )}
           {record.data.obstacles.some((o) => o.field_type) && (
             <span className="text-cyan-300 flex items-center gap-1">
               <Wind className="w-3 h-3" /> site-only mechanics
+            </span>
+          )}
+          {record.data.obstacles.some((o) => o.motion_period) && (
+            <span className="text-amber-300 flex items-center gap-1">
+              <MoveHorizontal className="w-3 h-3" /> moving blocks
             </span>
           )}
         </div>

@@ -282,6 +282,30 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
             }
           }
         }
+        // Moving-block preview: the wall's travel line and a ghost of the wall at
+        // the far end, so the author can see where it will slide.
+        if (o.kind === "wall" && o.motionPeriod != null && (o.motionDx || o.motionDy)) {
+          const ox = (o.motionDx ?? 0) * cam.scale;
+          const oy = (o.motionDy ?? 0) * cam.scale;
+          ctx.save();
+          ctx.setLineDash([4, 4]);
+          ctx.globalAlpha = 0.55;
+          ctx.strokeStyle = "#fbbf24";
+          ctx.lineWidth = 1.5;
+          const p0 = pts[0];
+          ctx.beginPath();
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(p0.x + ox, p0.y + oy);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 0.3;
+          ctx.beginPath();
+          pts.forEach((p, i) =>
+            i === 0 ? ctx.moveTo(p.x + ox, p.y + oy) : ctx.lineTo(p.x + ox, p.y + oy),
+          );
+          ctx.stroke();
+          ctx.restore();
+        }
         if (selected) {
           ctx.strokeStyle = "#38bdf8";
           ctx.fillStyle = "#38bdf8";
