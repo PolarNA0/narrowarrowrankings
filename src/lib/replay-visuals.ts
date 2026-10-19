@@ -9,7 +9,7 @@
  * tints zones by effect rather than by level.
  */
 
-export type ObstacleKind = "wall" | "zone" | "portal" | "finish";
+export type ObstacleKind = "wall" | "zone" | "portal" | "finish" | "trigger";
 
 export interface WallVisual {
   /** Stroke colour (also the fill tint for zones). */
@@ -36,6 +36,8 @@ const VISUALS: Record<string, WallVisual> = {
   // Portals and the finish line.
   portal: { color: "#ff6611", kind: "portal", width: 2.4 },
   finish: { color: "#ffffff", kind: "finish", width: 5 },
+  // Site-only accelerator wire.
+  accelerator: { color: "#22d3ee", kind: "trigger", width: 2.4 },
 };
 
 /** Deterministic hue for a type we have no explicit colour for. */

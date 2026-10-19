@@ -20,6 +20,7 @@
  */
 
 import type { RawLevelData } from "./replay-sim";
+import { isAcceleratorTrigger } from "./replay-sim";
 
 export const NALVL_FORMAT = "nalvl";
 export const NALVL_FORMAT_VERSION = 1;
@@ -60,7 +61,7 @@ export const GAME_REQUIRED_FORMAT_VERSION = 0;
 
 export type NalvlWallType = "normal" | "death" | "bouncy" | "boost" | "finish";
 export type NalvlZoneType = "boost" | "ice" | "nosteer" | "steer" | "rail";
-export type NalvlKind = "wall" | "zone" | "portal" | "wind" | "suction";
+export type NalvlKind = "wall" | "zone" | "portal" | "wind" | "suction" | "accelerator";
 
 /** Site-only force fields; they never reach the game's exporter. */
 export const NALVL_FIELD_KINDS: NalvlKind[] = ["wind", "suction"];
@@ -70,10 +71,26 @@ export function isFieldKind(kind: NalvlKind): kind is "wind" | "suction" {
   return kind === "wind" || kind === "suction";
 }
 
+/**
+ * Kinds the game's engine has no concept of, so they are simulated by the site
+ * layer and must never appear in an export. The accelerator wire is one of
+ * these: the engine has no triggers.
+ */
+export const NALVL_SITE_ONLY_KINDS: NalvlKind[] = ["wind", "suction", "accelerator"];
+
+/** True for a kind that is simulated by the site layer only (never exported). */
+export function isSiteOnlyKind(kind: NalvlKind): boolean {
+  return NALVL_SITE_ONLY_KINDS.includes(kind);
+}
+
 /** Default wind blow direction (radians): to the right (+x), matching screen. */
 export const DEFAULT_FIELD_DIRECTION = 0;
 /** Default field strength in world units per 240Hz tick (0.05 ≈ 12 units/s). */
 export const DEFAULT_FIELD_STRENGTH = 0.05;
+/** Default accelerator target speed, in world units per 240Hz tick. */
+export const DEFAULT_ACCELERATOR_SPEED = 1.5;
+/** Default accelerator push, in world units per tick. */
+export const DEFAULT_ACCELERATOR_ACCEL = 0.05;
 
 export const NALVL_WALL_TYPES: NalvlWallType[] = ["normal", "death", "bouncy", "boost", "finish"];
 export const NALVL_ZONE_TYPES: NalvlZoneType[] = ["boost", "ice", "nosteer", "steer", "rail"];
@@ -111,6 +128,14 @@ export interface NalvlObstacle {
   fieldDirection?: number;
   /** Wind/suction strength in world units per 240Hz tick. */
   fieldStrength?: number;
+  /**
+   * Accelerator wire (site-only). A one-shot trigger: crossing the segment
+   * captures the arrow's velocity direction and arms a global push along it,
+   * which keeps feeding until the arrow reaches `acceleratorSpeed`. Like
+   * wind/suction it never reaches the game's exporter.
+   */
+  acceleratorSpeed?: number;
+  acceleratorAccel?: number;
 }
 
 export interface NalvlLevel {
@@ -148,6 +173,13 @@ export function defaultObstacle(kind: NalvlKind, points: NalvlPoint[]): NalvlObs
       ...base,
       fieldDirection: DEFAULT_FIELD_DIRECTION,
       fieldStrength: DEFAULT_FIELD_STRENGTH,
+    };
+  }
+  if (kind === "accelerator") {
+    return {
+      ...base,
+      acceleratorSpeed: DEFAULT_ACCELERATOR_SPEED,
+      acceleratorAccel: DEFAULT_ACCELERATOR_ACCEL,
     };
   }
   // The game links two portals by a shared `portal_id`, one on each `side`
@@ -210,11 +242,11 @@ function cleanPoints(points: unknown): NalvlPoint[] {
 export function nalvlToRawLevelData(level: NalvlLevel): RawLevelData {
   const data = nalvlToGameData(level);
   // Re-attach the site-only motion fields. `nalvlToGameData` strips them so they
-  // never reach the game's exporter; the non-field obstacles are in the same
+  // never reach the game's exporter; the non-site-only obstacles are in the same
   // order in both lists, so the motion rides on its own wall.
-  const nonField = level.obstacles.filter((o) => !isFieldKind(o.kind));
+  const nonSite = level.obstacles.filter((o) => !isSiteOnlyKind(o.kind));
   const obstacles = data.obstacles.map((o, i) => {
-    const src = nonField[i];
+    const src = nonSite[i];
     if (!src || !isNum(src.motionPeriod) || src.motionPeriod <= 0) return o;
     if (!isNum(src.motionDx) && !isNum(src.motionDy)) return o;
     return {
@@ -233,7 +265,15 @@ export function nalvlToRawLevelData(level: NalvlLevel): RawLevelData {
       field_strength: isNum(o.fieldStrength) ? o.fieldStrength : DEFAULT_FIELD_STRENGTH,
       points: o.points.map((p) => ({ x: p.x, y: p.y })),
     }));
-  return { ...data, obstacles: [...obstacles, ...fields] };
+  const triggers: NonNullable<RawLevelData["obstacles"]> = level.obstacles
+    .filter((o) => o.kind === "accelerator")
+    .map((o) => ({
+      obstacle_type: "wall",
+      points: o.points.map((p) => ({ x: p.x, y: p.y })),
+      accelerator_speed: isNum(o.acceleratorSpeed) ? o.acceleratorSpeed : DEFAULT_ACCELERATOR_SPEED,
+      accelerator_accel: isNum(o.acceleratorAccel) ? o.acceleratorAccel : DEFAULT_ACCELERATOR_ACCEL,
+    }));
+  return { ...data, obstacles: [...obstacles, ...fields, ...triggers] };
 }
 
 /**
@@ -243,9 +283,10 @@ export function nalvlToRawLevelData(level: NalvlLevel): RawLevelData {
  */
 export function nalvlToGameData(level: NalvlLevel): GameLevelData {
   const obstacles: NonNullable<RawLevelData["obstacles"]> = level.obstacles
-    // Wind/suction are site-only: the game's engine has no concept of them, so
-    // they must not appear in an export or the game would reject the file.
-    .filter((o) => !isFieldKind(o.kind))
+    // Wind/suction and accelerator wires are site-only: the game's engine has no
+    // concept of them, so they must not appear in an export or the game would
+    // reject the file.
+    .filter((o) => !isSiteOnlyKind(o.kind))
     .map((o) => {
       const points = o.points.map((p) => ({ x: p.x, y: p.y }));
       if (o.kind === "zone") {
@@ -325,6 +366,18 @@ export function rawLevelDataToNalvl(data: RawLevelData, name?: string): NalvlLev
         points,
         fieldDirection: isNum(o.field_direction) ? o.field_direction : DEFAULT_FIELD_DIRECTION,
         fieldStrength: isNum(o.field_strength) ? o.field_strength : DEFAULT_FIELD_STRENGTH,
+      });
+      continue;
+    }
+    // A wire is authored as a two-point wall carrying the accelerator fields, so
+    // it must be recognised before the generic wall branch claims it.
+    if (isAcceleratorTrigger(o)) {
+      obstacles.push({
+        id: nextObstacleId(),
+        kind: "accelerator",
+        points,
+        acceleratorSpeed: o.accelerator_speed,
+        acceleratorAccel: o.accelerator_accel,
       });
       continue;
     }

@@ -24,6 +24,7 @@ import {
   drawInputIndicator,
   drawSprite,
   paintWalls,
+  paintTriggers,
   paintZones,
   strokeTrail,
   type PaintCtx,
@@ -396,6 +397,7 @@ function renderScene(
   }
 
   paintZones(ctx, geometry, pc);
+  if (geometry.triggers && geometry.triggers.length > 0) paintTriggers(ctx, geometry.triggers, pc);
   paintWalls(ctx, geometry.walls, upto, pc);
 
   for (const g of opts.ghosts ?? []) {

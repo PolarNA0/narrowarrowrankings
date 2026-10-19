@@ -33,6 +33,7 @@ import {
   Wind,
   Magnet,
   Globe,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,8 @@ import {
   NALVL_ZONE_TYPES,
   DEFAULT_FIELD_DIRECTION,
   DEFAULT_FIELD_STRENGTH,
+  DEFAULT_ACCELERATOR_SPEED,
+  DEFAULT_ACCELERATOR_ACCEL,
   gameFilename,
   nalvlFilename,
   nalvlToGameFile,
@@ -102,6 +105,8 @@ export function LevelEditorView({
   const [zoneType, setZoneType] = React.useState<NalvlZoneType>("boost");
   const [fieldDirection, setFieldDirection] = React.useState(DEFAULT_FIELD_DIRECTION);
   const [fieldStrength, setFieldStrength] = React.useState(DEFAULT_FIELD_STRENGTH);
+  const [acceleratorSpeed, setAcceleratorSpeed] = React.useState(DEFAULT_ACCELERATOR_SPEED);
+  const [acceleratorAccel, setAcceleratorAccel] = React.useState(DEFAULT_ACCELERATOR_ACCEL);
   // Grid snapping is on by default so zones/walls come out symmetrical.
   const [snap, setSnap] = React.useState<number>(10);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -356,6 +361,7 @@ export function LevelEditorView({
     { id: "portal", icon: <DoorOpen className="w-4 h-4" />, label: "Portal" },
     { id: "wind", icon: <Wind className="w-4 h-4" />, label: "Wind (site-only)" },
     { id: "suction", icon: <Magnet className="w-4 h-4" />, label: "Suction (site-only)" },
+    { id: "accelerator", icon: <Zap className="w-4 h-4" />, label: "Accelerator wire (site-only)" },
     { id: "pan", icon: <Hand className="w-4 h-4" />, label: "Pan" },
   ];
 
@@ -458,6 +464,35 @@ export function LevelEditorView({
                 <p className="text-[11px] text-slate-500">
                   Site-only: the game&apos;s engine has no force fields, so wind and suction are
                   stripped from the game export but simulated here.
+                </p>
+              </div>
+            )}
+            {tool === "accelerator" && (
+              <div className="space-y-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Target speed (world units/tick)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={acceleratorSpeed}
+                    onChange={(e) => setAcceleratorSpeed(Number(e.target.value))}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Push (world units/tick²)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={acceleratorAccel}
+                    onChange={(e) => setAcceleratorAccel(Number(e.target.value))}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Draw a line the run crosses. On crossing, the push direction is captured from the
+                  arrow&apos;s velocity and held until it reaches the target speed, then it stops.
+                  Site-only — the engine has no triggers, so it is stripped from a game export.
                 </p>
               </div>
             )}
@@ -603,6 +638,8 @@ export function LevelEditorView({
                 zoneType={zoneType}
                 fieldDirection={fieldDirection}
                 fieldStrength={fieldStrength}
+                acceleratorSpeed={acceleratorSpeed}
+                acceleratorAccel={acceleratorAccel}
                 snap={snap}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
@@ -831,6 +868,34 @@ export function LevelEditorView({
                   </div>
                   <p className="text-[11px] text-slate-500">
                     Site-only force field: simulated here, stripped from the game export.
+                  </p>
+                </>
+              )}
+              {selected.kind === "accelerator" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Target speed (world units/tick)</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={selected.acceleratorSpeed ?? DEFAULT_ACCELERATOR_SPEED}
+                      onChange={(e) => updateSelected({ acceleratorSpeed: Number(e.target.value) })}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Push (world units/tick²)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={selected.acceleratorAccel ?? DEFAULT_ACCELERATOR_ACCEL}
+                      onChange={(e) => updateSelected({ acceleratorAccel: Number(e.target.value) })}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Crossing this line captures the arrow&apos;s direction and pushes along it until
+                    the target speed, then stops. Site-only: stripped from the game export.
                   </p>
                 </>
               )}

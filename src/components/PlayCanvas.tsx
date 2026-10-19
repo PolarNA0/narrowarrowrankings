@@ -21,6 +21,7 @@ import {
   drawGameThrust,
   drawInputIndicator,
   paintForceFields,
+  paintTriggers,
   paintWalls,
   paintZones,
   strokeTrail,
@@ -278,6 +279,9 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
           fieldParticles,
           performance.now() / 1000,
         );
+      }
+      if (s.geometry.triggers && s.geometry.triggers.length > 0) {
+        paintTriggers(ctx, s.geometry.triggers, { tx, ty, scale, mode: s.mode });
       }
       paintWalls(ctx, s.geometry.walls, tick, {
         tx,

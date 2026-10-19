@@ -34,8 +34,9 @@ interface Props {
 
 /**
  * Publish the authored level as a site level. Site levels may keep the
- * site-only wind/suction fields, so the payload is lowered with
- * `nalvlToRawLevelData` (which retains them) rather than the game export.
+ * site-only wind/suction fields and accelerator wires, so the payload is
+ * lowered with `nalvlToRawLevelData` (which retains them) rather than the game
+ * export.
  */
 export function SitePublishDialog({ open, onOpenChange, level, onPublished }: Props) {
   const [name, setName] = React.useState(level.name);
@@ -82,7 +83,8 @@ export function SitePublishDialog({ open, onOpenChange, level, onPublished }: Pr
           <DialogTitle className="text-white">Publish site level</DialogTitle>
           <DialogDescription className="text-slate-500 text-xs">
             Publishes to the site&apos;s own board, where anyone can play it and post times. Levels
-            with wind/suction keep those fields here (the game&apos;s engine cannot run them).
+            with wind, suction or accelerator wires keep those mechanics here (the game&apos;s
+            engine cannot run them).
           </DialogDescription>
         </DialogHeader>
 

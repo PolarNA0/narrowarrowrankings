@@ -27,6 +27,7 @@ import type {
   SimMotion,
   SimPortal,
   SimResult,
+  SimTrigger,
   SimWall,
 } from "@/lib/replay-sim";
 import { motionOffsetAt } from "@/lib/replay-sim";
@@ -320,6 +321,42 @@ export function paintForceFields(
     }
     ctx.restore();
   }
+}
+
+/**
+ * Accelerator wires. Drawn as a thin charged line with a faint glow, so an
+ * author can tell at a glance which way a run will be launched — the push
+ * direction is not the wire's own orientation (it is captured from the arrow's
+ * velocity at the crossing), so no arrowhead is drawn.
+ */
+export function paintTriggers(ctx: CanvasRenderingContext2D, triggers: SimTrigger[], pc: PaintCtx) {
+  const { tx, ty, scale } = pc;
+  const visual = wallVisual("accelerator");
+  ctx.save();
+  ctx.lineCap = "round";
+  for (const t of triggers) {
+    const ax = tx(t.ax);
+    const ay = ty(t.ay);
+    const bx = tx(t.bx);
+    const by = ty(t.by);
+    // Soft outer glow.
+    ctx.strokeStyle = withAlpha(visual.color, 0.18);
+    ctx.lineWidth = Math.max(6, 7 * scale);
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+    // Bright core.
+    ctx.strokeStyle = visual.color;
+    ctx.lineWidth = Math.max(1.5, visual.width * scale);
+    ctx.setLineDash([9, 5]);
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
 }
 
 /** Walls (and the finish line), at `tick` so rotating segments sit at their pose. */

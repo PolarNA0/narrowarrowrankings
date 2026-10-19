@@ -92,6 +92,15 @@ function parseLevelData(raw: unknown): SiteLevelData | { error: string } {
       ...(Number.isFinite(Number(ob.motion_period)) && Number(ob.motion_period) > 0
         ? { motion_period: Number(ob.motion_period) }
         : {}),
+      // Site-only accelerator wire: a two-point segment carrying the target speed
+      // and push. Without these the wire publishes as a plain wall and the sim
+      // never arms a charge.
+      ...(Number.isFinite(Number(ob.accelerator_speed))
+        ? { accelerator_speed: Number(ob.accelerator_speed) }
+        : {}),
+      ...(Number.isFinite(Number(ob.accelerator_accel))
+        ? { accelerator_accel: Number(ob.accelerator_accel) }
+        : {}),
     });
   }
 

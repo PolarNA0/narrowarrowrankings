@@ -28,6 +28,9 @@ export interface SiteLevelObstacle {
   motion_dx?: number;
   motion_dy?: number;
   motion_period?: number;
+  /** Site-only accelerator wire: crossing it arms a push until accelerator_speed. */
+  accelerator_speed?: number;
+  accelerator_accel?: number;
 }
 
 export interface SiteLevelData {
@@ -230,7 +233,10 @@ function summarize(
     createdAt: record.createdAt,
     obstacleCount: obstacles.length,
     hasCustomMechanics: obstacles.some(
-      (o) => o.field_type === "wind" || o.field_type === "suction",
+      (o) =>
+        o.field_type === "wind" ||
+        o.field_type === "suction" ||
+        (Number.isFinite(Number(o.accelerator_speed)) && Number(o.accelerator_speed) > 0),
     ),
     completions,
     bestTimeMs,

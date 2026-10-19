@@ -13,7 +13,7 @@
  */
 
 import * as React from "react";
-import { wallVisual } from "@/lib/replay-visuals";
+import { wallVisual, withAlpha } from "@/lib/replay-visuals";
 import { paintForceFields, type FieldParticle } from "@/lib/replay-paint";
 import {
   defaultObstacle,
@@ -25,7 +25,8 @@ import {
   type NalvlZoneType,
 } from "@/lib/nalvl";
 
-export type EditorTool = "select" | "wall" | "zone" | "portal" | "wind" | "suction" | "pan";
+export type EditorTool =
+  "select" | "wall" | "zone" | "portal" | "wind" | "suction" | "accelerator" | "pan";
 
 export interface LevelEditorCanvasHandle {
   redraw(): void;
@@ -42,6 +43,10 @@ export interface LevelEditorCanvasProps {
   fieldDirection: number;
   /** Strength (velocity/tick) of a newly drawn field. */
   fieldStrength: number;
+  /** Target speed (velocity/tick) of a newly drawn accelerator wire. */
+  acceleratorSpeed: number;
+  /** Push (velocity/tick) of a newly drawn accelerator wire. */
+  acceleratorAccel: number;
   /** Snap every placed/dragged point to this world-unit grid (0 = free). */
   snap: number;
   selectedId: string | null;
@@ -92,6 +97,8 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       zoneType,
       fieldDirection,
       fieldStrength,
+      acceleratorSpeed,
+      acceleratorAccel,
       snap,
       selectedId,
       onSelect,
@@ -111,6 +118,8 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       zoneType,
       fieldDirection,
       fieldStrength,
+      acceleratorSpeed,
+      acceleratorAccel,
       snap,
       selectedId,
     });
@@ -121,6 +130,8 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       zoneType,
       fieldDirection,
       fieldStrength,
+      acceleratorSpeed,
+      acceleratorAccel,
       snap,
       selectedId,
     };
@@ -237,7 +248,9 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
             ? (o.zoneType ?? "boost")
             : o.kind === "portal"
               ? "portal"
-              : (o.wallType ?? "normal"),
+              : o.kind === "accelerator"
+                ? "accelerator"
+                : (o.wallType ?? "normal"),
         );
         ctx.save();
         if (o.kind === "zone") {
@@ -251,6 +264,25 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
           ctx.setLineDash([6, 4]);
           ctx.strokeStyle = visual.color;
           ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.setLineDash([]);
+        } else if (o.kind === "accelerator") {
+          // A wire: glow + dashed core, matching the replay renderer.
+          const a = pts[0];
+          const b = pts[1] ?? pts[0];
+          ctx.lineCap = "round";
+          ctx.strokeStyle = withAlpha(visual.color, 0.18);
+          ctx.lineWidth = Math.max(6, 7 * cam.scale);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+          ctx.strokeStyle = visual.color;
+          ctx.lineWidth = Math.max(1.5, visual.width * cam.scale);
+          ctx.setLineDash([9, 5]);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
           ctx.stroke();
           ctx.setLineDash([]);
         } else {
@@ -554,6 +586,8 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         zoneType: zt,
         fieldDirection: fd,
         fieldStrength: fs,
+        acceleratorSpeed: as,
+        acceleratorAccel: aa,
       } = propsRef.current;
       const start = drag.points[0];
       const end = drag.cursor;
@@ -581,12 +615,19 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
               };
         onSelect(o.id);
         onChange({ ...lvl, obstacles: [...lvl.obstacles, o] });
-      } else if (t === "portal") {
+      } else if (t === "portal" || t === "accelerator") {
         if (!moved) {
           draw();
           return;
         }
-        const o = defaultObstacle("portal", [round(start), round(end)]);
+        const o =
+          t === "portal"
+            ? defaultObstacle("portal", [round(start), round(end)])
+            : {
+                ...defaultObstacle("accelerator", [round(start), round(end)]),
+                acceleratorSpeed: as,
+                acceleratorAccel: aa,
+              };
         onSelect(o.id);
         onChange({ ...lvl, obstacles: [...lvl.obstacles, o] });
       } else {

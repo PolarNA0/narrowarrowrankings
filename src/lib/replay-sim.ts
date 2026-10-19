@@ -157,12 +157,52 @@ export interface ForceField {
   strength: number;
 }
 
+/**
+ * An accelerator wire: a one-shot trigger the arrow crosses (segment
+ * intersection against the previous tick's position, so a fast arrow cannot
+ * tunnel through it). Crossing it arms a global accelerator that pushes along
+ * the velocity direction captured at that instant, and keeps pushing every tick
+ * until the arrow reaches `targetSpeed` — then it disarms for good.
+ *
+ * Because the push is fixed to the captured direction, spinning or zigzagging
+ * after the wire bleeds speed while the push keeps feeding along the original
+ * line; a player can hold themselves under the target to carry the boost to a
+ * part of the level where top speed is usable. `accel` is a velocity delta per
+ * 240Hz tick, on the same scale as the arrow's own velocity.
+ */
+export interface SimTrigger {
+  /** The wire's endpoints, in world units. */
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  /** Speed at which the accelerator disarms, in world units/tick. */
+  targetSpeed: number;
+  /** Velocity delta per tick, in world units/tick. */
+  accel: number;
+}
+
 /** A portal, drawn as a segment with an arrow showing the travel direction. */
 export interface SimPortal {
   ax: number;
   ay: number;
   bx: number;
   by: number;
+}
+
+/**
+ * The live accelerator charge: which way it pushes (the velocity direction
+ * captured when the wire was crossed), how fast it stops feeding, and how much
+ * it adds per tick. `armed` is false once the target speed is reached, and the
+ * whole struct travels inside the snapshot envelope so a checkpoint restores
+ * the charge exactly.
+ */
+export interface WireState {
+  armed: boolean;
+  dirX: number;
+  dirY: number;
+  targetSpeed: number;
+  accel: number;
 }
 
 /**
@@ -188,6 +228,8 @@ export interface SimGeometry {
   portals: SimPortal[];
   /** Site-only wind/suction fields, drawn as faint white areas with particles. */
   forceFields?: ForceField[];
+  /** Site-only accelerator wires, drawn as thin charged lines. */
+  triggers?: SimTrigger[];
   /** Site-only moving blocks, drawn at their current-tick offset. */
   movingBlocks?: SimMotion[];
 }
@@ -231,6 +273,15 @@ export interface RawLevelData {
     motion_dx?: number;
     motion_dy?: number;
     motion_period?: number;
+    /**
+     * Site-only accelerator wire. `accelerator_speed` is the target speed that
+     * disarms the charge and `accelerator_accel` the per-tick velocity delta;
+     * the push direction is captured from the arrow's velocity when it crosses.
+     * Like wind/suction, the engine has no concept of it, so the sim layer
+     * applies it and the exporter strips it.
+     */
+    accelerator_speed?: number;
+    accelerator_accel?: number;
   }>;
 }
 
@@ -249,6 +300,7 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
   const zones: SimZone[] = [];
   const portals: SimPortal[] = [];
   const forceFields: ForceField[] = [];
+  const triggers: SimTrigger[] = [];
   const obstacles = data?.obstacles ?? [];
   const motionByObstacle = new Map<number, number>();
   for (let i = 0; i < obstacles.length; i++) {
@@ -270,6 +322,24 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
         ...(isFiniteNum(obstacle.field_direction) ? { direction: obstacle.field_direction } : {}),
         strength: isFiniteNum(obstacle.field_strength) ? obstacle.field_strength : 0,
       });
+      continue;
+    }
+
+    // Accelerator wires are the same: a site-only trigger the sim reads, never
+    // an engine obstacle. Authored as a two-point segment.
+    if (isAcceleratorTrigger(obstacle)) {
+      const a = pts[0];
+      const b = pts[1];
+      if (a?.x != null && a?.y != null && b?.x != null && b?.y != null) {
+        triggers.push({
+          ax: a.x,
+          ay: a.y,
+          bx: b.x,
+          by: b.y,
+          targetSpeed: obstacle.accelerator_speed as number,
+          accel: obstacle.accelerator_accel as number,
+        });
+      }
       continue;
     }
 
@@ -351,7 +421,7 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
       });
     }
   }
-  return { walls, zones, portals, forceFields, movingBlocks: levelMotions(data) };
+  return { walls, zones, portals, forceFields, triggers, movingBlocks: levelMotions(data) };
 }
 
 /**
@@ -400,7 +470,7 @@ function engineObstacles(data: RawLevelData) {
     "speed",
   ] as const;
   return (data.obstacles ?? [])
-    .filter((o) => !isForceField(o))
+    .filter((o) => !isForceField(o) && !isAcceleratorTrigger(o))
     .map((o) => {
       const out: Record<string, unknown> = {
         obstacle_type: o.obstacle_type ?? (o.zone_type ? "zone" : o.portal_id ? "portal" : "wall"),
@@ -430,6 +500,23 @@ export function isForceField(o: {
   obstacle_type?: string;
 }): boolean {
   return o.field_type === "wind" || o.field_type === "suction";
+}
+
+/**
+ * True for a site-only accelerator wire: a one-shot trigger, not a wall the
+ * engine should ever see. Requires a positive target speed and accel, so a
+ * half-authored wire stays inert rather than arming a no-op charge.
+ */
+export function isAcceleratorTrigger(o: {
+  accelerator_speed?: number;
+  accelerator_accel?: number;
+}): boolean {
+  return (
+    isFiniteNum(o.accelerator_speed) &&
+    o.accelerator_speed > 0 &&
+    isFiniteNum(o.accelerator_accel) &&
+    o.accelerator_accel > 0
+  );
 }
 
 /** True for an obstacle the sim translates (site-only motion fields present). */
@@ -483,6 +570,24 @@ export function levelMotions(data: RawLevelData | null | undefined): SimMotion[]
 export function stripForceFields(data: RawLevelData): RawLevelData {
   if (!data.obstacles?.some(isForceField)) return data;
   return { ...data, obstacles: data.obstacles.filter((o) => !isForceField(o)) };
+}
+
+/**
+ * Do segments p1→p2 and p3→p4 cross? Used for the accelerator wire, where the
+ * arrow's per-tick movement can exceed the wire's thickness, so a point test
+ * would tunnel straight through it.
+ */
+export function segmentsIntersect(
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  p3: { x: number; y: number },
+  p4: { x: number; y: number },
+): boolean {
+  const d = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x);
+  if (d === 0) return false;
+  const t = ((p3.x - p1.x) * (p4.y - p3.y) - (p3.y - p1.y) * (p4.x - p3.x)) / d;
+  const u = ((p3.x - p1.x) * (p2.y - p1.y) - (p3.y - p1.y) * (p2.x - p1.x)) / d;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
 }
 
 /** Point-in-polygon (ray casting), for deciding whether the arrow is inside a field. */
@@ -649,6 +754,8 @@ export async function createReplayEngine(
   // whenever the arrow is outside every field.
   const fields = levelGeometry(data).forceFields ?? [];
   const hasFields = fields.length > 0;
+  const triggers = levelGeometry(data).triggers ?? [];
+  const hasTriggers = triggers.length > 0;
 
   // Moving blocks are the same story on the geometry side: the engine can spin
   // an obstacle but not slide one, so each tick we rebuild the engine from its
@@ -722,27 +829,90 @@ export async function createReplayEngine(
     engine = new mod.GameMechanicsEngine(s as never);
   };
 
+  // The accelerator is the first mechanic here with *memory*: crossing a wire
+  // captures the push direction and arms a global charge that lasts until the
+  // arrow reaches the target speed. That flag lives in this closure and travels
+  // in the snapshot envelope (see `snapshot`/`restore`), because the editor and
+  // the brute-forcer both re-simulate through a wire from a checkpoint taken
+  // before it — a flag the snapshot did not carry would silently re-arm a spent
+  // charge and diverge from the live run.
+  let wire: WireState = { armed: false, dirX: 0, dirY: 0, targetSpeed: 0, accel: 0 };
+
+  /**
+   * Detect a wire crossing against the previous tick's position (segment
+   * intersection, so a fast arrow cannot tunnel through), capture the velocity
+   * direction, then push along that fixed direction while under the target.
+   */
+  const applyWire = (prevX: number, prevY: number): void => {
+    const s = JSON.parse(engine.state) as EnginePlayerState;
+    const t = s.player.translation;
+    const v = s.player.velocity ?? { x: 0, y: 0, r: 0 };
+
+    if (!wire.armed) {
+      for (const trig of triggers) {
+        const hit = segmentsIntersect(
+          { x: prevX, y: prevY },
+          { x: t.x, y: t.y },
+          { x: trig.ax, y: trig.ay },
+          { x: trig.bx, y: trig.by },
+        );
+        if (!hit) continue;
+        const speed = Math.hypot(v.x, v.y);
+        // No heading to capture (a dead stop): the wire stays unarmed.
+        if (speed <= 0) return;
+        wire = {
+          armed: true,
+          dirX: v.x / speed,
+          dirY: v.y / speed,
+          targetSpeed: trig.targetSpeed,
+          accel: trig.accel,
+        };
+        return;
+      }
+      return;
+    }
+
+    const speed = Math.hypot(v.x, v.y);
+    if (speed >= wire.targetSpeed) {
+      // Reached the target: the charge is spent and never re-arms.
+      wire = { ...wire, armed: false };
+      return;
+    }
+    s.player.velocity = {
+      ...v,
+      x: v.x + wire.dirX * wire.accel,
+      y: v.y + wire.dirY * wire.accel,
+    };
+    engine.free();
+    engine = new mod.GameMechanicsEngine(s as never);
+  };
+
   return {
     step(symbol) {
+      const before = read(engine);
       engine.process_ticks([symbolToInput(symbol)]);
       if (engine.player_state_code() === 0) {
         if (hasMotions) applyMotions();
         if (hasFields) applyFields();
+        if (hasTriggers) applyWire(before.x, before.y);
       }
       return read(engine);
     },
     stepCode(symbol) {
+      const before = read(engine);
       engine.process_ticks([symbolToInput(symbol)]);
       const code = engine.player_state_code();
       if (code === 0) {
         if (hasMotions) applyMotions();
         if (hasFields) applyFields();
+        if (hasTriggers) applyWire(before.x, before.y);
       }
       return code;
     },
     reset() {
       engine.free();
       engine = new mod.GameMechanicsEngine(state());
+      wire = { armed: false, dirX: 0, dirY: 0, targetSpeed: 0, accel: 0 };
       if (hasMotions) applyMotions();
       return read(engine);
     },
@@ -753,11 +923,19 @@ export async function createReplayEngine(
       return engine.player_state_code();
     },
     snapshot() {
-      return engine.state;
+      // Levels without a wire keep the raw engine state (cheap, and the format
+      // every existing checkpoint already uses). A wired level wraps it so the
+      // armed charge travels with the checkpoint.
+      return hasTriggers
+        ? JSON.stringify({ engine: JSON.parse(engine.state), wire })
+        : engine.state;
     },
     restore(snapshot) {
+      const parsed = JSON.parse(snapshot) as { engine?: unknown; wire?: WireState };
+      const engineState = parsed.engine !== undefined ? parsed.engine : parsed;
       engine.free();
-      engine = mod.GameMechanicsEngine.from_state(JSON.parse(snapshot) as never);
+      engine = mod.GameMechanicsEngine.from_state(engineState as never);
+      wire = parsed.wire ?? { armed: false, dirX: 0, dirY: 0, targetSpeed: 0, accel: 0 };
       return read(engine);
     },
     free() {

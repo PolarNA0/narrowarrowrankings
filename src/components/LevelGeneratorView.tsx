@@ -189,6 +189,8 @@ export function LevelGeneratorView({ onOpenInEditor }: LevelGeneratorViewProps) 
               zoneType="boost"
               fieldDirection={0}
               fieldStrength={0.05}
+              acceleratorSpeed={1.5}
+              acceleratorAccel={0.05}
               snap={0}
               selectedId={null}
               onSelect={() => {}}

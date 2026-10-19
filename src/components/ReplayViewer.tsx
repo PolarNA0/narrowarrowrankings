@@ -75,6 +75,7 @@ import {
 import {
   drawGameThrust,
   paintForceFields,
+  paintTriggers,
   paintWalls,
   paintZones,
   strokeTrail,
@@ -945,6 +946,13 @@ export function ReplayStage({
       );
     };
 
+    /** Site-only accelerator wires; static, so they bake onto the base layer. */
+    const paintTriggersLocal = (g: CanvasRenderingContext2D) => {
+      const triggers = geometry.triggers;
+      if (!triggers || triggers.length === 0) return;
+      paintTriggers(g, triggers, { tx, ty, scale, mode });
+    };
+
     /** Paint everything that never changes as the frame advances onto an offscreen layer. */
     const paintBase = () => {
       const c = document.createElement("canvas");
@@ -959,6 +967,7 @@ export function ReplayStage({
       // Zones and portals first, then the walls that are baked once.
       paintZonesLocal(g);
       paintFieldsLocal(g);
+      paintTriggersLocal(g);
       paintWallsLocal(g, staticWalls, 0);
       return c;
     };
@@ -1480,7 +1489,11 @@ function ReplayLegend({ geometry }: { geometry: SimGeometry }) {
     return [...seen].filter((t) => LEGEND_ICONS[t]);
   }, [geometry]);
 
-  if (types.length === 0 && !(geometry.movingBlocks && geometry.movingBlocks.length > 0))
+  if (
+    types.length === 0 &&
+    !(geometry.movingBlocks && geometry.movingBlocks.length > 0) &&
+    !(geometry.triggers && geometry.triggers.length > 0)
+  )
     return null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -1488,6 +1501,18 @@ function ReplayLegend({ geometry }: { geometry: SimGeometry }) {
         <span className="flex items-center gap-1.5 text-[10px] text-amber-300">
           <span className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: "#fbbf24" }} />
           moving
+        </span>
+      )}
+      {geometry.triggers && geometry.triggers.length > 0 && (
+        <span className="flex items-center gap-1.5 text-[10px] text-cyan-300">
+          <span
+            className="w-2.5 h-0.5 rounded-full"
+            style={{
+              backgroundImage:
+                "repeating-linear-gradient(90deg, #22d3ee 0 3px, transparent 3px 5px)",
+            }}
+          />
+          accelerator wire
         </span>
       )}
       {types.map((type) => {
