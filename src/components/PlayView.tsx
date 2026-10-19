@@ -1175,6 +1175,16 @@ export function PlayView({
             <Button
               variant="outline"
               size="sm"
+              className="h-9 gap-1.5 border-white/20 bg-black/60 text-slate-100 backdrop-blur hover:bg-black/80"
+              onClick={start}
+              disabled={loading || !!error}
+              title="Restart from the beginning"
+            >
+              <RotateCcw className="w-4 h-4" /> Restart
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               className={cn(
                 "h-9 gap-1.5 border-white/20 bg-black/60 text-slate-100 backdrop-blur hover:bg-black/80",
                 cameraOpen && "bg-white/15",
