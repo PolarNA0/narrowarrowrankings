@@ -18,6 +18,7 @@ import { Route as ApiOfficialCreatorsRouteImport } from './routes/api/official-c
 import { Route as ApiProfilesRouteImport } from './routes/api/profiles'
 import { Route as ApiPublishedLevelsRouteImport } from './routes/api/published-levels'
 import { Route as ApiSiteLevelsRouteImport } from './routes/api/site-levels'
+import { Route as ApiSiteRecordsRouteImport } from './routes/api/site-records'
 import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
 import { Route as ApiTasLeaderboardsRouteImport } from './routes/api/tas-leaderboards'
 import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
@@ -77,6 +78,11 @@ const ApiPublishedLevelsRoute = ApiPublishedLevelsRouteImport.update({
 const ApiSiteLevelsRoute = ApiSiteLevelsRouteImport.update({
   id: '/api/site-levels',
   path: '/api/site-levels',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSiteRecordsRoute = ApiSiteRecordsRouteImport.update({
+  id: '/api/site-records',
+  path: '/api/site-records',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiStartupDataRoute = ApiStartupDataRouteImport.update({
@@ -166,6 +172,7 @@ export interface FileRoutesByFullPath {
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/site-levels': typeof ApiSiteLevelsRouteWithChildren
+  '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -192,6 +199,7 @@ export interface FileRoutesByTo {
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/site-levels': typeof ApiSiteLevelsRouteWithChildren
+  '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   '/api/profiles': typeof ApiProfilesRoute
   '/api/published-levels': typeof ApiPublishedLevelsRoute
   '/api/site-levels': typeof ApiSiteLevelsRouteWithChildren
+  '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
@@ -247,6 +256,7 @@ export interface FileRouteTypes {
     | '/api/profiles'
     | '/api/published-levels'
     | '/api/site-levels'
+    | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
     | '/api/leaderboard/$level'
@@ -273,6 +283,7 @@ export interface FileRouteTypes {
     | '/api/profiles'
     | '/api/published-levels'
     | '/api/site-levels'
+    | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
     | '/api/leaderboard/$level'
@@ -299,6 +310,7 @@ export interface FileRouteTypes {
     | '/api/profiles'
     | '/api/published-levels'
     | '/api/site-levels'
+    | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
     | '/api/leaderboard/$level'
@@ -326,6 +338,7 @@ export interface RootRouteChildren {
   ApiProfilesRoute: typeof ApiProfilesRoute
   ApiPublishedLevelsRoute: typeof ApiPublishedLevelsRoute
   ApiSiteLevelsRoute: typeof ApiSiteLevelsRouteWithChildren
+  ApiSiteRecordsRoute: typeof ApiSiteRecordsRoute
   ApiStartupDataRoute: typeof ApiStartupDataRoute
   ApiTasLeaderboardsRoute: typeof ApiTasLeaderboardsRoute
   ApiLeaderboardLevelRoute: typeof ApiLeaderboardLevelRoute
@@ -405,6 +418,13 @@ declare module '@tanstack/react-router' {
       path: '/api/site-levels'
       fullPath: '/api/site-levels'
       preLoaderRoute: typeof ApiSiteLevelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/site-records': {
+      id: '/api/site-records'
+      path: '/api/site-records'
+      fullPath: '/api/site-records'
+      preLoaderRoute: typeof ApiSiteRecordsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/startup-data': {
@@ -537,6 +557,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProfilesRoute: ApiProfilesRoute,
   ApiPublishedLevelsRoute: ApiPublishedLevelsRoute,
   ApiSiteLevelsRoute: ApiSiteLevelsRouteWithChildren,
+  ApiSiteRecordsRoute: ApiSiteRecordsRoute,
   ApiStartupDataRoute: ApiStartupDataRoute,
   ApiTasLeaderboardsRoute: ApiTasLeaderboardsRoute,
   ApiLeaderboardLevelRoute: ApiLeaderboardLevelRoute,

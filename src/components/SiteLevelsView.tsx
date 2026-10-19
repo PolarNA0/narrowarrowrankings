@@ -12,6 +12,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   fetchSiteLevel,
@@ -40,14 +47,47 @@ export interface SiteCheckpointRequest {
   tick: number;
 }
 
+/**
+ * The arrows a site level can be played with. A level ships a suggested arrow,
+ * but the choice is never pinned — any arrow can run any level, and its own
+ * leaderboard carries a per-run arrow.
+ */
+export const SITE_ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"] as const;
+
+/** A small arrow picker, shared by the level card and its detail header. */
+function ArrowSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (arrow: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger className="h-8 w-[9.5rem] text-xs bg-white/5 border-white/10">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent className="bg-[#0d0d10] border-white/10 text-slate-200">
+        {SITE_ARROWS.map((a) => (
+          <SelectItem key={a} value={a} className="text-xs">
+            {a}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 interface SiteLevelsViewProps {
   isAdmin?: boolean;
   /** Open a run in the TAS editor. */
   onLoadRun?: (request: SiteLoadRequest) => void;
   /** Save a practice checkpoint off a watched run. */
   onMakeCheckpoint?: (request: SiteCheckpointRequest) => void;
-  /** Play a site level in the Play tab. */
-  onPlay?: (levelId: string) => void;
+  /** Play a site level in the Play tab, with the chosen arrow. */
+  onPlay?: (levelId: string, arrowName?: string) => void;
 }
 
 function fmt(ms: number): string {
@@ -73,6 +113,8 @@ export function SiteLevelsView({
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [selected, setSelected] = React.useState<string | null>(null);
+  // Per-card arrow choice, so a level is not stuck on its author's suggestion.
+  const [cardArrows, setCardArrows] = React.useState<Record<string, string>>({});
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -181,6 +223,12 @@ export function SiteLevelsView({
             </div>
 
             <div className="flex-1" />
+            {onPlay && (
+              <ArrowSelect
+                value={cardArrows[level.id] ?? level.arrowName}
+                onChange={(arrow) => setCardArrows((m) => ({ ...m, [level.id]: arrow }))}
+              />
+            )}
             <div className="flex gap-2">
               <Button
                 size="sm"
@@ -191,7 +239,11 @@ export function SiteLevelsView({
                 <Trophy className="w-3.5 h-3.5 mr-1.5" /> Leaderboard
               </Button>
               {onPlay && (
-                <Button size="sm" className="flex-1" onClick={() => onPlay(level.id)}>
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => onPlay(level.id, cardArrows[level.id] ?? level.arrowName)}
+                >
                   <Play className="w-3.5 h-3.5 mr-1.5" /> Play
                 </Button>
               )}
@@ -217,7 +269,7 @@ interface DetailProps {
   levelId: string;
   isAdmin?: boolean;
   onBack: () => void;
-  onPlay?: (levelId: string) => void;
+  onPlay?: (levelId: string, arrowName?: string) => void;
   onLoadRun?: (request: SiteLoadRequest) => void;
   onMakeCheckpoint?: (request: SiteCheckpointRequest) => void;
 }
@@ -234,6 +286,9 @@ function SiteLevelDetail({
   const [entries, setEntries] = React.useState<SiteScoreEntry[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  // Which arrow to play with. Seeded from the level's suggested arrow, but the
+  // player can switch it; it is never locked to the author's choice.
+  const [playArrow, setPlayArrow] = React.useState<string>("Narrow Arrow");
 
   React.useEffect(() => {
     let cancelled = false;
@@ -244,6 +299,8 @@ function SiteLevelDetail({
         if (cancelled) return;
         setRecord(rec);
         setEntries(scores);
+        // Seed the play arrow from the level's suggestion (fall back to Narrow).
+        if (rec?.arrowName) setPlayArrow(rec.arrowName);
       })
       .catch((e) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -300,9 +357,12 @@ function SiteLevelDetail({
           </div>
         </div>
         {onPlay && (
-          <Button size="sm" onClick={() => onPlay(levelId)}>
-            <Play className="w-3.5 h-3.5 mr-1.5" /> Play
-          </Button>
+          <div className="flex items-center gap-2">
+            <ArrowSelect value={playArrow} onChange={setPlayArrow} />
+            <Button size="sm" onClick={() => onPlay(levelId, playArrow)}>
+              <Play className="w-3.5 h-3.5 mr-1.5" /> Play
+            </Button>
+          </div>
         )}
       </div>
 

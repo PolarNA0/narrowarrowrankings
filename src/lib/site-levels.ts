@@ -35,6 +35,29 @@ export interface SiteSubmitResult {
   entries: SiteScoreEntry[];
 }
 
+export interface SiteRecord {
+  levelId: string;
+  levelName: string;
+  author: string;
+  arrowName: string;
+  hasCustomMechanics: boolean;
+  obstacleCount: number;
+  completions: number;
+  holder: string | null;
+  timeMs: number | null;
+  holderArrow: string | null;
+  inputCount: number | null;
+  achievedAt: string | null;
+}
+
+/** Every site level with its record run, fastest first. */
+export async function fetchSiteRecords(): Promise<SiteRecord[]> {
+  const res = await fetch("/api/site-records", { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`Site records request failed (${res.status})`);
+  const data = (await res.json()) as { records?: SiteRecord[] };
+  return data.records ?? [];
+}
+
 /** Every published site level, newest first. */
 export async function fetchSiteLevels(): Promise<SiteLevelSummary[]> {
   const res = await fetch("/api/site-levels", { signal: AbortSignal.timeout(15000) });

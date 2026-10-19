@@ -36,8 +36,9 @@ import {
 import { arrowKind } from "@/lib/arrow-sprites";
 import { ReplayStage } from "@/components/ReplayViewer";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
-import { LevelPicker } from "@/components/LevelPicker";
+import { LevelPicker, siteIdOf } from "@/components/LevelPicker";
 import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
+import { fetchSiteLevel, fetchSiteScores, siteLevelToRawData, type SiteScoreEntry } from "@/lib/site-levels";
 import { fetchLeaderboard } from "@/services/api";
 import { fetchRunInputs } from "@/hooks/useCompareGhosts";
 import type { LeaderboardEntry } from "@/types";
@@ -241,6 +242,8 @@ function BruteSearch({
   // The level's real-game runs, so the search can seed from a human run when no
   // TAS submission exists yet.
   const [humanEntries, setHumanEntries] = React.useState<LeaderboardEntry[]>([]);
+  // A site level's own board, used instead of the TAS board as the seed source.
+  const [siteEntries, setSiteEntries] = React.useState<SiteScoreEntry[]>([]);
 
   const [running, setRunning] = React.useState(false);
   const [progress, setProgress] = React.useState<BruteProgress | null>(null);
@@ -286,34 +289,55 @@ function BruteSearch({
   // until stopped", which the search reads as an uncapped budget.
   const budgetMs = Math.max(0, Math.round(budgetSecs * 1000));
 
-  // Load the level's TAS board so a run can be chosen as the seed.
+  // A site level is picked as `site:<id>` and lives only on this site, so its
+  // board is the site leaderboard (not the TAS board) and its geometry comes
+  // from the site API (it does not exist upstream).
+  const siteId = siteIdOf(levelId);
+  const isSiteLevel = siteId !== null;
+
+  // Load the level's seed runs. A site level's own board is the seed source; a
+  // regular level's is the TAS board (with the real-game board as a fallback).
   React.useEffect(() => {
     let cancelled = false;
-    fetchTasBoard(levelId)
-      .then((list) => {
-        if (!cancelled) setEntries(list);
-      })
-      .catch(() => {
-        if (!cancelled) setEntries([]);
-      });
-    fetchLeaderboard(levelId, false, false, seedArrow || undefined)
-      .then((list) => {
-        if (!cancelled) setHumanEntries(list);
-      })
-      .catch(() => {
-        if (!cancelled) setHumanEntries([]);
-      });
+    if (siteId) {
+      setEntries([]);
+      setHumanEntries([]);
+      fetchSiteScores(siteId)
+        .then((scores) => {
+          if (!cancelled) setSiteEntries(scores);
+        })
+        .catch(() => {
+          if (!cancelled) setSiteEntries([]);
+        });
+    } else {
+      setSiteEntries([]);
+      fetchTasBoard(levelId)
+        .then((list) => {
+          if (!cancelled) setEntries(list);
+        })
+        .catch(() => {
+          if (!cancelled) setEntries([]);
+        });
+      fetchLeaderboard(levelId, false, false, seedArrow || undefined)
+        .then((list) => {
+          if (!cancelled) setHumanEntries(list);
+        })
+        .catch(() => {
+          if (!cancelled) setHumanEntries([]);
+        });
+    }
     setResult(null);
     setProgress(null);
     setSeedId("auto");
     return () => {
       cancelled = true;
     };
-  }, [levelId, seedArrow]);
+  }, [levelId, seedArrow, siteId]);
 
   const seedEntry = React.useMemo(() => {
     if (entries.length === 0) return null;
     if (seedId === "auto") return entries[0];
+
     // Only resolve here when the selection is actually a TAS entry; a human
     // selection must not fall back to the fastest TAS run (that silently seeded
     // from the TAS board and ignored the picked human run).
@@ -329,9 +353,17 @@ function BruteSearch({
     return humanEntries.find((h) => `human-${h.run_id}` === seedId) ?? null;
   }, [humanEntries, seedId, entries.length]);
 
-  const canSeed = entries.length > 0 || humanEntries.length > 0 || !!drawnSeed;
+  // A site level's own board is its seed source; it carries the input string
+  // directly, so no replay fetch is needed.
+  const siteSeed = React.useMemo(() => {
+    if (!isSiteLevel || siteEntries.length === 0) return null;
+    if (seedId === "auto") return siteEntries[0];
+    return siteEntries.find((e) => e.id === seedId) ?? null;
+  }, [isSiteLevel, siteEntries, seedId]);
 
-  const seedTimeMs = seedEntry?.timeMs ?? null;
+  const canSeed = entries.length > 0 || humanEntries.length > 0 || siteEntries.length > 0 || !!drawnSeed;
+
+  const seedTimeMs = seedEntry?.timeMs ?? siteSeed?.timeMs ?? null;
 
   const label = `${levelName || levelId}${seedEntry ? ` · ${(seedEntry.timeMs / 1000).toFixed(3)}s` : ""}`;
 
@@ -465,6 +497,11 @@ function BruteSearch({
       seedCount = drawnSeed.symbols.length;
       seedArrow = drawnSeed.arrow;
       seedMs = drawnSeed.ms;
+    } else if (siteSeed) {
+      seedInputs = siteSeed.inputs;
+      seedArrow = siteSeed.arrowName;
+      seedCount = siteSeed.inputCount;
+      seedMs = siteSeed.timeMs;
     } else if (seedEntry) {
       seedInputs = seedEntry.inputs;
       seedArrow = seedEntry.arrowName;
@@ -496,12 +533,20 @@ function BruteSearch({
     setProgress(null);
     stopRef.current = false;
     try {
-      const levelRes = await fetch(`/api/level-details/${encodeURIComponent(levelId)}`, {
-        signal: AbortSignal.timeout(20000),
-      });
-      if (!levelRes.ok) throw new Error(`Level request failed (${levelRes.status})`);
-      const payload = (await levelRes.json()) as { levelInfo?: { data?: RawLevelData } };
-      const levelData = payload.levelInfo?.data ?? null;
+      // A site level does not exist upstream, so its geometry comes from the
+      // site API; a regular level comes from the level-details route.
+      let levelData: RawLevelData | null;
+      if (siteId) {
+        const rec = await fetchSiteLevel(siteId);
+        levelData = rec ? siteLevelToRawData(rec) : null;
+      } else {
+        const levelRes = await fetch(`/api/level-details/${encodeURIComponent(levelId)}`, {
+          signal: AbortSignal.timeout(20000),
+        });
+        if (!levelRes.ok) throw new Error(`Level request failed (${levelRes.status})`);
+        const payload = (await levelRes.json()) as { levelInfo?: { data?: RawLevelData } };
+        levelData = payload.levelInfo?.data ?? null;
+      }
       if (!levelData) throw new Error("Level has no geometry");
       setGeometry(levelGeometry(levelData));
       levelDataRef.current = levelData;
@@ -713,6 +758,21 @@ function BruteSearch({
                   <SelectValue placeholder={canSeed ? "Fastest" : "No runs"} />
                 </SelectTrigger>
                 <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 max-h-72">
+                  {siteEntries.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
+                        Site leaderboard
+                      </SelectLabel>
+                      <SelectItem value="auto" className="text-xs">
+                        Fastest site run
+                      </SelectItem>
+                      {siteEntries.map((e) => (
+                        <SelectItem key={e.id} value={e.id} className="text-xs">
+                          {e.username} — {(e.timeMs / 1000).toFixed(3)}s ({e.arrowName})
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
                   {entries.length > 0 && (
                     <SelectGroup>
                       <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
@@ -1011,7 +1071,7 @@ function BruteSearch({
       {result && result.sim.path.length > 1 && (
         <ResultPreview
           result={result}
-          arrowName={seedEntry?.arrowName ?? humanSeed?.arrow_name ?? "Narrow Arrow"}
+          arrowName={seedEntry?.arrowName ?? siteSeed?.arrowName ?? humanSeed?.arrow_name ?? "Narrow Arrow"}
           geometry={geometry}
         />
       )}
@@ -1024,10 +1084,12 @@ function BruteSearch({
             onClick={() => setSubmitOpen(true)}
             disabled={!result.improved}
           >
-            <Send className="w-3.5 h-3.5 mr-1" /> Submit as my TAS
+            <Send className="w-3.5 h-3.5 mr-1" /> {isSiteLevel ? "Submit to site board" : "Submit as my TAS"}
           </Button>
           <span className="text-[11px] text-slate-500">
-            Posts the optimized run to the level's TAS board under your name.
+            {isSiteLevel
+              ? "Posts the optimized run to this site level's leaderboard under your name."
+              : "Posts the optimized run to the level's TAS board under your name."}
           </span>
         </div>
       )}
@@ -1036,17 +1098,24 @@ function BruteSearch({
         <TasSubmitDialog
           open={submitOpen}
           onOpenChange={setSubmitOpen}
-          levelId={levelId}
+          levelId={siteId ?? levelId}
           levelName={levelName || levelId}
-          arrowName={seedEntry?.arrowName ?? humanSeed?.arrow_name ?? "Narrow Arrow"}
+          arrowName={seedEntry?.arrowName ?? siteSeed?.arrowName ?? humanSeed?.arrow_name ?? "Narrow Arrow"}
           timeMs={result.timeMs}
           inputs={result.inputs}
           inputCount={result.inputCount}
-          onSubmitted={() =>
-            void fetchTasBoard(levelId)
-              .then(setEntries)
-              .catch(() => {})
-          }
+          kind={isSiteLevel ? "site" : "tas"}
+          onSubmitted={() => {
+            if (siteId) {
+              void fetchSiteScores(siteId)
+                .then(setSiteEntries)
+                .catch(() => {});
+            } else {
+              void fetchTasBoard(levelId)
+                .then(setEntries)
+                .catch(() => {});
+            }
+          }}
         />
       )}
     </div>

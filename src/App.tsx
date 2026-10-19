@@ -147,6 +147,7 @@ import { SkinsView } from "@/components/SkinsView";
 import { TasEditorView } from "@/components/TasEditorView";
 import { TasLeaderboardView, type TasLoadRequest } from "@/components/TasLeaderboardView";
 import { SiteLevelsView } from "@/components/SiteLevelsView";
+import { SiteRecordsView } from "@/components/SiteRecordsView";
 import { BruteView } from "@/components/BruteView";
 import { LevelEditorView } from "@/components/LevelEditorView";
 import { LevelGeneratorView } from "@/components/LevelGeneratorView";
@@ -2610,12 +2611,25 @@ export default function App() {
               });
               navigateView("play");
             }}
-            onPlay={(levelId) => {
+            onPlay={(levelId, arrowName) => {
               setPlayFocus({
                 levelId: `site:${levelId}`,
-                arrowName: "",
+                arrowName: arrowName ?? "",
                 tick: -1,
-                key: `${levelId}:play:${Date.now()}`,
+                key: `${levelId}:play:${arrowName ?? ""}:${Date.now()}`,
+              });
+              navigateView("play");
+            }}
+          />
+        ) : view === "site-records" ? (
+          <SiteRecordsView
+            onOpenLevels={() => navigateView("site-levels")}
+            onPlay={(levelId, arrowName) => {
+              setPlayFocus({
+                levelId: `site:${levelId}`,
+                arrowName: arrowName ?? "",
+                tick: -1,
+                key: `${levelId}:play:${arrowName ?? ""}:${Date.now()}`,
               });
               navigateView("play");
             }}

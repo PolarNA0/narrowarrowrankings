@@ -15,6 +15,7 @@ export const NAV_GROUPS = [
     items: [
       { id: "leaderboard", label: "Leaderboards" },
       { id: "site-levels", label: "Site levels" },
+      { id: "site-records", label: "Site level records" },
       { id: "insights", label: "Level insights" },
       { id: "rating", label: "Level ratings" },
     ],
