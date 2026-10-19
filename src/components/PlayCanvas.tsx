@@ -34,6 +34,18 @@ import { cn } from "@/lib/utils";
 export interface PlayFrame {
   /** The live path; `path[0]` is the spawn and `path[i]` the pose after i ticks. */
   path: SimPoint[];
+  /**
+   * Tick each `path` point was sampled at (parallel to `path`). `path` is
+   * frame-sampled, so this is not `0..path.length-1`; markers and any
+   * per-tick geometry need it to place a path point on the right tick.
+   */
+  pathTicks?: number[];
+  /**
+   * The current physics tick. The render pose is `path[path.length-1]`, but a
+   * frame may cover several ticks, so spinner angle and moving-block offsets
+   * must use this, not `path.length - 1`.
+   */
+  tick?: number;
   /** The latest input symbol, for the HUD readout. */
   input?: number;
   ghostPath?: SimPoint[] | null;
@@ -235,6 +247,11 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
       const path = frame.path;
       const p = path[path.length - 1];
       if (!p) return;
+      // The pose is the newest sample, but `path` is frame-sampled: a frame can
+      // cover several physics ticks. Use the true tick for per-tick geometry
+      // (spinner angle, moving blocks) or the drawn spinner lags the hitbox.
+      const tick = frame.tick ?? path.length - 1;
+      const pathTicks = frame.pathTicks;
 
       cameraRef.current.settings = settingsRef.current;
       const prev = path[Math.max(0, path.length - 2)] ?? p;
@@ -262,7 +279,7 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
           performance.now() / 1000,
         );
       }
-      paintWalls(ctx, s.geometry.walls, path.length - 1, {
+      paintWalls(ctx, s.geometry.walls, tick, {
         tx,
         ty,
         scale,
@@ -306,8 +323,12 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
 
       if (frame.markers?.length) {
         ctx.fillStyle = "#facc15";
-        for (const tick of frame.markers) {
-          const q = path[Math.min(tick, path.length - 1)];
+        for (const tickAt of frame.markers) {
+          // Resolve the tick to its stamped path point: path is frame-sampled,
+          // so index-by-tick would flag the wrong spot (or nothing) mid-run.
+          const idx = pathTicks ? pathTicks.findIndex((t) => t >= tickAt) : tickAt;
+          if (idx < 0) continue;
+          const q = path[Math.min(idx, path.length - 1)];
           if (!q) continue;
           ctx.beginPath();
           ctx.arc(tx(q.x), ty(q.y), 4, 0, Math.PI * 2);
@@ -326,7 +347,7 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
         tx,
         ty,
         p.thrustPower ?? 0,
-        path.length - 1,
+        tick,
       );
       // The arrow's collision circle, drawn faintly under the sprite in game
       // mode so the true hitbox is visible (matches the replay stage).

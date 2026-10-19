@@ -581,7 +581,11 @@ export function LevelEditorView({
               <PlayCanvas
                 ref={playCanvasRef}
                 geometry={levelGeometryOf(level)}
-                getFrame={() => ({ path: gameRef.current?.path ?? [] })}
+                getFrame={() => ({
+                  path: gameRef.current?.path ?? [],
+                  pathTicks: gameRef.current?.pathTicks ?? [],
+                  tick: gameRef.current?.currentTick ?? 0,
+                })}
                 arrow="narrow"
                 arrowRadius={arrowConstants("Narrow Arrow").radius ?? 16}
                 bodyColor={themeColor(null)}

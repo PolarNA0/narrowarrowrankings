@@ -213,3 +213,56 @@ console.log(
   ok ? "OK" : "BROKEN",
   JSON.stringify(movingWalls.map((w) => w.motion)),
 );
+
+// --- engine rotation: how does it actually spin an obstacle? ---
+const spinLevel: RawLevelData = {
+  map_name: "spin",
+  game_mode: "speedrun",
+  obstacles: [
+    {
+      obstacle_type: "wall",
+      wall_type: "normal",
+      wall_thickness: 8,
+      points: [
+        { x: 40, y: -30 },
+        { x: 90, y: -30 },
+      ],
+      rotation_pivot: { x: 60, y: -30 },
+      rotation_speed: 0.05,
+    },
+    {
+      obstacle_type: "wall",
+      wall_type: "normal",
+      wall_thickness: 8,
+      points: [
+        { x: 300, y: 400 },
+        { x: 300, y: -4000 },
+      ],
+    },
+  ] as RawLevelData["obstacles"],
+};
+const spinGeom = levelGeometry(spinLevel);
+const spinWall = spinGeom.walls[0];
+console.log("\n[spin] SimWall pivot/speed:", spinWall.pivot, spinWall.rotationSpeed);
+const spinEng = await createReplayEngine(spinLevel, "Narrow Arrow");
+if (!spinEng) throw new Error("no spin engine");
+const readObstacle = () => {
+  const s = JSON.parse(spinEng.snapshot()) as {
+    map: { obstacles: Array<{ points: Array<{ x: number; y: number }> }> };
+  };
+  return s.map.obstacles[0].points;
+};
+for (let t = 0; t <= 4; t++) {
+  if (t > 0) spinEng.step(0);
+  const pts = readObstacle();
+  const ang = 0.05 * t;
+  const dx = spinWall.ax - 60;
+  const dy = spinWall.ay - -30;
+  const pred = {
+    x: 60 + dx * Math.cos(ang) - dy * Math.sin(ang),
+    y: -30 + dx * Math.sin(ang) + dy * Math.cos(ang),
+  };
+  console.log(
+    `[spin] tick=${t} eng=(${pts[0].x.toFixed(3)},${pts[0].y.toFixed(3)}) formula=(${pred.x.toFixed(3)},${pred.y.toFixed(3)}) r_eng=${Math.hypot(pts[0].x - 60, pts[0].y - -30).toFixed(3)} r_base=${Math.hypot(dx, dy).toFixed(3)}`,
+  );
+}

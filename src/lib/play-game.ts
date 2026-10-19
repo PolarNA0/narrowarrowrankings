@@ -75,6 +75,14 @@ export class PlayGame {
   splits: Split[] = [];
   /** The live path, `path[0]` being the spawn pose and `path[i]` after i ticks. */
   path: SimPoint[] = [];
+  /**
+   * The tick each `path` point was sampled at. `path` gains one point per
+   * *rendered frame* (several physics ticks may elapse per frame), so
+   * `path.length - 1` is not the current tick; renderers that need the true
+   * tick (spinner angle, moving blocks) read {@link currentTick} or pair a
+   * point with its stamp here.
+   */
+  pathTicks: number[] = [];
   /** Tick -> checkpoint index, so a checkpoint is recorded the first time through. */
   private checkpointTicks = new Map<number, number>();
   private checkpoints = new Set<number>();
@@ -165,6 +173,7 @@ export class PlayGame {
     const spawn = this.engine.reset();
     if (spawn) this.spawnPoint = spawn;
     this.path = spawn ? [spawn] : [];
+    this.pathTicks = spawn ? [0] : [];
     this.symbols = [];
     this.latest = spawn;
     this.tick = 0;
@@ -177,12 +186,16 @@ export class PlayGame {
         // The prefix itself crashes or finishes: keep what ran and stop here.
         this.latest = this.engine.read();
         this.path.push(this.latest);
+        this.pathTicks.push(this.tick);
         this.phase = code === 1 ? "finished" : "dead";
         return true;
       }
     }
     this.latest = this.engine.read();
-    if (this.latest) this.path.push(this.latest);
+    if (this.latest) {
+      this.path.push(this.latest);
+      this.pathTicks.push(this.tick);
+    }
     if (this.tick > 0) {
       this.checkpoints.add(this.tick);
       this.snapshots.set(this.tick, this.engine.snapshot());
@@ -229,6 +242,7 @@ export class PlayGame {
       if (code !== 0) {
         this.latest = this.engine.read();
         this.path.push(this.latest);
+        this.pathTicks.push(this.tick);
         this.finish(code === 1);
         break;
       }
@@ -236,6 +250,7 @@ export class PlayGame {
     if (ran > 0 && this.phase === "running") {
       this.latest = this.engine.read();
       this.path.push(this.latest);
+      this.pathTicks.push(this.tick);
       this.onTick?.(this.latest, this.tick);
     }
     return ran;
@@ -244,6 +259,11 @@ export class PlayGame {
   /** The latest sampled pose, or null before the first advance. */
   get current(): SimPoint | null {
     return this.latest;
+  }
+
+  /** The physics tick the latest sampled pose is at (0 at spawn). */
+  get currentTick(): number {
+    return this.tick;
   }
 
   /** The input symbols recorded so far, one per tick since the spawn. */
@@ -281,13 +301,19 @@ export class PlayGame {
       if (spawn) this.spawnPoint = spawn;
       this.symbols = [];
       this.path = this.spawnPoint ? [this.spawnPoint] : [];
+      this.pathTicks = this.spawnPoint ? [0] : [];
       this.latest = this.spawnPoint;
     } else {
       const snap = this.snapshots.get(tick);
       if (!snap) return;
       this.latest = this.engine.restore(snap);
       this.symbols = this.symbols.slice(0, tick);
-      this.path = this.path.slice(0, tick + 1);
+      // Keep every frame sample at or before the rewind tick; slicing by index
+      // would keep samples from ticks past the target (path is frame-sampled).
+      let keep = this.pathTicks.findIndex((t) => t > tick);
+      if (keep < 0) keep = this.path.length;
+      this.path = this.path.slice(0, keep);
+      this.pathTicks = this.pathTicks.slice(0, keep);
     }
     this.tick = tick;
     this.accumulator = 0;
@@ -311,6 +337,7 @@ export class PlayGame {
     this.tick = 0;
     this.symbols = [];
     this.path = this.spawnPoint ? [this.spawnPoint] : [];
+    this.pathTicks = this.spawnPoint ? [0] : [];
     this.latest = this.spawnPoint;
     this.splits = [];
     this.accumulator = 0;

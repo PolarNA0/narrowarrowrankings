@@ -725,6 +725,8 @@ export function PlayView({
   const getFrame = React.useCallback(
     () => ({
       path: gameRef.current?.path ?? [],
+      pathTicks: gameRef.current?.pathTicks ?? [],
+      tick: gameRef.current?.currentTick ?? 0,
       input: inputSymbolRef.current,
       ghostPath: ghostPathRef.current,
       markers: checkpointRef.current,
