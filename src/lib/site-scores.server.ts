@@ -36,6 +36,38 @@ export function sortSiteScores(entries: SiteScoreEntry[]): SiteScoreEntry[] {
   return [...entries].sort((a, b) => a.timeMs - b.timeMs || a.createdAt.localeCompare(b.createdAt));
 }
 
+/**
+ * One row per player: a name keeps only its best (lowest) run, and an exact
+ * input string keeps only its earliest submission (so copying a listed run
+ * cannot clone it onto the board). Sort first, so the "best" kept is the one
+ * the ordering would have ranked. Applied on read, so a name that already
+ * appears several times folds to one row without a migration.
+ */
+export function collapseSiteEntries(entries: SiteScoreEntry[]): SiteScoreEntry[] {
+  const best = new Map<string, SiteScoreEntry>();
+  const seenInputs = new Set<string>();
+  for (const e of sortSiteScores(entries)) {
+    const key = e.username.trim().toLowerCase();
+    if (seenInputs.has(e.inputs)) continue;
+    if (!best.has(key)) best.set(key, e);
+    seenInputs.add(e.inputs);
+  }
+  return sortSiteScores([...best.values()]);
+}
+
+/** True when the player already holds a faster run, so this one is not their PB. */
+export function isPersonalBest(
+  existing: SiteScoreEntry[],
+  username: string,
+  timeMs: number,
+): boolean {
+  const key = username.trim().toLowerCase();
+  const prior = existing
+    .filter((e) => e.username.trim().toLowerCase() === key)
+    .reduce<number | null>((acc, e) => (acc === null || e.timeMs < acc ? e.timeMs : acc), null);
+  return prior === null || timeMs < prior;
+}
+
 export function isNewSiteRecord(entries: SiteScoreEntry[], timeMs: number): boolean {
   const best = entries.reduce<number | null>(
     (acc, e) => (acc === null || e.timeMs < acc ? e.timeMs : acc),
@@ -60,7 +92,7 @@ export async function readSiteScores(levelId: string): Promise<SiteScoreEntry[]>
       .eq("doc_id", levelId)
       .maybeSingle();
     const board = data?.data as unknown as SiteScoreBoard | undefined;
-    return Array.isArray(board?.entries) ? board.entries : [];
+    return Array.isArray(board?.entries) ? collapseSiteEntries(board.entries) : [];
   } catch {
     return [];
   }
@@ -78,7 +110,7 @@ export async function readSiteScoresPublic(levelId: string): Promise<SiteScoreEn
       .maybeSingle();
     if (error) return [];
     const board = data?.data as unknown as SiteScoreBoard | undefined;
-    return Array.isArray(board?.entries) ? board.entries : [];
+    return Array.isArray(board?.entries) ? collapseSiteEntries(board.entries) : [];
   } catch {
     return [];
   }
@@ -89,7 +121,9 @@ export async function addSiteScore(
   levelId: string,
   entry: SiteScoreEntry,
 ): Promise<SiteScoreEntry[]> {
-  const entries = sortSiteScores([...(await readSiteScores(levelId)), entry]);
+  // Fold after appending: a player's worse run is dropped and the stored board
+  // keeps one row per player, so the count the summary reports is the real one.
+  const entries = collapseSiteEntries([...(await readSiteScores(levelId)), entry]);
   if (memoryStoreEnabled()) {
     memoryBoards.set(levelId, entries);
     await updateSiteLevelStats(levelId, entries.length, entries[0]?.timeMs ?? null);

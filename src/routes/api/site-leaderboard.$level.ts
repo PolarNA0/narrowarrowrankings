@@ -2,8 +2,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { decodeInputSymbols } from "@/lib/replay";
 import {
   addSiteScore,
+  collapseSiteEntries,
   hasDuplicateInputs,
   isNewSiteRecord,
+  isPersonalBest,
   readSiteScores,
   readSiteScoresPublic,
   removeSiteScore,
@@ -81,6 +83,7 @@ export const Route = createFileRoute("/api/site-leaderboard/$level")({
         const isRecord = isNewSiteRecord(existing, timeMs);
         return Response.json({
           isRecord,
+          isPersonalBest: isPersonalBest(existing, username, timeMs),
           rank: sorted.findIndex((e) => e.id === entry.id) + 1,
           entries: sorted,
         });
@@ -94,7 +97,7 @@ export const Route = createFileRoute("/api/site-leaderboard/$level")({
           return Response.json({ error: "Only admins can remove runs." }, { status: 403 });
         }
         const entries = await removeSiteScore(params.level, id);
-        return Response.json({ entries: sortSiteScores(entries) });
+        return Response.json({ entries: collapseSiteEntries(entries) });
       },
     },
   },

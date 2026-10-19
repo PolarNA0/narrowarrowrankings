@@ -79,6 +79,11 @@ export function TasSubmitDialog({
           description: `Fastest time on ${levelName}.`,
           duration: 6000,
         });
+      } else if ("isPersonalBest" in result && result.isPersonalBest === false) {
+        // The board keeps one row per player, so a slower run does not appear.
+        toast.info(`Slower than your best on ${levelName}`, {
+          description: "Only your fastest run is kept on the board.",
+        });
       } else {
         toast.success(`Submitted — rank #${result.rank} on ${board}`, {
           description: `${(timeMs / 1000).toFixed(3)}s`,

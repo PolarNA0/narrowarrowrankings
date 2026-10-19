@@ -94,7 +94,7 @@ export function SiteRecordsView({ onPlay, onOpenLevels }: SiteRecordsViewProps) 
                   <th className="px-3 py-2">Record</th>
                   <th className="px-3 py-2">Holder</th>
                   <th className="px-3 py-2">Arrow</th>
-                  <th className="px-3 py-2">Runs</th>
+                  <th className="px-3 py-2">Players</th>
                   <th className="px-3 py-2 text-right">Actions</th>
                 </tr>
               </thead>
@@ -125,7 +125,11 @@ export function SiteRecordsView({ onPlay, onOpenLevels }: SiteRecordsViewProps) 
                       <span className="text-[10px] text-slate-500">by {r.author}</span>
                     </td>
                     <td className="px-3 py-2 font-mono text-[var(--app-accent)]">
-                      {r.timeMs !== null ? fmt(r.timeMs) : <span className="text-slate-600">no record</span>}
+                      {r.timeMs !== null ? (
+                        fmt(r.timeMs)
+                      ) : (
+                        <span className="text-slate-600">no record</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-slate-300">
                       {r.holder ?? <span className="text-slate-600">—</span>}

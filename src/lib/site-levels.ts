@@ -31,6 +31,8 @@ export interface SiteScoreEntry {
 
 export interface SiteSubmitResult {
   isRecord: boolean;
+  /** False when the player already holds a faster run, so this one is not their row. */
+  isPersonalBest: boolean;
   rank: number;
   entries: SiteScoreEntry[];
 }

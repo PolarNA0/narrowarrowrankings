@@ -217,7 +217,9 @@ export function SiteLevelsView({
 
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400 font-mono">
               <span>{level.obstacleCount} obstacles</span>
-              <span>{level.completions} runs</span>
+              <span>
+                {level.completions} {level.completions === 1 ? "player" : "players"}
+              </span>
               <span className="text-[var(--app-accent)]">
                 {level.bestTimeMs != null ? fmt(level.bestTimeMs) : "no times"}
               </span>
