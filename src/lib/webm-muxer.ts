@@ -109,6 +109,9 @@ export interface WebMOptions {
   defaultDurationNs?: number;
 }
 
+/** Shared zero-length buffer used to release a frame once it is muxed. */
+const EMPTY = new Uint8Array(0);
+
 const ID = {
   ebml: [0x1a, 0x45, 0xdf, 0xa3],
   segment: [0x18, 0x53, 0x80, 0x67],
@@ -217,6 +220,9 @@ export function muxWebM(frames: WebMFrame[], opts: WebMOptions): Blob {
       block.u8(f.keyframe ? 0x80 : 0x00);
       block.bytes(f.data);
       cluster.element(ID.simpleBlock, block.result);
+      // Release the encoded frame once it is in the output buffer; holding every
+      // frame until the end doubles the memory a long clip needs.
+      f.data = EMPTY;
     }
     w.element(ID.cluster, cluster.result);
   };

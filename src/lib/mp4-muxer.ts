@@ -17,6 +17,9 @@
 
 const VIDEO_TIMESCALE = 90_000;
 
+/** Shared zero-length buffer used to release a frame once it is muxed. */
+const EMPTY = new Uint8Array(0);
+
 function concat(parts: Uint8Array[]): Uint8Array {
   let len = 0;
   for (const p of parts) len += p.length;
@@ -253,7 +256,6 @@ export function muxMp4(frames: Mp4Frame[], opts: Mp4Options): Blob {
   // so its own size must be known first — it is fixed (one entry).
   const stcoEmpty = fullBox("stco", 0, 0, u32(1), u32(0));
   const moovLen = moovNoStco.length + stcoEmpty.length;
-  const mdatPayload = concat(frames.map((f) => f.data));
   const mdatHeader = 8;
   const dataOffset = ftyp.length + moovLen + mdatHeader;
   const stco = fullBox("stco", 0, 0, u32(1), u32(dataOffset));
@@ -273,7 +275,26 @@ export function muxMp4(frames: Mp4Frame[], opts: Mp4Options): Blob {
     ),
   );
 
-  const mdat = box("mdat", mdatPayload);
+  // Write the whole `mdat` payload into one buffer and release each frame as it
+  // is copied. Building it with `concat`/`box` instead held several full copies
+  // of every encoded frame at once — five times the clip size — which is what
+  // exhausted memory and crashed the tab on a long or high-resolution export.
+  let payloadLen = 0;
+  for (const f of frames) payloadLen += f.data.length;
+  const mdat = new Uint8Array(mdatHeader + payloadLen);
+  mdat.set(u32(mdat.length), 0);
+  mdat.set(ascii("mdat"), 4);
+  let off = mdatHeader;
+  for (let i = 0; i < n; i++) {
+    const data = frames[i].data;
+    mdat.set(data, off);
+    off += data.length;
+    frames[i] = { ...frames[i], data: EMPTY };
+  }
 
-  return new Blob([concat([ftyp, moov, mdat]) as BlobPart], { type: "video/mp4" });
+  // The Blob copies its parts once, so hand it the three buffers directly rather
+  // than concatenating them into a fourth full-size array first.
+  return new Blob([ftyp as BlobPart, moov as BlobPart, mdat as BlobPart], {
+    type: "video/mp4",
+  });
 }
