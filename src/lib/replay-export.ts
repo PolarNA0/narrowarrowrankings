@@ -110,6 +110,8 @@ export interface ExportOptions {
    * in the corner of the frame.
    */
   showInputs?: boolean;
+  /** Draw the elapsed-time pill at the top centre of the frame. */
+  showTimer?: boolean;
   ghosts?: ExportGhost[];
   /** Reports 0..1 as the clip records. */
   onProgress?: (fraction: number) => void;
@@ -244,6 +246,37 @@ export function hslToHex(h: number, s: number, l: number): string {
       .padStart(2, "0");
   };
   return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+/**
+ * Elapsed-time pill at the top centre of the frame, so an exported clip carries
+ * the same running clock the player sees in fullscreen. `seconds` is the run
+ * time at the frame's tick, so it counts up as the clip plays.
+ */
+function drawTimer(ctx: CanvasRenderingContext2D, seconds: number, width: number) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds - m * 60;
+  const label = `${m}:${s.toFixed(3).padStart(6, "0")}`;
+  const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
+  ctx.save();
+  ctx.font = `bold 20px ${MONO}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const padX = 16;
+  const h = 34;
+  const w = ctx.measureText(label).width + padX * 2;
+  const x = (width - w) / 2;
+  const y = 12;
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, h / 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.15)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(label, width / 2, y + h / 2 + 1);
+  ctx.restore();
 }
 
 /**
@@ -561,6 +594,10 @@ function renderScene(
   }
 
   if (opts.infoCard) drawInfoCard(ctx, opts.infoCard, width, height, opts.showInputs ? 52 : 18);
+
+  // The elapsed clock sits on top of everything so it stays legible as the
+  // scene scrolls beneath it.
+  if (opts.showTimer) drawTimer(ctx, upto * (SIM_TICK_MS / 1000), width);
 
   if (opts.showInputs) {
     // The indicator is drawn in CSS px like the rest of the scene (the base

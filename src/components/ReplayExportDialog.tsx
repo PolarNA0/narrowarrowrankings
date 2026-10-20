@@ -124,6 +124,7 @@ export function ReplayExportDialog({
   const [light, setLight] = React.useState(0.72);
   const [useSkinColors, setUseSkinColors] = React.useState(false);
   const [showInputs, setShowInputs] = React.useState(true);
+  const [showTimer, setShowTimer] = React.useState(true);
   const [ghostIds, setGhostIds] = React.useState<string[]>([]);
   const [recording, setRecording] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
@@ -211,6 +212,7 @@ export function ReplayExportDialog({
         backgroundTheme: bgTheme,
         infoCard,
         showInputs,
+        showTimer,
         ghosts,
         onProgress: setProgress,
       });
@@ -375,6 +377,15 @@ export function ReplayExportDialog({
                 className="accent-[var(--app-accent)]"
               />
               Show the in-game steer dots (bottom-right)
+            </label>
+            <label className="flex items-center gap-2 text-[11px] text-slate-300">
+              <input
+                type="checkbox"
+                checked={showTimer}
+                onChange={(e) => setShowTimer(e.target.checked)}
+                className="accent-[var(--app-accent)]"
+              />
+              Show the elapsed timer (top-centre)
             </label>
           </div>
 

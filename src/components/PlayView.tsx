@@ -1177,16 +1177,6 @@ export function PlayView({
             <Button
               variant="outline"
               size="sm"
-              className="h-9 gap-1.5 border-white/20 bg-black/60 text-slate-100 backdrop-blur hover:bg-black/80"
-              onClick={start}
-              disabled={loading || !!error}
-              title="Restart from the beginning"
-            >
-              <RotateCcw className="w-4 h-4" /> Restart
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
               className={cn(
                 "h-9 gap-1.5 border-white/20 bg-black/60 text-slate-100 backdrop-blur hover:bg-black/80",
                 cameraOpen && "bg-white/15",
@@ -1218,8 +1208,23 @@ export function PlayView({
             />
           )}
 
-          {/* Bottom-centre: the in-run readout (PB, ghost delta). */}
+          {/* Bottom-centre: restart. */}
           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              className="pointer-events-auto h-9 gap-1.5 border-white/20 bg-black/60 text-slate-100 backdrop-blur hover:bg-black/80"
+              onClick={start}
+              disabled={loading || !!error}
+              title="Restart from the beginning"
+            >
+              <RotateCcw className="w-4 h-4" /> Restart
+            </Button>
+          </div>
+
+          {/* Bottom-left: the in-run readout (PB, ghost delta), clear of the
+              centred restart button. */}
+          <div className="pointer-events-none absolute bottom-3 left-3 flex justify-start">
             <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/60 px-3 py-1 text-xs text-slate-300 backdrop-blur">
               <Badge variant="secondary" className="font-mono">
                 {arrowName}
