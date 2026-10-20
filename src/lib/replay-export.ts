@@ -559,6 +559,31 @@ export function canExportOffline(): boolean {
   return typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined";
 }
 
+/**
+ * Whether to prefer the realtime `MediaRecorder` capture over the offline
+ * WebCodecs encoder.
+ *
+ * The offline path renders and encodes as fast as the CPU allows. That is ideal
+ * on a desktop, but on a phone it piles full-resolution frames into the hardware
+ * encoder's input queue and its driver buffers far faster than the encoder
+ * drains them. The tab's memory budget there is only a few hundred MB, so the
+ * renderer is killed part-way through the clip — the reported crash at ~40%.
+ * The realtime path paces frames to the wall clock, so the queue never builds
+ * and the peak stays bounded, which is why the original `MediaRecorder`
+ * implementation completed on those devices.
+ *
+ * So the realtime capture is the preferred path on mobile (and on any device
+ * that reports little memory); the offline path stays for desktop, where it is
+ * frame-exact and several times faster than real time.
+ */
+export function preferRealtimeCapture(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/Android|iPhone|iPad|iPod|Mobile|Silk/i.test(ua)) return true;
+  const gb = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return typeof gb === "number" && gb <= 4;
+}
+
 /** H.264 codec strings whose level actually covers this pixel count, best first. */
 function avcCodecs(pixels: number): string[] {
   if (pixels <= 921_600) return ["avc1.420028", "avc1.42001f"]; // ≤720p: level 4.0, then 3.1
@@ -605,48 +630,62 @@ async function pickEncoderCodec(
 /**
  * Record the replay and resolve with the encoded clip.
  *
- * Encoding is offline: each frame is drawn and handed to the WebCodecs
- * `VideoEncoder` at its exact timestamp, so the clip is deterministic and runs
- * as fast as the CPU allows instead of in real time.
+ * Two paths exist:
  *
- * When WebCodecs is present it is the ONLY path taken. The realtime
- * `MediaRecorder` fallback is deliberately not reached from here: it is far
- * heavier (a live tab-wide capture for the whole clip) and was being entered
- * precisely when the offline path failed — i.e. when the machine was already
- * out of memory — which is what crashed the tab. Callers that specifically want
- * the realtime path call `exportReplayVideoRealtime`.
+ *  - Offline (WebCodecs): every frame is drawn and handed to the encoder at its
+ *    exact timestamp, so the clip is deterministic and runs as fast as the CPU
+ *    allows. Preferred on desktop.
+ *  - Realtime (`MediaRecorder`): the canvas is captured live and frames are paced
+ *    to the wall clock. Preferred on mobile, where the offline encoder's input
+ *    queue outruns the hardware encoder and its driver buffers and the tab is
+ *    killed part-way through the clip (see `preferRealtimeCapture`).
+ *
+ * If the preferred path fails, the other is tried before giving up, so a device
+ * that cannot do one can still export.
  */
 export async function exportReplayVideo(opts: ExportOptions): Promise<Blob> {
-  // A device can run out of memory or hit an encoder limit part-way through a
-  // long or high-resolution clip (the failure lands near the end, once the
-  // encoded frames and the encoder's own buffers have accumulated). Rather than
-  // surface that as a hard failure — or a half-written file — retry the whole
-  // export at a smaller canvas, which shrinks the frame buffer quadratically.
-  const SCALES = [1, 0.7, 0.5];
-  for (const scale of SCALES) {
-    const attempt: ExportOptions =
-      scale === 1
-        ? opts
-        : {
-            ...opts,
-            width: Math.max(2, Math.round(opts.width * scale)),
-            height: Math.max(2, Math.round(opts.height * scale)),
-          };
-    if (canExportOffline()) {
-      // H.264/MP4 is the preferred output, but a browser can pick the avc1
-      // codec string and still fail to hand back a decoder description (or the
-      // muxed file can turn out unplayable). Rather than fall all the way back
-      // to the heavy realtime recorder, retry the offline encoder with the WebM
-      // codecs, which is still exact and lag-free and always decodable in the
-      // browsers that can export at all.
-      const offline = await tryExportOffline(attempt);
-      if (offline) return offline;
+  const offline = canExportOffline();
+  const realtime = canExportVideo();
+  const preferRealtime = preferRealtimeCapture();
+
+  const runOffline = async (): Promise<Blob | null> => {
+    if (!offline) return null;
+    // A device can run out of memory or hit an encoder limit part-way through a
+    // long or high-resolution clip. Rather than surface that as a hard failure —
+    // or a half-written file — retry the whole export at a smaller canvas, which
+    // shrinks the frame buffer quadratically. H.264/MP4 is preferred; a browser
+    // can pick the avc1 codec string and still fail to hand back a decoder
+    // description, so WebM is retried at each scale before moving on.
+    for (const scale of [1, 0.7, 0.5]) {
+      const attempt: ExportOptions =
+        scale === 1
+          ? opts
+          : {
+              ...opts,
+              width: Math.max(2, Math.round(opts.width * scale)),
+              height: Math.max(2, Math.round(opts.height * scale)),
+            };
+      const mp4 = await tryExportOffline(attempt);
+      if (mp4) return mp4;
       const webm = await tryExportOffline(attempt, true);
       if (webm) return webm;
-    } else {
-      return exportWithMediaRecorder(attempt);
     }
-  }
+    return null;
+  };
+
+  const runRealtime = async (): Promise<Blob | null> => {
+    if (!realtime) return null;
+    try {
+      return await exportWithMediaRecorder(opts);
+    } catch {
+      return null;
+    }
+  };
+
+  const first = preferRealtime ? runRealtime : runOffline;
+  const second = preferRealtime ? runOffline : runRealtime;
+  const blob = (await first()) ?? (await second());
+  if (blob) return blob;
   throw new Error(
     "Video encoding failed — the clip may be too large for this device. Try a smaller size or lower frame rate.",
   );
@@ -777,6 +816,12 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
       height: canvas.height,
       bitrate,
       framerate: fps,
+      // "realtime" keeps the encoder from buffering frames for lookahead. The
+      // quality mode is marginally smaller for the same bitrate, but it lets the
+      // hardware encoder hold several input frames live, which is what piles up
+      // in the driver on a phone and takes the tab down. Realtime keeps only the
+      // in-flight frame, so the peak stays flat and the clip still looks the same.
+      latencyMode: "realtime",
     });
     for (let f = 0; f < frameCount; f++) {
       const tick = frameToTick(f);
@@ -792,11 +837,14 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
       // Back-pressure: keep the queue shallow so the encoder's output callbacks
       // get a turn between frames instead of starving behind a thousand queued
       // frames, and yield to the event loop every few frames so the page keeps
-      // painting (a tight synchronous loop here is what froze the editor).
-      if (encoder.encodeQueueSize > 8) {
+      // painting (a tight synchronous loop here is what froze the editor). The
+      // thresholds are deliberately low: on a phone the hardware encoder drains
+      // slowly, and a deeper queue is what builds the driver-side buffer that
+      // kills the tab.
+      if (encoder.encodeQueueSize > 4) {
         await new Promise<void>((resolve) => {
           const onDequeue = () => {
-            if (encoder.encodeQueueSize <= 4) {
+            if (encoder.encodeQueueSize <= 2) {
               encoder.removeEventListener("dequeue", onDequeue);
               resolve();
             }

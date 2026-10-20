@@ -36,6 +36,7 @@ import {
   exportFileName,
   exportReplayVideo,
   hslToHex,
+  preferRealtimeCapture,
   type ExportCameraMode,
   type ExportInfoCard,
 } from "@/lib/replay-export";
@@ -136,6 +137,9 @@ export function ReplayExportDialog({
     ? defaultColors
     : { body: customColor, ...deriveArrowColors(customColor) };
   const supported = React.useMemo(() => canExportVideo() || canExportOffline(), []);
+  // On phones the offline encoder floods the hardware encoder and kills the tab,
+  // so the dialog takes the realtime capture there and should say so.
+  const realtime = React.useMemo(() => preferRealtimeCapture(), []);
 
   // Release the last preview blob when a new one replaces it.
   React.useEffect(() => {
@@ -238,9 +242,9 @@ export function ReplayExportDialog({
             <Video className="w-4 h-4" /> Export replay as video
           </DialogTitle>
           <DialogDescription className="text-xs text-slate-500">
-            {canExportOffline()
-              ? "Renders every frame offline, so the clip is exact and exports faster than real time."
-              : "Records the replay at its real speed. Leave the tab in the foreground while it records."}
+            {realtime
+              ? "Records the replay at its real speed, so the tab stays within memory. Keep it in the foreground while it records."
+              : "Renders every frame offline, so the clip is exact and exports faster than real time."}
           </DialogDescription>
         </DialogHeader>
 
