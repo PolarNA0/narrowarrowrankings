@@ -67,6 +67,7 @@ export const NAV_GROUPS = [
       { id: "tas", label: "TAS editor" },
       { id: "tas-board", label: "TAS leaderboard" },
       { id: "brute", label: "Brute" },
+      { id: "endless", label: "Endless" },
       { id: "editor", label: "Level editor" },
       { id: "generator", label: "Generator" },
     ],

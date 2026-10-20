@@ -153,6 +153,7 @@ import { LevelEditorView } from "@/components/LevelEditorView";
 import { LevelGeneratorView } from "@/components/LevelGeneratorView";
 import type { NalvlLevel } from "@/lib/nalvl";
 import { PlayView } from "@/components/PlayView";
+import { EndlessView } from "@/components/EndlessView";
 import { fetchTasBoardSummary, type TasSummary } from "@/lib/tas-leaderboard";
 import { readUrlState, writeUrlState, shareUrl } from "@/lib/url-state";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
@@ -2657,6 +2658,8 @@ export default function App() {
           />
         ) : view === "brute" ? (
           <BruteView />
+        ) : view === "endless" ? (
+          <EndlessView />
         ) : view === "editor" ? (
           <LevelEditorView
             initialLevel={editorLevel}
