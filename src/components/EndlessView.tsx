@@ -10,7 +10,15 @@
  */
 
 import * as React from "react";
-import { Gamepad2, Play, Pause, RotateCcw, Dices, Trophy } from "lucide-react";
+import {
+  Gamepad2,
+  Play,
+  Pause,
+  RotateCcw,
+  Dices,
+  Trophy,
+  Infinity as InfinityIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -271,6 +279,16 @@ export function EndlessView() {
 
   return (
     <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <InfinityIcon className="w-5 h-5 text-[var(--app-accent)]" /> Endless
+        </h2>
+        <p className="text-xs text-slate-500 max-w-xl">
+          Survive a generated course for as long as you can — one point per section passed. Tap the
+          left/right half of the stage on mobile, or the arrow keys on desktop.
+        </p>
+      </div>
+
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
           <Label className="text-xs text-slate-400">Seed</Label>

@@ -67,12 +67,18 @@ export const NAV_GROUPS = [
       { id: "tas", label: "TAS editor" },
       { id: "tas-board", label: "TAS leaderboard" },
       { id: "brute", label: "Brute" },
-      { id: "endless", label: "Endless" },
       { id: "editor", label: "Level editor" },
       { id: "generator", label: "Generator" },
     ],
   },
-  { id: "play", label: "Play", items: [{ id: "play", label: "Play" }] },
+  {
+    id: "play",
+    label: "Play",
+    items: [
+      { id: "play", label: "Play" },
+      { id: "endless", label: "Endless" },
+    ],
+  },
 ] as const;
 
 export type NavigableView = (typeof NAV_GROUPS)[number]["items"][number]["id"];
