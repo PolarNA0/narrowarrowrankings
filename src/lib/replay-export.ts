@@ -23,10 +23,12 @@ import {
   drawGameThrust,
   drawInputIndicator,
   drawSprite,
+  paintForceFields,
   paintWalls,
   paintTriggers,
   paintZones,
   strokeTrail,
+  type FieldParticle,
   type PaintCtx,
   type RenderMode,
 } from "@/lib/replay-paint";
@@ -412,6 +414,24 @@ function computeBounds(opts: ExportOptions) {
 type SceneBounds = ReturnType<typeof computeBounds>;
 
 /**
+ * Stable particle pool for the wind/suction field previews, seeded
+ * deterministically (unlike the interactive viewer's `Math.random`) so the same
+ * run always exports the same clip. Created once and reused for every frame.
+ */
+const EXPORT_FIELD_PARTICLES: FieldParticle[] = (() => {
+  const out: FieldParticle[] = [];
+  let s = 0x9e3779b9;
+  const rand = () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = 0; i < 64; i++) out.push({ seed: rand(), phase: rand() });
+  return out;
+})();
+
+/**
  * Renders one replay frame onto `ctx`, given the level, the current camera pose
  * and the render mode. Shared by every exported frame so the whole clip is
  * consistent, and it mirrors the interactive stage's own draw order.
@@ -465,6 +485,13 @@ function renderScene(
   }
 
   paintZones(ctx, geometry, pc);
+  // Wind/suction fields sit above the zones and under the walls, exactly as in
+  // the interactive stage. The particle drift is a function of the clip's own
+  // time (`frame` ticks → seconds), so the field animates and the export is
+  // reproducible frame for frame.
+  if (geometry.forceFields && geometry.forceFields.length > 0) {
+    paintForceFields(ctx, geometry.forceFields, pc, EXPORT_FIELD_PARTICLES, frame / 240);
+  }
   if (geometry.triggers && geometry.triggers.length > 0) paintTriggers(ctx, geometry.triggers, pc);
   paintWalls(ctx, geometry.walls, upto, pc);
 
