@@ -21,6 +21,7 @@ import {
   drawGameThrust,
   drawInputIndicator,
   paintForceFields,
+  paintSiteMechanics,
   paintTriggers,
   paintWalls,
   paintZones,
@@ -29,7 +30,13 @@ import {
   type RenderMode,
 } from "@/lib/replay-paint";
 import { drawArrowSprite, type ArrowKind } from "@/lib/arrow-sprites";
-import { SIM_TICK_MS, type SimGeometry, type SimPoint } from "@/lib/replay-sim";
+import {
+  SIM_TICK_MS,
+  hasSiteMechanics,
+  type SimGeometry,
+  type SimPoint,
+  type SiteTimeline,
+} from "@/lib/replay-sim";
 import { cn } from "@/lib/utils";
 
 export interface PlayFrame {
@@ -52,6 +59,11 @@ export interface PlayFrame {
   ghostPath?: SimPoint[] | null;
   /** Tick markers (checkpoints/splits) to flag on the trail. */
   markers?: number[];
+  /**
+   * The site-only run timeline (switch fires, broken walls) so far, so the
+   * canvas draws a door's open state or a broken wall live.
+   */
+  timeline?: SiteTimeline;
 }
 
 export interface PlayCanvasHandle {
@@ -301,6 +313,17 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
         motions: s.geometry.movingBlocks,
         view,
       });
+      // Site-only puzzle mechanics, at the live tick and arrow position.
+      if (hasSiteMechanics(s.geometry)) {
+        paintSiteMechanics(
+          ctx,
+          s.geometry,
+          tick,
+          { tx, ty, scale, mode: s.mode, view },
+          frame.timeline,
+          p,
+        );
+      }
 
       if (frame.ghostPath && frame.ghostPath.length > 1) {
         ctx.save();

@@ -31,6 +31,18 @@ export interface SiteLevelObstacle {
   /** Site-only accelerator wire: crossing it arms a push until accelerator_speed. */
   accelerator_speed?: number;
   accelerator_accel?: number;
+  /** Site-only switch/door pair: both carry the same `switch_group`. */
+  switch_group?: string;
+  switch_action?: string;
+  door_start_open?: boolean;
+  /** Site-only one-way gate: the outward normal of the blocked face. */
+  gate_normal?: { x: number; y: number } | null;
+  /** Site-only blinking (timed) block. */
+  blink_period?: number;
+  blink_duty?: number;
+  blink_phase?: number;
+  /** Site-only breakable wall. */
+  breakable?: boolean;
 }
 
 export interface SiteLevelData {
@@ -236,7 +248,11 @@ function summarize(
       (o) =>
         o.field_type === "wind" ||
         o.field_type === "suction" ||
-        (Number.isFinite(Number(o.accelerator_speed)) && Number(o.accelerator_speed) > 0),
+        (Number.isFinite(Number(o.accelerator_speed)) && Number(o.accelerator_speed) > 0) ||
+        typeof o.switch_group === "string" ||
+        o.gate_normal != null ||
+        (Number.isFinite(Number(o.blink_period)) && Number(o.blink_period) > 0) ||
+        o.breakable === true,
     ),
     completions,
     bestTimeMs,

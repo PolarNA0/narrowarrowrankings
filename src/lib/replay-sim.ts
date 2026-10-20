@@ -128,6 +128,14 @@ export interface SimWall {
    * motion's offset at the current tick.
    */
   motion?: number;
+  /**
+   * Which site-only puzzle mechanic this wall belongs to, when it is one, plus
+   * its index in that mechanic's array in `SimGeometry`. `paintWalls` skips
+   * these (they are drawn by `paintSiteMechanics`, which knows their state);
+   * without the tag a door or breakable would render as a plain white wall.
+   */
+  siteKind?: "door" | "gate" | "blink" | "breakable";
+  siteIndex?: number;
 }
 
 /**
@@ -232,6 +240,88 @@ export interface SimMotion {
   period: number;
 }
 
+/**
+ * A switch/door pair (site-only). A switch is a sensor area; entering it (with
+ * the right `switch_action`) flips every door that shares its `switch_group`.
+ * A door is a wall whose solidity is controlled: while open the simulation
+ * rebuilds the engine with the door's points collapsed to a degenerate segment
+ * at its midpoint, so the arrow passes through; while shut it is a normal wall.
+ * The engine has no concept of a door, so this is applied exactly like the
+ * moving blocks — by rewriting the obstacle's points each tick.
+ */
+export interface SimDoor {
+  /** Index into the level's obstacle list. */
+  obstacleIndex: number;
+  /** Engine obstacle index (force fields are stripped, so the two diverge). */
+  engineIndex: number;
+  /** Base (drawn) points, so an offset never compounds across ticks. */
+  base: Array<{ x: number; y: number }>;
+  /** Group id shared with the switch that drives it. */
+  group: string;
+  /** True when the door starts open (inverted by the switch's action). */
+  startOpen: boolean;
+}
+
+/** A switch that flips the doors in its group when the arrow enters its area. */
+export interface SimSwitch {
+  /** Polygon area the arrow must enter. */
+  points: Array<{ x: number; y: number }>;
+  group: string;
+  /** `toggle` flips the group; `on`/`off` latch it. */
+  action: "toggle" | "on" | "off";
+}
+
+/**
+ * A one-way gate (site-only): a wall that is solid only from one side. The
+ * engine has no per-side walls, so the sim rebuilds the gate as a solid wall
+ * while the arrow is on the blocked side and as a degenerate point while it is
+ * on the passable side. `nx`/`ny` is the outward normal of the *blocked* face:
+ * an arrow approaching against the normal (from the blocked side) hits a wall,
+ * an arrow travelling with it passes through.
+ */
+export interface SimGate {
+  obstacleIndex: number;
+  engineIndex: number;
+  base: Array<{ x: number; y: number }>;
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  nx: number;
+  ny: number;
+}
+
+/**
+ * A blinking (timed) block (site-only): a wall that is solid for part of a
+ * fixed period and passable for the rest, so the player times the crossing. The
+ * sim collapses its points to a degenerate segment while it is "off". The
+ * engine cannot toggle an obstacle, so this is applied the same way as a door.
+ */
+export interface SimBlink {
+  obstacleIndex: number;
+  engineIndex: number;
+  base: Array<{ x: number; y: number }>;
+  /** Ticks for one full on/off cycle. */
+  period: number;
+  /** Fraction of the period the block is solid, 0..1. */
+  duty: number;
+  /** Tick offset of the cycle, so several blocks can be desynchronised. */
+  phase: number;
+}
+
+/**
+ * A breakable wall (site-only): a wall that vanishes once the arrow touches it.
+ * The engine has no destructible obstacles, so the sim watches the engine's
+ * wall-contact effects each tick and collapses the wall's points once its own
+ * obstacle index is reported. The wall never comes back within a run, so the
+ * broken set travels in the snapshot envelope.
+ */
+export interface SimBreakable {
+  obstacleIndex: number;
+  engineIndex: number;
+  base: Array<{ x: number; y: number }>;
+}
+
 /** Everything the renderer needs, split by how each obstacle is drawn. */
 export interface SimGeometry {
   walls: SimWall[];
@@ -243,6 +333,16 @@ export interface SimGeometry {
   triggers?: SimTrigger[];
   /** Site-only moving blocks, drawn at their current-tick offset. */
   movingBlocks?: SimMotion[];
+  /** Site-only switch/door pairs. */
+  doors?: SimDoor[];
+  /** Site-only switch sensors that drive the doors. */
+  switches?: SimSwitch[];
+  /** Site-only one-way gates. */
+  gates?: SimGate[];
+  /** Site-only blinking (timed) blocks. */
+  blinks?: SimBlink[];
+  /** Site-only breakable walls. */
+  breakables?: SimBreakable[];
 }
 
 export interface SimResult {
@@ -250,6 +350,12 @@ export interface SimResult {
   /** Tick (input index) at which the finish was reached, or null. */
   finishTick: number | null;
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
+  /**
+   * The site-only events the run produced (switch fires, broken walls), so the
+   * renderer can reproduce a door's open state or a broken wall at any tick.
+   * Absent on levels with no such mechanic.
+   */
+  timeline?: SiteTimeline;
 }
 
 /** Raw level payload as returned by `/level-details`. */
@@ -293,6 +399,32 @@ export interface RawLevelData {
      */
     accelerator_speed?: number;
     accelerator_accel?: number;
+    /**
+     * Site-only switch/door. A `switch` obstacle is a sensor polygon carrying a
+     * `switch_group` and a `switch_action` ("toggle" | "on" | "off"); a `door`
+     * wall carries the same `switch_group` and a `door_start_open` flag. The sim
+     * tracks each group's open state and rebuilds a shut door as a real wall and
+     * an open one as a degenerate point, so the engine never needs a door.
+     */
+    switch_group?: string;
+    switch_action?: string;
+    door_start_open?: boolean;
+    /**
+     * Site-only one-way gate. `gate_normal` is the outward normal of the blocked
+     * face; an arrow on the blocked side collides, one travelling with the
+     * normal passes through.
+     */
+    gate_normal?: { x?: number; y?: number } | null;
+    /**
+     * Site-only blinking (timed) block. `blink_period` is the full on/off cycle
+     * in ticks, `blink_duty` the fraction solid (0..1) and `blink_phase` a tick
+     * offset so several blocks can be desynchronised.
+     */
+    blink_period?: number;
+    blink_duty?: number;
+    blink_phase?: number;
+    /** Site-only breakable wall: vanishes once the arrow touches it. */
+    breakable?: boolean;
   }>;
 }
 
@@ -316,6 +448,98 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
   const motionByObstacle = new Map<number, number>();
   for (let i = 0; i < obstacles.length; i++) {
     if (isMovingBlock(obstacles[i])) motionByObstacle.set(i, motionByObstacle.size);
+  }
+  // Engine index for each authored index: force fields, wires and switch
+  // sensors never reach the engine, so the two indices diverge when one of them
+  // precedes a wall. Doors, gates, blinks and breakables DO reach the engine
+  // (they are real walls in some states), so they are counted.
+  const engineIndexOf: number[] = [];
+  let engineCount = 0;
+  for (const o of obstacles) {
+    if (isNonEngineObstacle(o)) {
+      engineIndexOf.push(-1);
+    } else {
+      engineIndexOf.push(engineCount);
+      engineCount++;
+    }
+  }
+  const engineBase = (i: number): Array<{ x: number; y: number }> =>
+    (
+      (obstacles[i]?.points ?? []).filter(
+        (p): p is { x: number; y: number } => p?.x != null && p?.y != null,
+      ) ?? []
+    ).map((p) => ({ x: p.x, y: p.y }));
+
+  const doors: SimDoor[] = [];
+  const switches: SimSwitch[] = [];
+  const gates: SimGate[] = [];
+  const blinks: SimBlink[] = [];
+  const breakables: SimBreakable[] = [];
+  // Obstacle index → dense index in each mechanic's array, so the wall loop can
+  // tag a wall with the mechanic that owns it.
+  const siteTagByObstacle = new Map<
+    number,
+    { siteKind: NonNullable<SimWall["siteKind"]>; siteIndex: number }
+  >();
+  for (let i = 0; i < obstacles.length; i++) {
+    const o = obstacles[i];
+    if (isSwitchObstacle(o)) {
+      const valid = (o.points ?? []).filter(
+        (p): p is { x: number; y: number } => p?.x != null && p?.y != null,
+      );
+      if (valid.length < 3) continue;
+      switches.push({
+        points: valid.map((p) => ({ x: p.x, y: p.y })),
+        group: o.switch_group ?? "a",
+        action: (o.switch_action as SimSwitch["action"]) ?? "toggle",
+      });
+      continue;
+    }
+    const engineIndex = engineIndexOf[i] ?? -1;
+    if (engineIndex < 0) continue;
+    const base = engineBase(i);
+    if (base.length === 0) continue;
+    if (isDoorObstacle(o)) {
+      siteTagByObstacle.set(i, { siteKind: "door", siteIndex: doors.length });
+      doors.push({
+        obstacleIndex: i,
+        engineIndex,
+        base,
+        group: o.switch_group as string,
+        startOpen: o.door_start_open === true,
+      });
+    }
+    if (isOneWayGate(o)) {
+      const a = base[0];
+      const b = base[base.length - 1];
+      siteTagByObstacle.set(i, { siteKind: "gate", siteIndex: gates.length });
+      gates.push({
+        obstacleIndex: i,
+        engineIndex,
+        base,
+        ax: a.x,
+        ay: a.y,
+        bx: b.x,
+        by: b.y,
+        nx: o.gate_normal?.x ?? 0,
+        ny: o.gate_normal?.y ?? 0,
+      });
+    }
+    if (isBlinkBlock(o)) {
+      siteTagByObstacle.set(i, { siteKind: "blink", siteIndex: blinks.length });
+      blinks.push({
+        obstacleIndex: i,
+        engineIndex,
+        base,
+        period: o.blink_period as number,
+        duty: isFiniteNum(o.blink_duty) ? Math.min(1, Math.max(0, o.blink_duty)) : 0.5,
+        phase: isFiniteNum(o.blink_phase) ? o.blink_phase : 0,
+      });
+    }
+    if (isBreakableWall(o)) {
+      siteTagByObstacle.set(i, { siteKind: "breakable", siteIndex: breakables.length });
+      breakables.push({ obstacleIndex: i, engineIndex, base });
+    }
   }
   for (let obstacleIndex = 0; obstacleIndex < obstacles.length; obstacleIndex++) {
     const obstacle = obstacles[obstacleIndex];
@@ -362,6 +586,10 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
       continue;
     }
 
+    // Switch sensors are site-only: the sim reads them, the engine must never
+    // collide with them (they would be an invisible wall in the arrow's path).
+    if (isSwitchObstacle(obstacle)) continue;
+
     const isZone = obstacle.zone_type != null || obstacle.obstacle_type === "zone";
     const isPortal = obstacle.portal_id != null || obstacle.obstacle_type === "portal";
 
@@ -404,6 +632,11 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
     // segment at draw time.
     const motion = motionByObstacle.get(obstacleIndex) ?? -1;
 
+    // A door, one-way gate, blinking block or breakable wall is drawn by
+    // `paintSiteMechanics` (which knows its live state), so it is tagged here and
+    // skipped by `paintWalls` rather than drawn as a plain wall.
+    const siteTag = siteTagByObstacle.get(obstacleIndex);
+
     // Some obstacles carry a single point, not a polyline: the editor lets you
     // drop a wall as a dot, and the engine still collides with it (a
     // zero-length segment with the same thickness). Rendering it as a dot keeps
@@ -421,6 +654,8 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
         pivot,
         rotationSpeed,
         motion,
+        siteKind: siteTag?.siteKind,
+        siteIndex: siteTag?.siteIndex,
       });
       continue;
     }
@@ -437,10 +672,24 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
         pivot,
         rotationSpeed,
         motion,
+        siteKind: siteTag?.siteKind,
+        siteIndex: siteTag?.siteIndex,
       });
     }
   }
-  return { walls, zones, portals, forceFields, triggers, movingBlocks: levelMotions(data) };
+  return {
+    walls,
+    zones,
+    portals,
+    forceFields,
+    triggers,
+    movingBlocks: levelMotions(data),
+    doors,
+    switches,
+    gates,
+    blinks,
+    breakables,
+  };
 }
 
 /**
@@ -489,7 +738,7 @@ function engineObstacles(data: RawLevelData) {
     "speed",
   ] as const;
   return (data.obstacles ?? [])
-    .filter((o) => !isForceField(o) && !isAcceleratorTrigger(o))
+    .filter((o) => !isNonEngineObstacle(o))
     .map((o) => {
       const out: Record<string, unknown> = {
         obstacle_type: o.obstacle_type ?? (o.zone_type ? "zone" : o.portal_id ? "portal" : "wall"),
@@ -552,6 +801,64 @@ export function isMovingBlock(o: {
 }
 
 /**
+ * True for a site-only switch sensor. A switch is a polygon the arrow enters;
+ * it is never an engine obstacle (the engine would collide with it), so it is
+ * stripped from the payload exactly like a force field.
+ */
+export function isSwitchObstacle(o: { switch_action?: string }): boolean {
+  return o.switch_action === "toggle" || o.switch_action === "on" || o.switch_action === "off";
+}
+
+/**
+ * True for a site-only door: a wall whose solidity is driven by the switch that
+ * shares its `switch_group`. A switch obstacle also carries a `switch_group`, so
+ * the switch check is excluded here to keep the two disjoint.
+ */
+export function isDoorObstacle(o: { switch_group?: string; switch_action?: string }): boolean {
+  return typeof o.switch_group === "string" && o.switch_group.length > 0 && !isSwitchObstacle(o);
+}
+
+/** True for a site-only one-way gate (a blocked-face normal is present). */
+export function isOneWayGate(o: { gate_normal?: { x?: number; y?: number } | null }): boolean {
+  return (
+    o.gate_normal != null &&
+    isFiniteNum(o.gate_normal.x) &&
+    isFiniteNum(o.gate_normal.y) &&
+    (o.gate_normal.x !== 0 || o.gate_normal.y !== 0)
+  );
+}
+
+/** True for a site-only blinking (timed) block. */
+export function isBlinkBlock(o: { blink_period?: number }): boolean {
+  return isFiniteNum(o.blink_period) && o.blink_period > 0;
+}
+
+/** True for a site-only breakable wall. */
+export function isBreakableWall(o: { breakable?: boolean }): boolean {
+  return o.breakable === true;
+}
+
+/**
+ * True for an obstacle the simulation layer handles itself, so it must never be
+ * handed to the engine as-is: force fields, accelerator wires (a one-shot
+ * trigger, not a wall) and switch sensors. Everything else — including doors,
+ * one-way gates, blinking blocks and breakables, which are real walls in some
+ * states — does reach the engine.
+ */
+export function isNonEngineObstacle(o: {
+  field_type?: string;
+  zone_type?: string;
+  portal_id?: string;
+  wall_type?: string;
+  obstacle_type?: string;
+  accelerator_speed?: number;
+  accelerator_accel?: number;
+  switch_action?: string;
+}): boolean {
+  return isForceField(o) || isAcceleratorTrigger(o) || isSwitchObstacle(o);
+}
+
+/**
  * A moving block's offset at `tick`, in world units. The block eases to the far
  * end over the first half of its period and back over the second, so it is
  * momentarily still at each end (a smooth there-and-back rather than a snap).
@@ -566,6 +873,83 @@ export function motionOffsetAt(
   const phase = (((tick % period) + period) % period) / period; // 0..1
   const k = phase < 0.5 ? phase * 2 : 2 - phase * 2; // 0..1..0
   return { x: dx * k, y: dy * k };
+}
+
+/**
+ * Whether a blinking block is solid at `tick`. A pure function of the tick, so
+ * the sim, the live render and the offline export all agree without carrying any
+ * state: solid for the first `duty` fraction of each period, then passable.
+ */
+export function blinkSolidAt(
+  blink: { period: number; duty: number; phase: number },
+  tick: number,
+): boolean {
+  const { period, duty, phase } = blink;
+  if (!isFiniteNum(period) || period <= 0) return true;
+  const t = (((tick + phase) % period) + period) % period;
+  return t / period < duty;
+}
+
+/**
+ * Whether a one-way gate is solid for an arrow at (x, y). `nx`/`ny` points from
+ * the blocked side toward the passable side, so a negative projection means the
+ * arrow is on the blocked side and the gate is a wall; otherwise it is passable.
+ * Pure, so the renderer reproduces the sim's decision without extra state.
+ */
+export function gateSolidAt(
+  gate: { ax: number; ay: number; nx: number; ny: number },
+  x: number,
+  y: number,
+): boolean {
+  return (x - gate.ax) * gate.nx + (y - gate.ay) * gate.ny < 0;
+}
+
+/**
+ * The site-only events a run produced, recorded by the sim so the renderer can
+ * reproduce a door's open state or a broken wall at any tick without re-running
+ * the physics. Gates and blinks are pure functions of position/tick, so they are
+ * not recorded here.
+ */
+export interface SiteTimeline {
+  /** Each time a switch fired, in tick order, with the group's resulting state. */
+  switchFires: Array<{ tick: number; group: string; open: boolean }>;
+  /** Each breakable wall that broke, with the tick the arrow touched it. */
+  brokenAt: Array<{ engineIndex: number; tick: number }>;
+}
+
+/** True when a level uses any site-only mechanic the renderer must animate. */
+export function hasSiteMechanics(geometry: SimGeometry): boolean {
+  return (
+    (geometry.doors?.length ?? 0) > 0 ||
+    (geometry.switches?.length ?? 0) > 0 ||
+    (geometry.gates?.length ?? 0) > 0 ||
+    (geometry.blinks?.length ?? 0) > 0 ||
+    (geometry.breakables?.length ?? 0) > 0
+  );
+}
+
+/** A door group's open state at `tick`, given the run's switch-fire timeline. */
+export function doorOpenAt(
+  timeline: SiteTimeline | undefined,
+  group: string,
+  startOpen: boolean,
+  tick: number,
+): boolean {
+  let open = startOpen;
+  for (const f of timeline?.switchFires ?? []) {
+    if (f.tick > tick) break;
+    if (f.group === group) open = f.open;
+  }
+  return open;
+}
+
+/** Whether a breakable wall has broken by `tick`, given the run's timeline. */
+export function isBrokenAt(
+  timeline: SiteTimeline | undefined,
+  engineIndex: number,
+  tick: number,
+): boolean {
+  return (timeline?.brokenAt ?? []).some((b) => b.engineIndex === engineIndex && b.tick <= tick);
 }
 
 /** Every moving block in a level, with the obstacle index the sim offsets. */
@@ -722,8 +1106,29 @@ export interface ReplayEngine {
   snapshot(): string;
   /** Rebuild the engine from a snapshot, returning the pose at that tick. */
   restore(snapshot: string): SimPoint;
+  /**
+   * The site-only events the run has produced so far (switch fires, broken
+   * walls). Levels with no such mechanic return empty arrays. The renderer reads
+   * this after a run so a door's open state or a broken wall can be drawn at any
+   * tick without re-running the physics.
+   */
+  timeline(): SiteTimeline;
   /** Release the underlying WASM object. */
   free(): void;
+}
+
+/**
+ * The snapshot format for a level that carries site-only run state. It wraps the
+ * raw engine state so a checkpoint taken mid-run restores a door's open flag, a
+ * broken wall and the switch-fire timeline along with the physics; a level with
+ * none of those keeps the bare engine state.
+ */
+interface SnapshotEnvelope {
+  engine?: unknown;
+  wire?: WireState;
+  doorOpen?: Array<[string, boolean]>;
+  broken?: number[];
+  timeline?: SiteTimeline;
 }
 
 /**
@@ -771,9 +1176,12 @@ export async function createReplayEngine(
   // velocity and rebuild the engine from that state. The rebuild is ~25x the
   // cost of a raw step, so it is skipped entirely on levels with no fields and
   // whenever the arrow is outside every field.
-  const fields = levelGeometry(data).forceFields ?? [];
+  // One geometry pass serves every site-only mechanic, so the authored→engine
+  // index mapping is computed once and the renderer and sim cannot disagree.
+  const geom = levelGeometry(data);
+  const fields = geom.forceFields ?? [];
   const hasFields = fields.length > 0;
-  const triggers = levelGeometry(data).triggers ?? [];
+  const triggers = geom.triggers ?? [];
   const hasTriggers = triggers.length > 0;
 
   // Moving blocks are the same story on the geometry side: the engine can spin
@@ -783,13 +1191,13 @@ export async function createReplayEngine(
   // the offset is a pure function of the tick — which also keeps `snapshot`
   // clean (see below).
   const allObstacles = data.obstacles ?? [];
-  // Engine obstacle index for each authored index; force fields are stripped
-  // before the engine sees the list, so the two indices diverge when a field
-  // precedes a block.
+  // Engine obstacle index for each authored index; force fields, wires and
+  // switch sensors are stripped before the engine sees the list, so the two
+  // indices diverge when one of them precedes a wall.
   const engineIndexOf: number[] = [];
   let engineCount = 0;
   for (const o of allObstacles) {
-    if (isForceField(o)) {
+    if (isNonEngineObstacle(o)) {
       engineIndexOf.push(-1);
     } else {
       engineIndexOf.push(engineCount);
@@ -797,17 +1205,60 @@ export async function createReplayEngine(
     }
   }
   const engineObstacleList = engineObstacles(data);
+  const basePointsOf = (engineIndex: number): Array<{ x: number; y: number }> =>
+    (engineObstacleList[engineIndex]?.points ?? []) as Array<{ x: number; y: number }>;
   const motions = levelMotions(data)
     .map((m) => {
       const engineIndex = engineIndexOf[m.obstacleIndex] ?? -1;
-      const base = (engineObstacleList[engineIndex]?.points ?? []) as Array<{
-        x: number;
-        y: number;
-      }>;
+      const base = basePointsOf(engineIndex);
       return { ...m, engineIndex, base };
     })
     .filter((m) => m.engineIndex >= 0 && m.base.length > 0);
   const hasMotions = motions.length > 0;
+
+  // Switch/door, one-way gate, blink and breakable state. A door's open flag and
+  // a breakable's broken flag are run state (a switch flips them), so they ride
+  // in the snapshot envelope; a blink is a pure function of the tick, so it does
+  // not. The door/breakable base points are read from the engine list, not the
+  // level, so they are already in engine coordinates.
+  const doors = (geom.doors ?? []).map((d) => ({ ...d, base: basePointsOf(d.engineIndex) }));
+  const switches = geom.switches ?? [];
+  const gates = (geom.gates ?? []).map((g) => ({ ...g, base: basePointsOf(g.engineIndex) }));
+  const blinks = (geom.blinks ?? []).map((b) => ({ ...b, base: basePointsOf(b.engineIndex) }));
+  const breakables = (geom.breakables ?? []).map((b) => ({
+    ...b,
+    base: basePointsOf(b.engineIndex),
+  }));
+  const hasDoors = doors.length > 0;
+  const hasSwitches = switches.length > 0;
+  const hasGates = gates.length > 0;
+  const hasBlinks = blinks.length > 0;
+  const hasBreakables = breakables.length > 0;
+  const hasSiteState =
+    hasDoors || hasSwitches || hasGates || hasBlinks || hasBreakables || hasTriggers;
+  const hasPointRewrites = hasDoors || hasGates || hasBlinks || hasBreakables;
+
+  /**
+   * Move a wall far off-map so the engine no longer collides with it. The engine
+   * collides with a zero-length segment too (a single-point obstacle is a dot
+   * with the wall's thickness), so "passable" has to mean "elsewhere", not
+   * "degenerate". The obstacle entry stays in place, so every index mapping is
+   * unchanged.
+   */
+  const OFF_MAP = 1_000_000;
+  const collapsed = (_pts: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> => [
+    { x: OFF_MAP, y: OFF_MAP },
+  ];
+
+  // Run state carried in the snapshot envelope (see `snapshot`/`restore`).
+  const doorOpen = new Map<string, boolean>();
+  const broken = new Set<number>();
+  // A switch is one-shot per run (a sensor re-entering it must not re-flip a
+  // toggle), so the groups already fired are remembered too.
+  const firedSwitches = new Set<string>();
+  // The site-only events a run produced, so the renderer can reproduce a door's
+  // open state or a broken wall at any tick without re-running the physics.
+  const timeline: SiteTimeline = { switchFires: [], brokenAt: [] };
 
   let engine: InstanceType<EngineModule["GameMechanicsEngine"]>;
   try {
@@ -816,25 +1267,107 @@ export async function createReplayEngine(
     return null;
   }
 
-  /** Translate every moving block to its offset at the engine's current tick. */
-  const applyMotions = (): void => {
-    const tick = engine.get_ticks();
+  /**
+   * Rewrite every site-only obstacle's points for the current tick in a single
+   * engine rebuild: moving blocks (translated by the animation curve), doors
+   * (collapsed while open), blinking blocks (collapsed while "off"), one-way
+   * gates (collapsed while the arrow is on the passable side) and breakables
+   * (collapsed once touched). Base points are always used as the source, so
+   * offsets never compound across ticks. A level with none of these returns
+   * immediately, so the ~25x rebuild cost is never paid on a plain level.
+   */
+  const applyGeometry = (tick: number): void => {
+    if (!hasMotions && !hasPointRewrites) return;
     const s = JSON.parse(engine.state) as EnginePlayerState & {
       map?: { obstacles?: Array<{ points?: Array<{ x: number; y: number }> }> };
     };
     const obs = s.map?.obstacles;
     if (!obs) return;
     let changed = false;
-    for (const m of motions) {
-      const o = obs[m.engineIndex];
-      if (!o) continue;
-      const off = motionOffsetAt(m.dx, m.dy, m.period, tick);
-      o.points = m.base.map((p) => ({ x: p.x + off.x, y: p.y + off.y }));
+    const setPoints = (engineIndex: number, pts: Array<{ x: number; y: number }>): void => {
+      const o = obs[engineIndex];
+      if (!o) return;
+      o.points = pts.map((p) => ({ x: p.x, y: p.y }));
       changed = true;
+    };
+    for (const m of motions) {
+      const off = motionOffsetAt(m.dx, m.dy, m.period, tick);
+      setPoints(
+        m.engineIndex,
+        m.base.map((p) => ({ x: p.x + off.x, y: p.y + off.y })),
+      );
+    }
+    for (const d of doors) {
+      const open = doorOpen.get(d.group) ?? d.startOpen;
+      setPoints(d.engineIndex, open ? collapsed(d.base) : d.base);
+    }
+    for (const b of blinks) {
+      setPoints(b.engineIndex, blinkSolidAt(b, tick) ? b.base : collapsed(b.base));
+    }
+    for (const g of gates) {
+      const px = s.player.translation.x;
+      const py = s.player.translation.y;
+      // `gate_normal` points from the blocked side toward the passable side, so
+      // an arrow with a negative dot is on the blocked side and meets a wall.
+      const side = (px - g.ax) * g.nx + (py - g.ay) * g.ny;
+      setPoints(g.engineIndex, side < 0 ? g.base : collapsed(g.base));
+    }
+    for (const b of breakables) {
+      setPoints(b.engineIndex, broken.has(b.engineIndex) ? collapsed(b.base) : b.base);
     }
     if (!changed) return;
     engine.free();
     engine = new mod.GameMechanicsEngine(s as never);
+  };
+
+  /**
+   * Fire any switch the arrow has just entered (segment test against the
+   * previous tick, so a fast arrow cannot tunnel past a thin sensor) and break
+   * any breakable wall the engine reports a contact with. Both mutate run state
+   * that `applyGeometry` then reads, so this runs first each tick.
+   */
+  const applyTriggers = (prevX: number, prevY: number, tick: number): void => {
+    if (hasSwitches) {
+      const s = JSON.parse(engine.state) as EnginePlayerState;
+      const px = s.player.translation.x;
+      const py = s.player.translation.y;
+      for (const sw of switches) {
+        if (firedSwitches.has(sw.group)) continue;
+        if (!pointInPolygon(px, py, sw.points)) continue;
+        if (pointInPolygon(prevX, prevY, sw.points)) continue;
+        firedSwitches.add(sw.group);
+        const prev = doorOpen.get(sw.group) ?? true;
+        const open = sw.action === "on" ? true : sw.action === "off" ? false : !prev;
+        doorOpen.set(sw.group, open);
+        timeline.switchFires.push({ tick, group: sw.group, open });
+      }
+    }
+    if (hasBreakables) {
+      const s = JSON.parse(engine.state) as EnginePlayerState & {
+        effects?: { wall_contact_effects?: Array<{ obstacle_index?: number }> };
+      };
+      const contacts = s.effects?.wall_contact_effects ?? [];
+      for (const c of contacts) {
+        if (c.obstacle_index == null) continue;
+        if (!breakables.some((b) => b.engineIndex === c.obstacle_index)) continue;
+        if (broken.has(c.obstacle_index)) continue;
+        broken.add(c.obstacle_index);
+        timeline.brokenAt.push({ engineIndex: c.obstacle_index, tick });
+      }
+    }
+  };
+
+  /** Restore the per-run site state to its authored start (spawn / reset). */
+  const resetSiteState = (): void => {
+    doorOpen.clear();
+    for (const d of doors) {
+      if (!doorOpen.has(d.group)) doorOpen.set(d.group, d.startOpen);
+    }
+    broken.clear();
+    firedSwitches.clear();
+    timeline.switchFires = [];
+    timeline.brokenAt = [];
+    wire = { armed: false, dirX: 0, dirY: 0, targetSpeed: 0, accel: 0 };
   };
 
   /** Apply the fields' force at the arrow's current pose, if any apply. */
@@ -929,7 +1462,8 @@ export async function createReplayEngine(
       const before = read(engine);
       engine.process_ticks([symbolToInput(symbol)]);
       if (engine.player_state_code() === 0) {
-        if (hasMotions) applyMotions();
+        if (hasSwitches || hasBreakables) applyTriggers(before.x, before.y, engine.get_ticks());
+        if (hasMotions || hasPointRewrites) applyGeometry(engine.get_ticks());
         if (hasFields) applyFields();
         if (hasTriggers) {
           armWire(before.x, before.y);
@@ -943,7 +1477,8 @@ export async function createReplayEngine(
       engine.process_ticks([symbolToInput(symbol)]);
       const code = engine.player_state_code();
       if (code === 0) {
-        if (hasMotions) applyMotions();
+        if (hasSwitches || hasBreakables) applyTriggers(before.x, before.y, engine.get_ticks());
+        if (hasMotions || hasPointRewrites) applyGeometry(engine.get_ticks());
         if (hasFields) applyFields();
         if (hasTriggers) {
           armWire(before.x, before.y);
@@ -955,8 +1490,8 @@ export async function createReplayEngine(
     reset() {
       engine.free();
       engine = new mod.GameMechanicsEngine(state());
-      wire = { armed: false, dirX: 0, dirY: 0, targetSpeed: 0, accel: 0 };
-      if (hasMotions) applyMotions();
+      resetSiteState();
+      if (hasMotions || hasPointRewrites) applyGeometry(0);
       return read(engine);
     },
     read() {
@@ -966,20 +1501,38 @@ export async function createReplayEngine(
       return engine.player_state_code();
     },
     snapshot() {
-      // Levels without a wire keep the raw engine state (cheap, and the format
-      // every existing checkpoint already uses). A wired level wraps it so the
-      // armed charge travels with the checkpoint.
-      return hasTriggers
-        ? JSON.stringify({ engine: JSON.parse(engine.state), wire })
-        : engine.state;
+      // Levels without any site-only run state keep the raw engine state (cheap,
+      // and the format every existing checkpoint already uses). A level with a
+      // wire, door or breakable wraps it so that state travels with the
+      // checkpoint — without it a re-simulated tail would diverge from the run.
+      if (!hasSiteState && !hasBreakables) return engine.state;
+      const envelope: SnapshotEnvelope = {
+        engine: JSON.parse(engine.state),
+        ...(hasTriggers ? { wire } : {}),
+        ...(hasDoors ? { doorOpen: [...doorOpen] } : {}),
+        ...(hasBreakables ? { broken: [...broken] } : {}),
+        ...(hasSiteState ? { timeline } : {}),
+      };
+      return JSON.stringify(envelope);
     },
     restore(snapshot) {
-      const parsed = JSON.parse(snapshot) as { engine?: unknown; wire?: WireState };
+      const parsed = JSON.parse(snapshot) as SnapshotEnvelope;
       const engineState = parsed.engine !== undefined ? parsed.engine : parsed;
       engine.free();
       engine = mod.GameMechanicsEngine.from_state(engineState as never);
       wire = parsed.wire ?? { armed: false, dirX: 0, dirY: 0, targetSpeed: 0, accel: 0 };
+      doorOpen.clear();
+      for (const [group, open] of parsed.doorOpen ?? []) doorOpen.set(group, open);
+      broken.clear();
+      for (const idx of parsed.broken ?? []) broken.add(idx);
+      timeline.switchFires = parsed.timeline?.switchFires ?? [];
+      timeline.brokenAt = parsed.timeline?.brokenAt ?? [];
+      firedSwitches.clear();
+      for (const f of timeline.switchFires) firedSwitches.add(f.group);
       return read(engine);
+    },
+    timeline() {
+      return { switchFires: [...timeline.switchFires], brokenAt: [...timeline.brokenAt] };
     },
     free() {
       engine.free();
@@ -1052,6 +1605,7 @@ export async function simulateRun(
     if (finishTick === null && point.finished) finishTick = path.length - 1;
   }
 
+  const timeline = replay.timeline();
   replay.free();
-  return { path, finishTick, bounds };
+  return { path, finishTick, bounds, timeline };
 }

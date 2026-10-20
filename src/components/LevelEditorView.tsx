@@ -37,6 +37,11 @@ import {
   Globe,
   Zap,
   Crosshair,
+  ToggleLeft,
+  DoorClosed,
+  ArrowLeftRight,
+  Timer,
+  Hammer,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -74,6 +79,9 @@ import {
   DEFAULT_FIELD_STRENGTH,
   DEFAULT_ACCELERATOR_SPEED,
   DEFAULT_ACCELERATOR_ACCEL,
+  DEFAULT_SWITCH_GROUP,
+  DEFAULT_BLINK_PERIOD,
+  DEFAULT_BLINK_DUTY,
   gameFilename,
   nalvlFilename,
   nalvlToGameFile,
@@ -110,6 +118,11 @@ export function LevelEditorView({
   const [fieldStrength, setFieldStrength] = React.useState(DEFAULT_FIELD_STRENGTH);
   const [acceleratorSpeed, setAcceleratorSpeed] = React.useState(DEFAULT_ACCELERATOR_SPEED);
   const [acceleratorAccel, setAcceleratorAccel] = React.useState(DEFAULT_ACCELERATOR_ACCEL);
+  const [switchGroup, setSwitchGroup] = React.useState(DEFAULT_SWITCH_GROUP);
+  const [switchAction, setSwitchAction] = React.useState<"toggle" | "on" | "off">("toggle");
+  const [doorStartOpen, setDoorStartOpen] = React.useState(false);
+  const [blinkPeriod, setBlinkPeriod] = React.useState(DEFAULT_BLINK_PERIOD);
+  const [blinkDuty, setBlinkDuty] = React.useState(DEFAULT_BLINK_DUTY);
   // Grid snapping is on by default so zones/walls come out symmetrical.
   const [snap, setSnap] = React.useState<number>(10);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
@@ -402,6 +415,7 @@ export function LevelEditorView({
             path: gameRef.current?.path ?? [],
             pathTicks: gameRef.current?.pathTicks ?? [],
             tick: gameRef.current?.currentTick ?? 0,
+            timeline: gameRef.current?.timeline,
           })}
           arrow="narrow"
           arrowRadius={arrowConstants("Narrow Arrow").radius ?? 16}
@@ -423,6 +437,11 @@ export function LevelEditorView({
           fieldStrength={fieldStrength}
           acceleratorSpeed={acceleratorSpeed}
           acceleratorAccel={acceleratorAccel}
+          switchGroup={switchGroup}
+          switchAction={switchAction}
+          doorStartOpen={doorStartOpen}
+          blinkPeriod={blinkPeriod}
+          blinkDuty={blinkDuty}
           snap={snap}
           selectedIds={selectedIds}
           onSelect={setSelectedIds}
@@ -462,6 +481,11 @@ export function LevelEditorView({
     { id: "wind", icon: <Wind className="w-4 h-4" />, label: "Wind (site-only)" },
     { id: "suction", icon: <Magnet className="w-4 h-4" />, label: "Suction (site-only)" },
     { id: "accelerator", icon: <Zap className="w-4 h-4" />, label: "Accelerator wire (site-only)" },
+    { id: "switch", icon: <ToggleLeft className="w-4 h-4" />, label: "Switch (site-only)" },
+    { id: "door", icon: <DoorClosed className="w-4 h-4" />, label: "Door (site-only)" },
+    { id: "gate", icon: <ArrowLeftRight className="w-4 h-4" />, label: "One-way gate (site-only)" },
+    { id: "blink", icon: <Timer className="w-4 h-4" />, label: "Blinking block (site-only)" },
+    { id: "breakable", icon: <Hammer className="w-4 h-4" />, label: "Breakable wall (site-only)" },
     { id: "pan", icon: <Hand className="w-4 h-4" />, label: "Pan" },
   ];
 
@@ -597,6 +621,113 @@ export function LevelEditorView({
                   game export.
                 </p>
               </div>
+            )}
+            {tool === "switch" && (
+              <div className="space-y-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Group</Label>
+                  <Input
+                    value={switchGroup}
+                    onChange={(e) => setSwitchGroup(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Action</Label>
+                  <Select
+                    value={switchAction}
+                    onValueChange={(v) => setSwitchAction(v as "toggle" | "on" | "off")}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="toggle" className="text-xs">
+                        toggle
+                      </SelectItem>
+                      <SelectItem value="on" className="text-xs">
+                        on (open doors)
+                      </SelectItem>
+                      <SelectItem value="off" className="text-xs">
+                        off (close doors)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Drag a box the arrow flies into. Doors that share its group react once. Site-only
+                  — stripped from a game export.
+                </p>
+              </div>
+            )}
+            {tool === "door" && (
+              <div className="space-y-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Group</Label>
+                  <Input
+                    value={switchGroup}
+                    onChange={(e) => setSwitchGroup(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={doorStartOpen}
+                    onCheckedChange={setDoorStartOpen}
+                    aria-label="Start open"
+                  />
+                  <span className="text-xs text-slate-400">Starts open</span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Draw a wall that is solid until a switch in its group opens it. Site-only —
+                  stripped from a game export.
+                </p>
+              </div>
+            )}
+            {tool === "gate" && (
+              <p className="text-[11px] text-slate-500">
+                Draw a wall the arrow may cross from one side only. The blocked face defaults to the
+                draw&apos;s left normal; select it to flip. Site-only — stripped from a game export.
+              </p>
+            )}
+            {tool === "blink" && (
+              <div className="space-y-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Cycle (ticks)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={blinkPeriod}
+                    onChange={(e) => setBlinkPeriod(Math.max(1, Number(e.target.value) || 1))}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Solid fraction (0–1)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step="0.05"
+                    value={blinkDuty}
+                    onChange={(e) =>
+                      setBlinkDuty(Math.max(0, Math.min(1, Number(e.target.value) || 0)))
+                    }
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  A block that is solid for the first fraction of each cycle, then passable.
+                  Site-only — stripped from a game export.
+                </p>
+              </div>
+            )}
+            {tool === "breakable" && (
+              <p className="text-[11px] text-slate-500">
+                Draw a wall the arrow smashes through on first contact, then passes. Site-only —
+                stripped from a game export.
+              </p>
             )}
             <div className="space-y-1.5">
               <Label className="text-xs">Grid snap (world units)</Label>
@@ -1008,6 +1139,164 @@ export function LevelEditorView({
                     turning or spinning cuts the boost. Site-only: stripped from the game export.
                   </p>
                 </>
+              )}
+              {selected.kind === "switch" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Group</Label>
+                    <Input
+                      value={selected.switchGroup ?? DEFAULT_SWITCH_GROUP}
+                      onChange={(e) => updateSelected({ switchGroup: e.target.value })}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Action</Label>
+                    <Select
+                      value={selected.switchAction ?? "toggle"}
+                      onValueChange={(v) =>
+                        updateSelected({ switchAction: v as "toggle" | "on" | "off" })
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="toggle" className="text-xs">
+                          toggle
+                        </SelectItem>
+                        <SelectItem value="on" className="text-xs">
+                          on (open doors)
+                        </SelectItem>
+                        <SelectItem value="off" className="text-xs">
+                          off (close doors)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Fires once, the first time the arrow enters the box. Doors sharing the group
+                    react. Site-only: stripped from the game export.
+                  </p>
+                </>
+              )}
+              {selected.kind === "door" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Group</Label>
+                    <Input
+                      value={selected.switchGroup ?? DEFAULT_SWITCH_GROUP}
+                      onChange={(e) => updateSelected({ switchGroup: e.target.value })}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={selected.doorStartOpen === true}
+                      onCheckedChange={(v) => updateSelected({ doorStartOpen: v })}
+                      aria-label="Start open"
+                    />
+                    <span className="text-xs text-slate-400">Starts open</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    A door is solid until a switch in its group opens it. Site-only: stripped from
+                    the game export.
+                  </p>
+                </>
+              )}
+              {selected.kind === "gate" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Blocked face (outward normal)</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={selected.gateNormal?.x ?? 0}
+                        onChange={(e) =>
+                          updateSelected({
+                            gateNormal: {
+                              x: Number(e.target.value),
+                              y: selected.gateNormal?.y ?? 1,
+                            },
+                          })
+                        }
+                        className="h-8 text-xs"
+                      />
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={selected.gateNormal?.y ?? 1}
+                        onChange={(e) =>
+                          updateSelected({
+                            gateNormal: {
+                              x: selected.gateNormal?.x ?? 0,
+                              y: Number(e.target.value),
+                            },
+                          })
+                        }
+                        className="h-8 text-xs"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const n = selected.gateNormal ?? { x: 0, y: 1 };
+                          updateSelected({ gateNormal: { x: -n.x, y: -n.y } });
+                        }}
+                      >
+                        Flip
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    The arrow may cross from the normal&apos;s back side only. Site-only: stripped
+                    from the game export.
+                  </p>
+                </>
+              )}
+              {selected.kind === "blink" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Cycle (ticks)</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={selected.blinkPeriod ?? DEFAULT_BLINK_PERIOD}
+                      onChange={(e) =>
+                        updateSelected({ blinkPeriod: Math.max(1, Number(e.target.value) || 1) })
+                      }
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Solid fraction (0–1)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step="0.05"
+                      value={selected.blinkDuty ?? DEFAULT_BLINK_DUTY}
+                      onChange={(e) =>
+                        updateSelected({
+                          blinkDuty: Math.max(0, Math.min(1, Number(e.target.value) || 0)),
+                        })
+                      }
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Solid for the first fraction of each cycle, then passable. Site-only: stripped
+                    from the game export.
+                  </p>
+                </>
+              )}
+              {selected.kind === "breakable" && (
+                <p className="text-[11px] text-slate-500">
+                  A wall the arrow smashes through on first contact. Site-only: stripped from the
+                  game export.
+                </p>
               )}
               {selected.kind === "portal" && (
                 <>

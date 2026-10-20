@@ -24,6 +24,7 @@ import {
   drawInputIndicator,
   drawSprite,
   paintForceFields,
+  paintSiteMechanics,
   paintWalls,
   paintTriggers,
   paintZones,
@@ -32,7 +33,7 @@ import {
   type PaintCtx,
   type RenderMode,
 } from "@/lib/replay-paint";
-import { SIM_TICK_MS, type SimGeometry, type SimResult } from "@/lib/replay-sim";
+import { SIM_TICK_MS, hasSiteMechanics, type SimGeometry, type SimResult } from "@/lib/replay-sim";
 import { lighten, withAlpha } from "@/lib/replay-visuals";
 import {
   DEFAULT_BACKGROUND,
@@ -527,6 +528,11 @@ function renderScene(
   }
   if (geometry.triggers && geometry.triggers.length > 0) paintTriggers(ctx, geometry.triggers, pc);
   paintWalls(ctx, geometry.walls, upto, pc);
+  // The site-only puzzle mechanics are drawn live, at the frame's tick, so an
+  // exported clip shows a door opening or a wall breaking exactly as the sim did.
+  if (hasSiteMechanics(geometry)) {
+    paintSiteMechanics(ctx, geometry, upto, pc, opts.sim.timeline, sim.path[upto]);
+  }
 
   for (const g of opts.ghosts ?? []) {
     const gp = g.sim.path;

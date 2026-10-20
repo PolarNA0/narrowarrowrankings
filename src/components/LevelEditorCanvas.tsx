@@ -16,6 +16,9 @@ import * as React from "react";
 import { wallVisual, withAlpha } from "@/lib/replay-visuals";
 import { paintForceFields, type FieldParticle } from "@/lib/replay-paint";
 import {
+  DEFAULT_BLINK_DUTY,
+  DEFAULT_BLINK_PERIOD,
+  DEFAULT_SWITCH_GROUP,
   defaultObstacle,
   levelBounds,
   type NalvlLevel,
@@ -26,7 +29,19 @@ import {
 } from "@/lib/nalvl";
 
 export type EditorTool =
-  "select" | "wall" | "zone" | "portal" | "wind" | "suction" | "accelerator" | "pan";
+  | "select"
+  | "wall"
+  | "zone"
+  | "portal"
+  | "wind"
+  | "suction"
+  | "accelerator"
+  | "switch"
+  | "door"
+  | "gate"
+  | "blink"
+  | "breakable"
+  | "pan";
 
 export interface LevelEditorCanvasHandle {
   redraw(): void;
@@ -49,6 +64,16 @@ export interface LevelEditorCanvasProps {
   acceleratorSpeed: number;
   /** Push (velocity/tick) of a newly drawn accelerator wire. */
   acceleratorAccel: number;
+  /** Switch group id a newly drawn switch/door joins. */
+  switchGroup?: string;
+  /** How a newly drawn switch acts on its group. */
+  switchAction?: "toggle" | "on" | "off";
+  /** Whether a newly drawn door starts open. */
+  doorStartOpen?: boolean;
+  /** Blink cycle (ticks) of a newly drawn blinking block. */
+  blinkPeriod?: number;
+  /** Fraction of the blink cycle a newly drawn block is solid. */
+  blinkDuty?: number;
   /** Snap every placed/dragged point to this world-unit grid (0 = free). */
   snap: number;
   selectedIds: string[];
@@ -106,6 +131,11 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       fieldStrength,
       acceleratorSpeed,
       acceleratorAccel,
+      switchGroup = DEFAULT_SWITCH_GROUP,
+      switchAction = "toggle",
+      doorStartOpen = false,
+      blinkPeriod = DEFAULT_BLINK_PERIOD,
+      blinkDuty = DEFAULT_BLINK_DUTY,
       snap,
       selectedIds,
       onSelect,
@@ -127,6 +157,11 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       fieldStrength,
       acceleratorSpeed,
       acceleratorAccel,
+      switchGroup,
+      switchAction,
+      doorStartOpen,
+      blinkPeriod,
+      blinkDuty,
       snap,
       selectedIds,
     });
@@ -139,6 +174,11 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       fieldStrength,
       acceleratorSpeed,
       acceleratorAccel,
+      switchGroup,
+      switchAction,
+      doorStartOpen,
+      blinkPeriod,
+      blinkDuty,
       snap,
       selectedIds,
     };
@@ -264,8 +304,36 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
                 ? "accelerator"
                 : (o.wallType ?? "normal"),
         );
+        // The puzzle kinds have no engine visual of their own, so the editor
+        // gives each a distinct tint matching the replay painters.
+        const puzzleColor =
+          o.kind === "switch"
+            ? "#facc15"
+            : o.kind === "door"
+              ? "#fbbf24"
+              : o.kind === "gate"
+                ? "#f472b6"
+                : o.kind === "blink"
+                  ? "#38bdf8"
+                  : o.kind === "breakable"
+                    ? "#fb923c"
+                    : null;
         ctx.save();
-        if (o.kind === "zone") {
+        if (o.kind === "switch") {
+          // A sensor area: a dashed translucent polygon, like the replay painter.
+          ctx.beginPath();
+          pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+          ctx.closePath();
+          ctx.globalAlpha = 0.12;
+          ctx.fillStyle = puzzleColor!;
+          ctx.fill();
+          ctx.globalAlpha = 0.7;
+          ctx.setLineDash([5, 4]);
+          ctx.strokeStyle = puzzleColor!;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.setLineDash([]);
+        } else if (o.kind === "zone") {
           ctx.beginPath();
           pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
           ctx.closePath();
@@ -302,10 +370,13 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
           // stroke is floored at ~4px on screen. This is the single biggest
           // "the editor is finicky" fix: you can now see and grab what you drew.
           const core = Math.max(4, (o.thickness ?? 8) * cam.scale);
-          ctx.strokeStyle = visual.color;
+          ctx.strokeStyle = puzzleColor ?? visual.color;
           ctx.lineCap = "round";
+          if (o.kind === "breakable" || o.kind === "blink" || o.kind === "gate") {
+            ctx.setLineDash(o.kind === "gate" ? [] : [8, 6]);
+          }
           if (pts.length === 1) {
-            ctx.fillStyle = visual.color;
+            ctx.fillStyle = puzzleColor ?? visual.color;
             ctx.beginPath();
             ctx.arc(pts[0].x, pts[0].y, core / 2, 0, Math.PI * 2);
             ctx.fill();
@@ -314,6 +385,19 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
             ctx.beginPath();
             pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
             ctx.stroke();
+            if (o.kind === "gate" && pts.length >= 2) {
+              // A tick from the wall's midpoint toward the passable side (the
+              // normal `gateSolidAt` reads), so the open face is visible at a glance.
+              const a = pts[0];
+              const b = pts[1];
+              const mx = (a.x + b.x) / 2;
+              const my = (a.y + b.y) / 2;
+              const n = o.gateNormal ?? { x: 0, y: 1 };
+              ctx.beginPath();
+              ctx.moveTo(mx, my);
+              ctx.lineTo(mx + n.x * 18 * cam.scale, my + n.y * 18 * cam.scale);
+              ctx.stroke();
+            }
             if (o.kind === "portal" && pts.length >= 2) {
               // Arrowhead at the second point showing travel direction.
               const a = pts[0];
@@ -479,7 +563,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         ctx.fillStyle = "rgba(56,189,248,0.2)";
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 4]);
-        if (t === "zone" || t === "wind" || t === "suction") {
+        if (t === "zone" || t === "wind" || t === "suction" || t === "switch") {
           ctx.beginPath();
           ctx.rect(pts[0].x, pts[0].y, cur.x - pts[0].x, cur.y - pts[0].y);
           ctx.fill();
@@ -567,7 +651,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
           const b = o.points[j + 1];
           if (pointSegDist(world.x, world.y, a.x, a.y, b.x, b.y) <= tol) return { id: o.id };
         }
-        if (o.kind === "zone" && o.points.length >= 3) {
+        if ((o.kind === "zone" || o.kind === "switch") && o.points.length >= 3) {
           const a = o.points[o.points.length - 1];
           const b = o.points[0];
           if (pointSegDist(world.x, world.y, a.x, a.y, b.x, b.y) <= tol) return { id: o.id };
@@ -772,6 +856,11 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         fieldStrength: fs,
         acceleratorSpeed: as,
         acceleratorAccel: aa,
+        switchGroup: sg,
+        switchAction: sa,
+        doorStartOpen: dso,
+        blinkPeriod: bp,
+        blinkDuty: bd,
       } = propsRef.current;
       const start = drag.points[0];
       const end = drag.cursor;
@@ -799,6 +888,27 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
               };
         onSelect([o.id]);
         onChange({ ...lvl, obstacles: [...lvl.obstacles, o] });
+      } else if (t === "switch") {
+        // A switch is a box the arrow flies into. A stray click, or a drag along
+        // one axis only, would make a zero-area polygon the sensor test can never
+        // hit, so both dimensions must be non-trivial.
+        if (!moved || Math.abs(end.x - start.x) <= 8 || Math.abs(end.y - start.y) <= 8) {
+          draw();
+          return;
+        }
+        const pts = [
+          round(start),
+          round({ x: end.x, y: start.y }),
+          round(end),
+          round({ x: start.x, y: end.y }),
+        ];
+        const o = {
+          ...defaultObstacle("switch", pts),
+          switchGroup: sg,
+          switchAction: sa,
+        };
+        onSelect([o.id]);
+        onChange({ ...lvl, obstacles: [...lvl.obstacles, o] });
       } else if (t === "portal" || t === "accelerator") {
         if (!moved) {
           draw();
@@ -812,6 +922,30 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
                 acceleratorSpeed: as,
                 acceleratorAccel: aa,
               };
+        onSelect([o.id]);
+        onChange({ ...lvl, obstacles: [...lvl.obstacles, o] });
+      } else if (t === "door" || t === "gate" || t === "blink" || t === "breakable") {
+        // The four wall-like puzzle kinds: drawn like a wall, but each carries
+        // its own site field. A door joins the current switch group and starts
+        // in the chosen state; a gate's blocked face defaults to the draw's
+        // left-hand normal (the editor's inspector can flip it).
+        const pts = moved ? [round(start), round(end)] : [round(start)];
+        let o: NalvlObstacle;
+        if (t === "door") {
+          o = { ...defaultObstacle("door", pts), switchGroup: sg, doorStartOpen: dso };
+        } else if (t === "gate") {
+          // The wall's left-hand normal (draw direction rotated 90° CCW), so a
+          // left-to-right horizontal draw yields (0,1) — the same default the
+          // lowering uses. The inspector's Flip swaps it.
+          const nx = pts.length >= 2 ? pts[0].y - pts[1].y : 0;
+          const ny = pts.length >= 2 ? pts[1].x - pts[0].x : 1;
+          const len = Math.hypot(nx, ny) || 1;
+          o = { ...defaultObstacle("gate", pts), gateNormal: { x: nx / len, y: ny / len } };
+        } else if (t === "blink") {
+          o = { ...defaultObstacle("blink", pts), blinkPeriod: bp, blinkDuty: bd };
+        } else {
+          o = { ...defaultObstacle("breakable", pts), breakable: true };
+        }
         onSelect([o.id]);
         onChange({ ...lvl, obstacles: [...lvl.obstacles, o] });
       } else {

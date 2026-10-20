@@ -61,7 +61,18 @@ export const GAME_REQUIRED_FORMAT_VERSION = 0;
 
 export type NalvlWallType = "normal" | "death" | "bouncy" | "boost" | "finish";
 export type NalvlZoneType = "boost" | "ice" | "nosteer" | "steer" | "rail";
-export type NalvlKind = "wall" | "zone" | "portal" | "wind" | "suction" | "accelerator";
+export type NalvlKind =
+  | "wall"
+  | "zone"
+  | "portal"
+  | "wind"
+  | "suction"
+  | "accelerator"
+  | "switch"
+  | "door"
+  | "gate"
+  | "blink"
+  | "breakable";
 
 /** Site-only force fields; they never reach the game's exporter. */
 export const NALVL_FIELD_KINDS: NalvlKind[] = ["wind", "suction"];
@@ -71,12 +82,34 @@ export function isFieldKind(kind: NalvlKind): kind is "wind" | "suction" {
   return kind === "wind" || kind === "suction";
 }
 
+/** The four stateful puzzle mechanics plus the switch sensor that drives doors. */
+export const NALVL_PUZZLE_KINDS: NalvlKind[] = ["switch", "door", "gate", "blink", "breakable"];
+
+/** True for a switch/door/gate/blink/breakable obstacle. */
+export function isPuzzleKind(kind: NalvlKind): boolean {
+  return NALVL_PUZZLE_KINDS.includes(kind);
+}
+
+/** True for a kind that is a wall in every non-open state (a door, gate, blink or breakable). */
+export function isWallLikePuzzleKind(kind: NalvlKind): boolean {
+  return kind === "door" || kind === "gate" || kind === "blink" || kind === "breakable";
+}
+
 /**
  * Kinds the game's engine has no concept of, so they are simulated by the site
- * layer and must never appear in an export. The accelerator wire is one of
- * these: the engine has no triggers.
+ * layer and must never appear in an export. The accelerator wire, the switch
+ * sensor and the four stateful puzzle mechanics are all site-only.
  */
-export const NALVL_SITE_ONLY_KINDS: NalvlKind[] = ["wind", "suction", "accelerator"];
+export const NALVL_SITE_ONLY_KINDS: NalvlKind[] = [
+  "wind",
+  "suction",
+  "accelerator",
+  "switch",
+  "door",
+  "gate",
+  "blink",
+  "breakable",
+];
 
 /** True for a kind that is simulated by the site layer only (never exported). */
 export function isSiteOnlyKind(kind: NalvlKind): boolean {
@@ -91,6 +124,11 @@ export const DEFAULT_FIELD_STRENGTH = 0.05;
 export const DEFAULT_ACCELERATOR_SPEED = 1.5;
 /** Default accelerator push, in world units per tick. */
 export const DEFAULT_ACCELERATOR_ACCEL = 0.05;
+/** Default switch group id, so a new switch and door pair up out of the box. */
+export const DEFAULT_SWITCH_GROUP = "a";
+/** Default blink cycle: 2 seconds on/off, half solid. */
+export const DEFAULT_BLINK_PERIOD = 480;
+export const DEFAULT_BLINK_DUTY = 0.5;
 
 export const NALVL_WALL_TYPES: NalvlWallType[] = ["normal", "death", "bouncy", "boost", "finish"];
 export const NALVL_ZONE_TYPES: NalvlZoneType[] = ["boost", "ice", "nosteer", "steer", "rail"];
@@ -138,6 +176,28 @@ export interface NalvlObstacle {
    */
   acceleratorSpeed?: number;
   acceleratorAccel?: number;
+  /**
+   * Switch/door pair (site-only). A `switch` is a sensor polygon the arrow
+   * enters; a `door` is a wall whose solidity it controls. Both carry the same
+   * `switchGroup`. `switchAction` is "toggle" | "on" | "off" and `doorStartOpen`
+   * sets the door's initial state. Like wind/suction they never reach the game's
+   * exporter.
+   */
+  switchGroup?: string;
+  switchAction?: "toggle" | "on" | "off";
+  doorStartOpen?: boolean;
+  /**
+   * One-way gate (site-only). `gateNormal` is the outward normal of the blocked
+   * face; an arrow on the blocked side collides, one travelling with the normal
+   * passes through.
+   */
+  gateNormal?: NalvlPoint | null;
+  /** Blinking (timed) block (site-only): solid for `blinkDuty` of `blinkPeriod` ticks. */
+  blinkPeriod?: number;
+  blinkDuty?: number;
+  blinkPhase?: number;
+  /** Breakable wall (site-only): vanishes once the arrow touches it. */
+  breakable?: boolean;
 }
 
 export interface NalvlLevel {
@@ -184,6 +244,31 @@ export function defaultObstacle(kind: NalvlKind, points: NalvlPoint[]): NalvlObs
       acceleratorAccel: DEFAULT_ACCELERATOR_ACCEL,
     };
   }
+  if (kind === "switch") {
+    return { ...base, switchGroup: DEFAULT_SWITCH_GROUP, switchAction: "toggle" };
+  }
+  if (kind === "door") {
+    return {
+      ...base,
+      wallType: "normal",
+      thickness: 8,
+      switchGroup: DEFAULT_SWITCH_GROUP,
+      doorStartOpen: false,
+    };
+  }
+  if (kind === "gate")
+    return { ...base, wallType: "normal", thickness: 8, gateNormal: { x: 0, y: 1 } };
+  if (kind === "blink") {
+    return {
+      ...base,
+      wallType: "normal",
+      thickness: 8,
+      blinkPeriod: DEFAULT_BLINK_PERIOD,
+      blinkDuty: DEFAULT_BLINK_DUTY,
+      blinkPhase: 0,
+    };
+  }
+  if (kind === "breakable") return { ...base, wallType: "normal", thickness: 8, breakable: true };
   // The game links two portals by a shared `portal_id`, one on each `side`
   // ("a"/"b"); a lone portal is still importable.
   return { ...base, portalId: "p1", side: "a" };
@@ -275,7 +360,56 @@ export function nalvlToRawLevelData(level: NalvlLevel): RawLevelData {
       accelerator_speed: isNum(o.acceleratorSpeed) ? o.acceleratorSpeed : DEFAULT_ACCELERATOR_SPEED,
       accelerator_accel: isNum(o.acceleratorAccel) ? o.acceleratorAccel : DEFAULT_ACCELERATOR_ACCEL,
     }));
-  return { ...data, obstacles: [...obstacles, ...fields, ...triggers] };
+  // The four stateful puzzle mechanics reach the sim as walls carrying a site
+  // field (the engine itself never sees the field, but it DOES see the wall, so
+  // the sim can collapse it to a dot when it is passable). A switch is a sensor
+  // polygon the engine must never collide with, so it is emitted as a site
+  // obstacle the payload builder strips.
+  const puzzle: NonNullable<RawLevelData["obstacles"]> = level.obstacles
+    .filter((o) => isPuzzleKind(o.kind))
+    .map((o) => {
+      const points = o.points.map((p) => ({ x: p.x, y: p.y }));
+      if (o.kind === "switch") {
+        return {
+          obstacle_type: "wall",
+          points,
+          switch_group: o.switchGroup ?? DEFAULT_SWITCH_GROUP,
+          switch_action: o.switchAction ?? "toggle",
+        };
+      }
+      const wall = {
+        obstacle_type: "wall",
+        wall_type: o.wallType ?? "normal",
+        wall_thickness: isNum(o.thickness) ? o.thickness : 8,
+        points,
+      };
+      if (o.kind === "door") {
+        return {
+          ...wall,
+          switch_group: o.switchGroup ?? DEFAULT_SWITCH_GROUP,
+          door_start_open: o.doorStartOpen === true,
+        };
+      }
+      if (o.kind === "gate") {
+        return {
+          ...wall,
+          gate_normal: {
+            x: isNum(o.gateNormal?.x) ? o.gateNormal.x : 0,
+            y: isNum(o.gateNormal?.y) ? o.gateNormal.y : 1,
+          },
+        };
+      }
+      if (o.kind === "blink") {
+        return {
+          ...wall,
+          blink_period: isNum(o.blinkPeriod) ? o.blinkPeriod : DEFAULT_BLINK_PERIOD,
+          blink_duty: isNum(o.blinkDuty) ? o.blinkDuty : DEFAULT_BLINK_DUTY,
+          blink_phase: isNum(o.blinkPhase) ? o.blinkPhase : 0,
+        };
+      }
+      return { ...wall, breakable: true };
+    });
+  return { ...data, obstacles: [...obstacles, ...fields, ...triggers, ...puzzle] };
 }
 
 /**
@@ -380,6 +514,66 @@ export function rawLevelDataToNalvl(data: RawLevelData, name?: string): NalvlLev
         points,
         acceleratorSpeed: o.accelerator_speed,
         acceleratorAccel: o.accelerator_accel,
+      });
+      continue;
+    }
+    // The stateful puzzle mechanics, recognised by their own site fields and
+    // recovered before the generic wall branch. A switch sensor is a polygon; a
+    // door/gate/blink/breakable is a wall with one extra field.
+    if (o.switch_action != null) {
+      obstacles.push({
+        id: nextObstacleId(),
+        kind: "switch",
+        points,
+        switchGroup: o.switch_group ?? DEFAULT_SWITCH_GROUP,
+        switchAction: (o.switch_action as NalvlObstacle["switchAction"]) ?? "toggle",
+      });
+      continue;
+    }
+    if (o.switch_group != null) {
+      obstacles.push({
+        id: nextObstacleId(),
+        kind: "door",
+        points,
+        wallType: (o.wall_type as NalvlWallType) ?? "normal",
+        thickness: isNum(o.wall_thickness) ? o.wall_thickness : 8,
+        switchGroup: o.switch_group,
+        doorStartOpen: o.door_start_open === true,
+      });
+      continue;
+    }
+    if (o.gate_normal != null) {
+      obstacles.push({
+        id: nextObstacleId(),
+        kind: "gate",
+        points,
+        wallType: (o.wall_type as NalvlWallType) ?? "normal",
+        thickness: isNum(o.wall_thickness) ? o.wall_thickness : 8,
+        gateNormal: { x: o.gate_normal.x ?? 0, y: o.gate_normal.y ?? 1 },
+      });
+      continue;
+    }
+    if (o.blink_period != null) {
+      obstacles.push({
+        id: nextObstacleId(),
+        kind: "blink",
+        points,
+        wallType: (o.wall_type as NalvlWallType) ?? "normal",
+        thickness: isNum(o.wall_thickness) ? o.wall_thickness : 8,
+        blinkPeriod: o.blink_period,
+        blinkDuty: isNum(o.blink_duty) ? o.blink_duty : DEFAULT_BLINK_DUTY,
+        blinkPhase: isNum(o.blink_phase) ? o.blink_phase : 0,
+      });
+      continue;
+    }
+    if (o.breakable === true) {
+      obstacles.push({
+        id: nextObstacleId(),
+        kind: "breakable",
+        points,
+        wallType: (o.wall_type as NalvlWallType) ?? "normal",
+        thickness: isNum(o.wall_thickness) ? o.wall_thickness : 8,
+        breakable: true,
       });
       continue;
     }

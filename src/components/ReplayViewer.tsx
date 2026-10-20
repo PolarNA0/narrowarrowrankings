@@ -41,6 +41,7 @@ import {
 import {
   SIM_TICK_MS,
   arrowConstants,
+  hasSiteMechanics,
   levelGeometry,
   simulateRun,
   type RawLevelData,
@@ -48,6 +49,7 @@ import {
   type SimResult,
   type SimPortal,
   type SimWall,
+  type SiteTimeline,
 } from "@/lib/replay-sim";
 import {
   themeColor,
@@ -75,6 +77,7 @@ import {
 import {
   drawGameThrust,
   paintForceFields,
+  paintSiteMechanics,
   paintTriggers,
   paintWalls,
   paintZones,
@@ -372,6 +375,7 @@ export function ReplayViewer({
                 onSpeed={setSpeed}
                 onFrameCommit={setFrame}
                 overlays={overlays}
+                timeline={sim.timeline}
               />
             ) : (
               <div className="rounded-lg border border-white/5 bg-black/30 py-10 text-center text-slate-500 text-xs italic">
@@ -640,6 +644,11 @@ interface StageProps {
   drawnPath?: { x: number; y: number }[];
   /** Colour of the drawn trace; defaults to the app accent. */
   drawColor?: string;
+  /**
+   * The site-only run timeline (switch fires, broken walls) for `sim`. Doors and
+   * breakables are drawn from it so a scrub shows the true state at each tick.
+   */
+  timeline?: SiteTimeline;
 }
 
 /** "lines" is the schematic stroke look; "game" mirrors the real game's render. */
@@ -682,6 +691,7 @@ export function ReplayStage({
   onDrawPath,
   drawnPath,
   drawColor = "var(--app-accent)",
+  timeline,
 }: StageProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   // How the stage draws: the schematic line look, or a render matching the game.
@@ -953,6 +963,20 @@ export function ReplayStage({
       paintTriggers(g, triggers, { tx, ty, scale, mode });
     };
 
+    /**
+     * The site-only puzzle mechanics at `tick`, drawn live (a door opens, a blink
+     * fades, a breakable breaks) so both the static and the live layer show the
+     * true state. The arrow position is only needed to colour a one-way gate.
+     */
+    const paintSiteMechanicsLocal = (
+      g: CanvasRenderingContext2D,
+      tick: number,
+      arrow?: { x: number; y: number },
+    ) => {
+      if (!hasSiteMechanics(geometry)) return;
+      paintSiteMechanics(g, geometry, tick, { tx, ty, scale, mode }, timeline, arrow);
+    };
+
     /** Paint everything that never changes as the frame advances onto an offscreen layer. */
     const paintBase = () => {
       const c = document.createElement("canvas");
@@ -969,6 +993,9 @@ export function ReplayStage({
       paintFieldsLocal(g);
       paintTriggersLocal(g);
       paintWallsLocal(g, staticWalls, 0);
+      // Site mechanics are NOT baked: their state changes with the tick (a door
+      // opening, a blink fading), so a spawn-state bake would stay visible under
+      // the live pass. They are drawn entirely by the per-frame pass below.
       return c;
     };
 
@@ -1037,6 +1064,7 @@ export function ReplayStage({
         paintFieldsLocal(ctx);
         paintTriggersLocal(ctx);
         paintWallsLocal(ctx, geometry.walls, upto);
+        paintSiteMechanicsLocal(ctx, upto, sim.path[upto]);
         for (const o of overlays) {
           const gp = o.sim.path;
           if (gp.length < 2) continue;
@@ -1114,6 +1142,13 @@ export function ReplayStage({
       if (rotatingWalls.length > 0) {
         vector();
         paintWallsLocal(ctx, rotatingWalls, upto);
+      }
+
+      // Site mechanics repaint every frame (a door opening, a blink fading, a
+      // wall breaking), above the baked walls.
+      if (hasSiteMechanics(geometry)) {
+        vector();
+        paintSiteMechanicsLocal(ctx, upto, sim.path[upto]);
       }
 
       // Ghost trails, each cached at its own current tick and only re-stroked
@@ -1284,7 +1319,7 @@ export function ReplayStage({
     return () => ro.disconnect();
     // `frame` is not a dependency: `draw` reads it through `frameRef` so the
     // static layer and world bounds are not rebuilt on every frame.
-  }, [sim, geometry, bodyColor, trail, thrust, arrow, arrowRadius, overlays, mode]);
+  }, [sim, geometry, bodyColor, trail, thrust, arrow, arrowRadius, overlays, mode, timeline]);
 
   // Repaint on every external frame change (scrub, restart, or the settled
   // frame reported after playback) and resync the live ref and readouts to it.
@@ -1801,6 +1836,7 @@ export function TasReplayViewer({
                 onSpeed={setSpeed}
                 onFrameCommit={setFrame}
                 overlays={overlays}
+                timeline={sim.timeline}
               />
             ) : (
               <div className="rounded-lg border border-white/5 bg-black/30 py-10 text-center text-slate-500 text-xs italic">

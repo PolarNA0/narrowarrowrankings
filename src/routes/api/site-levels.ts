@@ -29,11 +29,13 @@ function validName(v: unknown, max = 48): string | null {
 }
 
 /**
- * Validate the authored level payload. Wind/suction fields are allowed (that is
- * the whole point of a site level); everything else is checked for shape so the
- * physics layer never receives a malformed obstacle.
+ * Validate and normalise the authored level payload. Wind/suction and the
+ * stateful puzzle fields are allowed (that is the whole point of a site level);
+ * everything else is checked for shape so the physics layer never receives a
+ * malformed obstacle. Exported so the verify scripts can exercise the publish
+ * whitelist directly — a field missing here is silently downgraded to a wall.
  */
-function parseLevelData(raw: unknown): SiteLevelData | { error: string } {
+export function parseLevelData(raw: unknown): SiteLevelData | { error: string } {
   const d = raw as { obstacles?: unknown; map_name?: unknown; game_mode?: unknown } | null;
   if (!d || typeof d !== "object") return { error: "Missing level data." };
   if (!Array.isArray(d.obstacles)) return { error: "Level data has no obstacles." };
@@ -101,6 +103,29 @@ function parseLevelData(raw: unknown): SiteLevelData | { error: string } {
       ...(Number.isFinite(Number(ob.accelerator_accel))
         ? { accelerator_accel: Number(ob.accelerator_accel) }
         : {}),
+      // Stateful puzzle mechanics: a switch sensor and the four wall-like kinds
+      // (door, one-way gate, blink, breakable). Without these the publish step
+      // would silently strip the site field and the obstacle would publish as a
+      // plain wall.
+      ...(typeof ob.switch_group === "string" && ob.switch_group
+        ? { switch_group: String(ob.switch_group).slice(0, 32) }
+        : {}),
+      ...(ob.switch_action === "toggle" || ob.switch_action === "on" || ob.switch_action === "off"
+        ? { switch_action: ob.switch_action }
+        : {}),
+      ...(ob.door_start_open === true ? { door_start_open: true } : {}),
+      ...(ob.gate_normal &&
+      Number.isFinite(Number(ob.gate_normal.x)) &&
+      Number.isFinite(Number(ob.gate_normal.y)) &&
+      (Number(ob.gate_normal.x) !== 0 || Number(ob.gate_normal.y) !== 0)
+        ? { gate_normal: { x: Number(ob.gate_normal.x), y: Number(ob.gate_normal.y) } }
+        : {}),
+      ...(Number.isFinite(Number(ob.blink_period)) && Number(ob.blink_period) > 0
+        ? { blink_period: Number(ob.blink_period) }
+        : {}),
+      ...(Number.isFinite(Number(ob.blink_duty)) ? { blink_duty: Number(ob.blink_duty) } : {}),
+      ...(Number.isFinite(Number(ob.blink_phase)) ? { blink_phase: Number(ob.blink_phase) } : {}),
+      ...(ob.breakable === true ? { breakable: true } : {}),
     });
   }
 

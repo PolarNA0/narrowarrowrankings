@@ -22,6 +22,7 @@ import {
   type ReplayEngine,
   type SimGeometry,
   type SimPoint,
+  type SiteTimeline,
 } from "./replay-sim";
 
 export type PlayPhase = "idle" | "running" | "paused" | "finished" | "dead";
@@ -264,6 +265,15 @@ export class PlayGame {
   /** The physics tick the latest sampled pose is at (0 at spawn). */
   get currentTick(): number {
     return this.tick;
+  }
+
+  /**
+   * The site-only run timeline (switch fires, broken walls) so far. The play
+   * canvas reads it to draw a door's open state or a broken wall live, exactly as
+   * the replay viewer does.
+   */
+  get timeline(): SiteTimeline {
+    return this.engine?.timeline() ?? { switchFires: [], brokenAt: [] };
   }
 
   /** The input symbols recorded so far, one per tick since the spawn. */

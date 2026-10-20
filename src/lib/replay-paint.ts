@@ -29,8 +29,15 @@ import type {
   SimResult,
   SimTrigger,
   SimWall,
+  SiteTimeline,
 } from "@/lib/replay-sim";
-import { motionOffsetAt } from "@/lib/replay-sim";
+import {
+  blinkSolidAt,
+  doorOpenAt,
+  gateSolidAt,
+  isBrokenAt,
+  motionOffsetAt,
+} from "@/lib/replay-sim";
 
 export type RenderMode = "lines" | "game";
 
@@ -189,10 +196,7 @@ export function drawFinish(
 export function paintZones(ctx: CanvasRenderingContext2D, geometry: SimGeometry, pc: PaintCtx) {
   const { tx, ty, mode, view } = pc;
   for (const z of geometry.zones) {
-    if (
-      view &&
-      (z.x1 < view.minX || z.x0 > view.maxX || z.y1 < view.minY || z.y0 > view.maxY)
-    )
+    if (view && (z.x1 < view.minX || z.x0 > view.maxX || z.y1 < view.minY || z.y0 > view.maxY))
       continue;
     const color = zoneColorFor(z.type, mode);
     // Trace the zone's own polygon so slanted/multi-point zones (e.g. Arctic
@@ -411,6 +415,128 @@ export function paintTriggers(ctx: CanvasRenderingContext2D, triggers: SimTrigge
   ctx.restore();
 }
 
+/**
+ * The site-only puzzle mechanics — switches, doors, one-way gates, blinking
+ * blocks and breakable walls — drawn with their live state at `tick`. A door is
+ * a solid bar when shut and a dashed ghost when open; a one-way gate shows a
+ * chevron along its passable direction and dims while passable; a blink fades in
+ * and out with its duty cycle; a breakable is dashed until the arrow breaks it,
+ * then shown as fading debris.
+ *
+ * `timeline` reproduces the run's switch fires and broken walls so a scrub shows
+ * the door's true state at that tick. Pass the run's arrow position so a gate's
+ * live solidity matches the sim (it depends on which side the arrow is on).
+ */
+export function paintSiteMechanics(
+  ctx: CanvasRenderingContext2D,
+  geometry: SimGeometry,
+  tick: number,
+  pc: PaintCtx,
+  timeline?: SiteTimeline,
+  arrow?: { x: number; y: number },
+) {
+  const { tx, ty, scale, mode } = pc;
+  const game = mode === "game";
+
+  const strokeWall = (
+    pts: Array<{ x: number; y: number }>,
+    color: string,
+    thickness: number,
+    opts: { dashed?: boolean; alpha?: number } = {},
+  ) => {
+    const alpha = opts.alpha ?? 1;
+    if (pts.length < 2) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.lineCap = "round";
+    if (opts.dashed) ctx.setLineDash([8, 6]);
+    const core = game
+      ? Math.max(2, (thickness || GAME_WALL_THICKNESS) * scale)
+      : Math.max(1.5, thickness * scale);
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const X0 = tx(pts[i].x);
+      const Y0 = ty(pts[i].y);
+      const X1 = tx(pts[i + 1].x);
+      const Y1 = ty(pts[i + 1].y);
+      ctx.strokeStyle = withAlpha(color, game ? 0.9 : 0.16);
+      ctx.lineWidth = Math.max(3, core * 2.4);
+      ctx.beginPath();
+      ctx.moveTo(X0, Y0);
+      ctx.lineTo(X1, Y1);
+      ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = core;
+      ctx.beginPath();
+      ctx.moveTo(X0, Y0);
+      ctx.lineTo(X1, Y1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+
+  // Switches: a sensor area, drawn as a labelled dashed polygon.
+  for (const sw of geometry.switches ?? []) {
+    if (sw.points.length < 3) continue;
+    ctx.save();
+    ctx.beginPath();
+    sw.points.forEach((p, i) => {
+      const X = tx(p.x);
+      const Y = ty(p.y);
+      if (i === 0) ctx.moveTo(X, Y);
+      else ctx.lineTo(X, Y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = "rgba(250, 204, 21, 0.10)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(250, 204, 21, 0.65)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 4]);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Doors: solid while shut, a faint ghost while open.
+  for (const d of geometry.doors ?? []) {
+    const open = doorOpenAt(timeline, d.group, d.startOpen, tick);
+    strokeWall(d.base, open ? "#f59e0b" : "#fbbf24", 8, {
+      dashed: open,
+      alpha: open ? 0.4 : 1,
+    });
+  }
+
+  // One-way gates: colour by the live solidity for this arrow position, with a
+  // chevron pointing the way the arrow may pass.
+  for (const g of geometry.gates ?? []) {
+    const solid = arrow ? gateSolidAt(g, arrow.x, arrow.y) : true;
+    strokeWall(g.base, solid ? "#f472b6" : "#a78bfa", 8, { alpha: solid ? 1 : 0.35 });
+    const mx = tx((g.ax + g.bx) / 2);
+    const my = ty((g.ay + g.by) / 2);
+    const px = tx((g.ax + g.bx) / 2 + g.nx * 18);
+    const py = ty((g.ay + g.by) / 2 + g.ny * 18);
+    ctx.save();
+    ctx.strokeStyle = "#f0abfc";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(mx, my);
+    ctx.lineTo(px, py);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Blinking blocks: alpha tracks the duty cycle, so the "off" window is legible.
+  for (const b of geometry.blinks ?? []) {
+    const on = blinkSolidAt(b, tick);
+    const phase = ((tick + b.phase) % b.period) / b.period;
+    strokeWall(b.base, "#38bdf8", 8, { alpha: on ? 1 : 0.22 + 0.15 * Math.sin(phase * Math.PI) });
+  }
+
+  // Breakables: dashed while intact, a faint faded bar once broken.
+  for (const b of geometry.breakables ?? []) {
+    const gone = isBrokenAt(timeline, b.engineIndex, tick);
+    strokeWall(b.base, "#fb923c", 8, { dashed: !gone, alpha: gone ? 0.15 : 1 });
+  }
+}
+
 /** Walls (and the finish line), at `tick` so rotating segments sit at their pose. */
 export function paintWalls(
   ctx: CanvasRenderingContext2D,
@@ -421,6 +547,9 @@ export function paintWalls(
   const { tx, ty, scale, mode } = pc;
   ctx.lineCap = "round";
   for (const w of walls) {
+    // A door, one-way gate, blinking block or breakable wall is drawn by
+    // `paintSiteMechanics` with its live state, so it is skipped here.
+    if (w.siteKind) continue;
     if (offscreen(w, pc)) continue;
     let ax = w.ax;
     let ay = w.ay;

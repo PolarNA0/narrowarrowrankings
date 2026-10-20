@@ -730,6 +730,7 @@ export function PlayView({
       input: inputSymbolRef.current,
       ghostPath: ghostPathRef.current,
       markers: checkpointRef.current,
+      timeline: gameRef.current?.timeline,
     }),
     [],
   );
