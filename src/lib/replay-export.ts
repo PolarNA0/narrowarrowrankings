@@ -785,7 +785,12 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
     camera.reset(p0?.x ?? 0, p0?.y ?? 0);
   }
 
-  const totalTicks = Math.max(1, opts.sim.path.length - 1);
+  // Trim to the tick the run actually finished on. A TAS/optimizer input string
+  // often carries ticks past the finish (the arrow is already stopped, so they
+  // are dead weight); exporting the full input length plays that dead tail as a
+  // frozen last second or two. The player's clock stops at the finish, so the
+  // clip should too.
+  const totalTicks = Math.max(1, opts.sim.finishTick ?? opts.sim.path.length - 1);
   const durationMs = totalTicks * SIM_TICK_MS;
   // Tune the bitrate/frame rate so the encoded clip stays inside the memory
   // budget instead of ballooning on a long or high-resolution run and crashing
@@ -1003,7 +1008,10 @@ async function exportWithMediaRecorder(opts: ExportOptions): Promise<Blob> {
     camera.reset(p0?.x ?? 0, p0?.y ?? 0);
   }
 
-  const totalTicks = Math.max(1, opts.sim.path.length - 1);
+  // Trim to the tick the run actually finished on, so inputs past the finish
+  // (common in TAS/optimizer strings) do not play as a frozen tail. See
+  // `tryExportOffline`.
+  const totalTicks = Math.max(1, opts.sim.finishTick ?? opts.sim.path.length - 1);
   const durationMs = totalTicks * SIM_TICK_MS;
   // `MediaRecorder` buffers the whole recording in memory, so a long run is the
   // worst case here too. Use the same memory-aware bitrate/frame-rate plan as the
