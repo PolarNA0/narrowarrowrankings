@@ -168,8 +168,7 @@ export interface ForceField {
  * An accelerator wire: a one-shot trigger the arrow crosses (segment
  * intersection against the previous tick's position, so a fast arrow cannot
  * tunnel through it). Crossing it arms a charge that thrusts the arrow along
- * `dirX`/`dirY` — the wire's normal, oriented the way the arrow was already
- * going.
+ * `dirX`/`dirY` — the wire's normal, oriented the way the arrow was facing.
  *
  * The charge is deliberately controllable: it only fires while the arrow's
  * heading stays aligned with that thrust and the player is not braking. A spin,
@@ -183,7 +182,7 @@ export interface SimTrigger {
   ay: number;
   bx: number;
   by: number;
-  /** Unit normal of the wire, oriented along the crossing velocity. */
+  /** Unit normal of the wire, oriented the way the arrow was facing. */
   dirX: number;
   dirY: number;
   /** Speed at which the thrust fades out, in world units/tick. */
@@ -203,7 +202,7 @@ export interface SimPortal {
 /**
  * The live accelerator charge: the thrust direction captured when the wire was
  * crossed (a unit vector perpendicular to the wire, pointing the way the arrow
- * was already going), the thrust target and strength. There is no "spent" flag
+ * was facing), the thrust target and strength. There is no "spent" flag
  * — the charge is a standing property of the level, so any run that crosses the
  * wire gets it and a checkpoint always restores it. Whether it thrusts on a
  * given tick is decided from the arrow's live heading and input (see
@@ -339,7 +338,7 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
 
     // Accelerator wires are the same: a site-only trigger the sim reads, never
     // an engine obstacle. Authored as a two-point segment; the thrust direction
-    // is the wire's normal, and the sim orients it along the crossing velocity.
+    // is the wire's normal, and the sim orients it the way the arrow faces.
     if (isAcceleratorTrigger(obstacle)) {
       const a = pts[0];
       const b = pts[1];
@@ -860,16 +859,17 @@ export async function createReplayEngine(
   /**
    * Detect a wire crossing against the previous tick's position (segment
    * intersection, so a fast arrow cannot tunnel through). On a crossing, arm
-   * the charge with the wire's normal oriented the way the arrow is already
-   * going.
+   * the charge with the wire's normal oriented the way the arrow is *facing*
+   * (its heading), not the way its momentum happens to point — after a turn or
+   * a brake the two differ, and a thrust oriented by momentum would fire
+   * against the arrow's nose.
    */
   const armWire = (prevX: number, prevY: number): void => {
     const s = JSON.parse(engine.state) as EnginePlayerState;
     const t = s.player.translation;
-    const v = s.player.velocity ?? { x: 0, y: 0, r: 0 };
-    const speed = Math.hypot(v.x, v.y);
-    // No heading to orient by (a dead stop): the wire stays unarmed.
-    if (speed <= 0) return;
+    const heading = s.player.rotation - Math.PI / 2;
+    const hx = Math.cos(heading);
+    const hy = Math.sin(heading);
     for (const trig of triggers) {
       const hit = segmentsIntersect(
         { x: prevX, y: prevY },
@@ -878,7 +878,7 @@ export async function createReplayEngine(
         { x: trig.bx, y: trig.by },
       );
       if (!hit) continue;
-      const along = v.x * trig.dirX + v.y * trig.dirY >= 0 ? 1 : -1;
+      const along = hx * trig.dirX + hy * trig.dirY >= 0 ? 1 : -1;
       wire = {
         armed: true,
         dirX: trig.dirX * along,
@@ -895,9 +895,11 @@ export async function createReplayEngine(
    * it only fires while the player is coasting straight, so any steering input —
    * a brake, a turn, a zig-zag or a spin — cuts the thrust and hands the arrow
    * back to its own (draggy) physics, letting it slow down to clear a wall. The
-   * heading must also stay aligned with the thrust, so residual spin momentum
-   * cannot re-fire it, and the push fades linearly to zero as the speed nears
-   * `targetSpeed` so the ceiling is soft, never a hard cap.
+   * thrust is oriented and gated by the arrow's *heading* (its nose), so it can
+   * only ever push the arrow forwards; a brake or a 360 preserves the momentum
+   * without re-firing the boost until the nose swings back along the wire. The
+   * push fades linearly to zero as the speed nears `targetSpeed` so the ceiling
+   * is soft, never a hard cap.
    */
   const applyWire = (symbol: number): void => {
     if (!wire.armed) return;
@@ -906,8 +908,11 @@ export async function createReplayEngine(
     const v = s.player.velocity ?? { x: 0, y: 0, r: 0 };
     const speed = Math.hypot(v.x, v.y);
     if (speed <= 0) return;
-    const align = (v.x * wire.dirX + v.y * wire.dirY) / speed;
-    if (align <= ACCELERATOR_MIN_ALIGN) return; // heading off the thrust: no boost
+    const heading = s.player.rotation - Math.PI / 2;
+    const hx = Math.cos(heading);
+    const hy = Math.sin(heading);
+    const align = hx * wire.dirX + hy * wire.dirY;
+    if (align <= ACCELERATOR_MIN_ALIGN) return; // nose off the thrust: no boost
     const fade = Math.min(1, Math.max(0, 1 - speed / wire.targetSpeed));
     const push = wire.accel * align * fade;
     s.player.velocity = {

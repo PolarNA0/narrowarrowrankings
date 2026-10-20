@@ -491,7 +491,7 @@ export function LevelEditorView({
                 </div>
                 <p className="text-[11px] text-slate-500">
                   Draw a line the run crosses. It thrusts the arrow along the wire&apos;s normal,
-                  the way it was already going, while the player coasts straight; any brake, turn or
+                  the way the arrow is facing, while the player coasts straight; any brake, turn or
                   spin cuts the boost so the arrow can slow down again. Thrust fades out near the
                   target speed. Site-only — the engine has no triggers, so it is stripped from a
                   game export.
