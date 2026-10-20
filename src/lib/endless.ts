@@ -32,13 +32,13 @@ import {
 import type { RawLevelData } from "./replay-sim";
 
 /** Full corridor width; obstacles span x in [-WIDTH/2, WIDTH/2]. */
-export const COURSE_WIDTH = 900;
+export const COURSE_WIDTH = 640;
 /** Length of one piece along the course (the -y axis). */
-export const SECTION_LENGTH = 620;
+export const SECTION_LENGTH = 680;
 /** Gap width at the start of the course. */
-export const DEFAULT_GAP = 205;
+export const DEFAULT_GAP = 190;
 /** The narrowest a gap may get; comfortably wider than any arrow (radius 12-20). */
-export const MIN_GAP = 170;
+export const MIN_GAP = 155;
 /**
  * How far the centreline may wander from x=0. The arrow turns slowly (roughly
  * 1 rad per 2 s of held steer) and curves rather than sliding, so this is capped
@@ -46,7 +46,14 @@ export const MIN_GAP = 170;
  * followed. It must still exceed half the gap, or a straight coast stays inside
  * every gap and the course plays itself.
  */
-export const MAX_MEANDER = 150;
+export const MAX_MEANDER = 190;
+/**
+ * The largest lateral jump a "corner" piece may ask for. The arrow's lateral
+ * travel is only about half its forward travel per piece (measured: it moves
+ * ~77px sideways while covering ~154px forward), so a corner bigger than this
+ * cannot be made and the gap would be unreachable.
+ */
+export const MAX_CORNER = 250;
 
 /** A point where the score increments: the boundary at the end of a piece. */
 export interface SectionMarker {
@@ -55,6 +62,8 @@ export interface SectionMarker {
   y: number;
   /** Centreline x of the gap at this boundary. */
   x: number;
+  /** Human-readable name of the piece that ends here (e.g. "Corner", "Slalom"). */
+  piece?: string;
 }
 
 export interface EndlessCourse {
@@ -143,7 +152,8 @@ function channelX(y: number, nearY: number, farY: number, entryX: number, exitX:
   return entryX + (exitX - entryX) * t;
 }
 
-export type EndlessPieceId = "empty" | "gate" | "slalom" | "gauntlet" | "boost" | "spinner";
+export type EndlessPieceId =
+  "empty" | "gate" | "slalom" | "gauntlet" | "boost" | "spinner" | "cornerL" | "cornerR";
 
 export interface EndlessPiece {
   id: EndlessPieceId;
@@ -167,8 +177,10 @@ function buildSection(
   const out: NalvlObstacle[] = [];
   const span = nearY - farY;
 
-  // Interior gates ramp in with progress: none at the start, up to two later.
-  const maxInterior = Math.min(2, Math.floor(progress * 3));
+  // Interior gates ramp in with progress: none at the start, up to three later.
+  // Every interior gate sits on the straight line between the entry and exit x,
+  // so the channel is a single ramp through the piece and is always reachable.
+  const maxInterior = Math.min(3, Math.floor(progress * 4));
   const nInterior = maxInterior > 0 ? Math.floor(rand() * (maxInterior + 1)) : 0;
   for (let j = 1; j <= nInterior; j++) {
     const y = nearY - (j / (nInterior + 1)) * span;
@@ -251,14 +263,21 @@ export function buildEndlessCourse(options: EndlessOptions): EndlessCourse {
     ]),
   );
 
-  // The centreline: a clamped random walk from the spawn (x=0). Each gate's gap
-  // sits on it, so the course curves and must be steered. The first stretch is
-  // forced gentle so a run eases in before the course starts pulling sideways.
+  // The centreline: a clamped random walk from the spawn (x=0). Each piece ends
+  // at the next centreline point, so the channel curves and must be steered.
+  // Most steps are gentle; now and then a bigger step makes a "corner" that has
+  // to be taken deliberately. The first few steps are forced gentle so a run
+  // eases in before the course starts pulling sideways.
   const centers: number[] = [0];
+  const isCorner: boolean[] = [];
   for (let i = 0; i < sections; i++) {
-    const gentle = Math.min(1, i / 8);
-    const step = (rand() * 2 - 1) * 95 * gentle;
+    const gentle = Math.min(1, i / 6);
+    const corner = i >= 6 && rand() < 0.18;
+    const step = corner
+      ? (rand() < 0.5 ? -1 : 1) * (150 + rand() * (MAX_CORNER - 150))
+      : (rand() * 2 - 1) * 95 * gentle;
     centers.push(clamp(centers[i] + step, -MAX_MEANDER, MAX_MEANDER));
+    isCorner.push(corner);
   }
 
   const markers: SectionMarker[] = [];
@@ -270,11 +289,11 @@ export function buildEndlessCourse(options: EndlessOptions): EndlessCourse {
     const progress = i / sections;
     // Gaps narrow with progress but never below MIN_GAP.
     const gap = Math.max(MIN_GAP, DEFAULT_GAP - progress * 30);
-    const { obstacles } = buildSection(nearY, farY, entryX, exitX, gap, progress, rand);
+    const { obstacles, piece } = buildSection(nearY, farY, entryX, exitX, gap, progress, rand);
     level.obstacles.push(...obstacles);
     // The boundary gate: thread the gap or die.
     level.obstacles.push(...gate(farY, exitX, gap));
-    markers.push({ index: i, y: farY, x: exitX });
+    markers.push({ index: i, y: farY, x: exitX, piece: isCorner[i] ? "Corner" : piece.label });
   }
 
   // A solid finish line at the very end, so a fully cleared course ends cleanly.

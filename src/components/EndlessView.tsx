@@ -17,11 +17,24 @@ import {
   RotateCcw,
   Dices,
   Trophy,
+  Send,
+  Loader2,
+  Trash2,
+  Crown,
   Infinity as InfinityIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -33,6 +46,8 @@ import { PlayCanvas, type PlayCanvasHandle, type PlayFrame } from "@/components/
 import { DEFAULT_GAME_CAMERA } from "@/lib/replay-render";
 import { PlayGame, type PlayResult } from "@/lib/play-game";
 import { buildEndlessCourse, type EndlessCourse } from "@/lib/endless";
+import { fetchEndlessBoard, submitEndlessRun, type EndlessEntry } from "@/lib/endless-leaderboard";
+import { encodeInputSymbols } from "@/lib/replay";
 import {
   DEFAULT_INPUT_SETTINGS,
   firstConnectedGamepad,
@@ -65,9 +80,19 @@ export function EndlessView() {
   const [tick, setTick] = React.useState(0);
   const [best, setBest] = React.useState(0);
 
+  const [board, setBoard] = React.useState<EndlessEntry[]>([]);
+  const [boardLoading, setBoardLoading] = React.useState(false);
+  const [submitOpen, setSubmitOpen] = React.useState(false);
+  const [submitScore, setSubmitScore] = React.useState(0);
+  const [submitInputs, setSubmitInputs] = React.useState<{
+    inputs: string;
+    inputCount: number;
+  } | null>(null);
+
   const gameRef = React.useRef<PlayGame | null>(null);
   const canvasRef = React.useRef<PlayCanvasHandle | null>(null);
   const courseRef = React.useRef<EndlessCourse | null>(null);
+  const seedRef = React.useRef(1);
   const geometryRef = React.useRef<PlayGame["geometry"]>({ walls: [], zones: [], portals: [] });
   const loadSeqRef = React.useRef(0);
 
@@ -100,6 +125,7 @@ export function EndlessView() {
     markerIdxRef.current = 0;
     scoreRef.current = 0;
     setScore(0);
+    setSubmitInputs(null);
   };
 
   const loadCourse = React.useCallback(
@@ -109,6 +135,7 @@ export function EndlessView() {
       setError(null);
       try {
         const course = buildEndlessCourse({ seed });
+        seedRef.current = seed;
         gameRef.current?.free();
         const game = new PlayGame({
           data: course.data,
@@ -117,6 +144,15 @@ export function EndlessView() {
           onEnd: (r: PlayResult) => {
             setPhase(game.phase);
             setTick(game.tick);
+            // A run that ended on a gate death is a score worth posting; a
+            // clean finish (the whole course cleared) is not the point here.
+            if (!r.finished && scoreRef.current > 0) {
+              setSubmitScore(scoreRef.current);
+              setSubmitInputs({
+                inputs: encodeInputSymbols(r.symbols),
+                inputCount: r.symbols.length,
+              });
+            }
             if (!r.finished) {
               setBest((prev) => {
                 const next = Math.max(prev, scoreRef.current);
@@ -162,6 +198,22 @@ export function EndlessView() {
       /* ignore */
     }
   }, []);
+
+  // Load the selected seed's board. Re-runs whenever the seed changes so the
+  // list always matches the course being played.
+  React.useEffect(() => {
+    let alive = true;
+    setBoardLoading(true);
+    void fetchEndlessBoard(seedText).then((entries) => {
+      if (alive) {
+        setBoard(entries);
+        setBoardLoading(false);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [seedText]);
 
   React.useEffect(() => {
     void loadCourse(1, ARROWS[0]);
@@ -262,6 +314,23 @@ export function EndlessView() {
     const seed = Math.max(1, Math.floor(Number(seedText) || 1));
     setSeedText(String(seed));
     void loadCourse(seed, arrowName);
+  };
+
+  const refreshBoard = React.useCallback(() => {
+    void fetchEndlessBoard(seedText, { force: true }).then(setBoard);
+  }, [seedText]);
+
+  const openSubmit = () => {
+    const game = gameRef.current;
+    if (!game || scoreRef.current <= 0) return;
+    // If the run is still live (submitting mid-run), take the recorded prefix so
+    // far so the entry is a complete, replayable run up to this point.
+    if (!submitInputs) {
+      const symbols = game.recordedSymbols;
+      setSubmitScore(scoreRef.current);
+      setSubmitInputs({ inputs: encodeInputSymbols(symbols), inputCount: symbols.length });
+    }
+    setSubmitOpen(true);
   };
 
   const getFrame = React.useCallback((): PlayFrame => {
@@ -390,9 +459,14 @@ export function EndlessView() {
                 {score === 1 ? "1 section" : `${score} sections`} ·{" "}
                 {fmtTime((tick * SIM_TICK_MS) / 1000)}
               </div>
-              <Button onClick={togglePause}>
-                <RotateCcw className="w-4 h-4 mr-1" /> Retry seed
-              </Button>
+              <div className="flex items-center justify-center gap-2">
+                <Button onClick={togglePause}>
+                  <RotateCcw className="w-4 h-4 mr-1" /> Retry seed
+                </Button>
+                <Button variant="secondary" onClick={openSubmit} disabled={score <= 0}>
+                  <Send className="w-4 h-4 mr-1" /> Submit score
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -437,10 +511,184 @@ export function EndlessView() {
           {running ? <Pause className="w-4 h-4 mr-1" /> : <Play className="w-4 h-4 mr-1" />}
           {running ? "Pause" : phase === "paused" ? "Resume" : phase === "dead" ? "Retry" : "Start"}
         </Button>
+        <Button variant="outline" onClick={openSubmit} disabled={loading || score <= 0}>
+          <Send className="w-4 h-4 mr-1" /> Submit score
+        </Button>
         <span className="text-xs text-slate-500 flex items-center gap-1">
           <Gamepad2 className="w-3.5 h-3.5" /> Tap left/right on mobile · arrow keys on desktop
         </span>
       </div>
+
+      <div className="rounded-lg border border-border bg-card">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Trophy className="w-4 h-4 text-amber-400" /> Seed {seedText} leaderboard
+          </h3>
+          {boardLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
+        </div>
+        {board.length === 0 ? (
+          <p className="px-4 py-6 text-center text-xs text-slate-500">
+            No scores on this seed yet — be the first.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-slate-400">
+                  <th className="px-4 py-2 font-medium">#</th>
+                  <th className="px-4 py-2 font-medium">Player</th>
+                  <th className="px-4 py-2 font-medium text-right">Sections</th>
+                  <th className="px-4 py-2 font-medium">Arrow</th>
+                </tr>
+              </thead>
+              <tbody>
+                {board.map((entry, i) => (
+                  <tr key={entry.id} className="border-t border-border/60">
+                    <td className="px-4 py-2 font-mono text-slate-400">
+                      {i === 0 ? <Crown className="w-3.5 h-3.5 text-amber-400" /> : i + 1}
+                    </td>
+                    <td className="px-4 py-2 truncate max-w-[12rem]">{entry.username}</td>
+                    <td className="px-4 py-2 text-right font-mono font-semibold text-[var(--app-accent)]">
+                      {entry.score}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-slate-400">{entry.arrowName}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <EndlessSubmitDialog
+        open={submitOpen}
+        onOpenChange={setSubmitOpen}
+        seed={seedRef.current}
+        score={submitScore}
+        arrowName={arrowName}
+        inputs={submitInputs?.inputs ?? ""}
+        inputCount={submitInputs?.inputCount ?? 0}
+        onSubmitted={refreshBoard}
+      />
     </div>
+  );
+}
+
+/**
+ * Submit a finished endless run. The name is typed here and remembered; the
+ * score and input string are attached automatically, so the run can be posted
+ * to the seed's board and (later) replayed from the stored inputs.
+ */
+function EndlessSubmitDialog({
+  open,
+  onOpenChange,
+  seed,
+  score,
+  arrowName,
+  inputs,
+  inputCount,
+  onSubmitted,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  seed: number;
+  score: number;
+  arrowName: string;
+  inputs: string;
+  inputCount: number;
+  onSubmitted?: () => void;
+}) {
+  const [name, setName] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    try {
+      setName(window.localStorage.getItem("endless:name") ?? "");
+    } catch {
+      /* ignore */
+    }
+  }, [open]);
+
+  const submit = async () => {
+    const username = name.trim();
+    if (!username) {
+      toast.error("Enter a name first.");
+      return;
+    }
+    if (!inputs || inputCount === 0) {
+      toast.error("This run has no inputs to attach.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await submitEndlessRun({
+        seed: String(seed),
+        username,
+        arrowName,
+        score,
+        inputs,
+        inputCount,
+      });
+      try {
+        window.localStorage.setItem("endless:name", username);
+      } catch {
+        /* ignore */
+      }
+      onSubmitted?.();
+      onOpenChange(false);
+      toast.success(
+        result.isRecord ? `New best on seed ${seed}!` : `Posted — rank #${result.rank}`,
+        { description: `${username} · ${score} sections`, duration: 6000 },
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not submit that run.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Submit endless score</DialogTitle>
+          <DialogDescription>
+            Seed {seed} · {score} sections · {arrowName}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="endless-name" className="text-xs text-slate-400">
+            Name
+          </Label>
+          <Input
+            id="endless-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void submit()}
+            placeholder="Your name"
+            maxLength={32}
+            autoFocus
+          />
+          <p className="text-xs text-slate-500">
+            The input string that reproduces this run is attached automatically, so it can be
+            verified against the seed.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button onClick={() => void submit()} disabled={submitting || !name.trim()}>
+            {submitting ? (
+              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4 mr-1" />
+            )}
+            Submit
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

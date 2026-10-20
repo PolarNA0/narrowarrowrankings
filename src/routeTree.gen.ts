@@ -21,6 +21,7 @@ import { Route as ApiSiteLevelsRouteImport } from './routes/api/site-levels'
 import { Route as ApiSiteRecordsRouteImport } from './routes/api/site-records'
 import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
 import { Route as ApiTasLeaderboardsRouteImport } from './routes/api/tas-leaderboards'
+import { Route as ApiEndlessLeaderboardSeedRouteImport } from './routes/api/endless-leaderboard.$seed'
 import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
 import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-details.$levelId'
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
@@ -95,6 +96,12 @@ const ApiTasLeaderboardsRoute = ApiTasLeaderboardsRouteImport.update({
   path: '/api/tas-leaderboards',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiEndlessLeaderboardSeedRoute =
+  ApiEndlessLeaderboardSeedRouteImport.update({
+    id: '/api/endless-leaderboard/$seed',
+    path: '/api/endless-leaderboard/$seed',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiLeaderboardLevelRoute = ApiLeaderboardLevelRouteImport.update({
   id: '/api/leaderboard/$level',
   path: '/api/leaderboard/$level',
@@ -175,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
+  '/api/endless-leaderboard/$seed': typeof ApiEndlessLeaderboardSeedRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -202,6 +210,7 @@ export interface FileRoutesByTo {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
+  '/api/endless-leaderboard/$seed': typeof ApiEndlessLeaderboardSeedRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -230,6 +239,7 @@ export interface FileRoutesById {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
+  '/api/endless-leaderboard/$seed': typeof ApiEndlessLeaderboardSeedRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -259,6 +269,7 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
+    | '/api/endless-leaderboard/$seed'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -286,6 +297,7 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
+    | '/api/endless-leaderboard/$seed'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -313,6 +325,7 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
+    | '/api/endless-leaderboard/$seed'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -341,6 +354,7 @@ export interface RootRouteChildren {
   ApiSiteRecordsRoute: typeof ApiSiteRecordsRoute
   ApiStartupDataRoute: typeof ApiStartupDataRoute
   ApiTasLeaderboardsRoute: typeof ApiTasLeaderboardsRoute
+  ApiEndlessLeaderboardSeedRoute: typeof ApiEndlessLeaderboardSeedRoute
   ApiLeaderboardLevelRoute: typeof ApiLeaderboardLevelRoute
   ApiLevelDetailsLevelIdRoute: typeof ApiLevelDetailsLevelIdRoute
   ApiPacksSlugRoute: typeof ApiPacksSlugRoute
@@ -439,6 +453,13 @@ declare module '@tanstack/react-router' {
       path: '/api/tas-leaderboards'
       fullPath: '/api/tas-leaderboards'
       preLoaderRoute: typeof ApiTasLeaderboardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/endless-leaderboard/$seed': {
+      id: '/api/endless-leaderboard/$seed'
+      path: '/api/endless-leaderboard/$seed'
+      fullPath: '/api/endless-leaderboard/$seed'
+      preLoaderRoute: typeof ApiEndlessLeaderboardSeedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/leaderboard/$level': {
@@ -560,6 +581,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSiteRecordsRoute: ApiSiteRecordsRoute,
   ApiStartupDataRoute: ApiStartupDataRoute,
   ApiTasLeaderboardsRoute: ApiTasLeaderboardsRoute,
+  ApiEndlessLeaderboardSeedRoute: ApiEndlessLeaderboardSeedRoute,
   ApiLeaderboardLevelRoute: ApiLeaderboardLevelRoute,
   ApiLevelDetailsLevelIdRoute: ApiLevelDetailsLevelIdRoute,
   ApiPacksSlugRoute: ApiPacksSlugRoute,
