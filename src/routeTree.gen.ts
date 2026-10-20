@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ApiAllLeaderboardsRouteImport } from './routes/api/all-leaderboards'
 import { Route as ApiDailySkinsRouteImport } from './routes/api/daily-skins'
+import { Route as ApiEndlessLeaderboardRouteImport } from './routes/api/endless-leaderboard'
 import { Route as ApiInGameMedalsRouteImport } from './routes/api/in-game-medals'
 import { Route as ApiOfficialCreatorsRouteImport } from './routes/api/official-creators'
 import { Route as ApiProfilesRouteImport } from './routes/api/profiles'
@@ -21,7 +22,6 @@ import { Route as ApiSiteLevelsRouteImport } from './routes/api/site-levels'
 import { Route as ApiSiteRecordsRouteImport } from './routes/api/site-records'
 import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
 import { Route as ApiTasLeaderboardsRouteImport } from './routes/api/tas-leaderboards'
-import { Route as ApiEndlessLeaderboardSeedRouteImport } from './routes/api/endless-leaderboard.$seed'
 import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
 import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-details.$levelId'
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
@@ -54,6 +54,11 @@ const ApiAllLeaderboardsRoute = ApiAllLeaderboardsRouteImport.update({
 const ApiDailySkinsRoute = ApiDailySkinsRouteImport.update({
   id: '/api/daily-skins',
   path: '/api/daily-skins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiEndlessLeaderboardRoute = ApiEndlessLeaderboardRouteImport.update({
+  id: '/api/endless-leaderboard',
+  path: '/api/endless-leaderboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiInGameMedalsRoute = ApiInGameMedalsRouteImport.update({
@@ -96,12 +101,6 @@ const ApiTasLeaderboardsRoute = ApiTasLeaderboardsRouteImport.update({
   path: '/api/tas-leaderboards',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiEndlessLeaderboardSeedRoute =
-  ApiEndlessLeaderboardSeedRouteImport.update({
-    id: '/api/endless-leaderboard/$seed',
-    path: '/api/endless-leaderboard/$seed',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiLeaderboardLevelRoute = ApiLeaderboardLevelRouteImport.update({
   id: '/api/leaderboard/$level',
   path: '/api/leaderboard/$level',
@@ -174,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/endless-leaderboard': typeof ApiEndlessLeaderboardRoute
   '/api/in-game-medals': typeof ApiInGameMedalsRoute
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
   '/api/profiles': typeof ApiProfilesRoute
@@ -182,7 +182,6 @@ export interface FileRoutesByFullPath {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
-  '/api/endless-leaderboard/$seed': typeof ApiEndlessLeaderboardSeedRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -202,6 +201,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/endless-leaderboard': typeof ApiEndlessLeaderboardRoute
   '/api/in-game-medals': typeof ApiInGameMedalsRoute
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
   '/api/profiles': typeof ApiProfilesRoute
@@ -210,7 +210,6 @@ export interface FileRoutesByTo {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
-  '/api/endless-leaderboard/$seed': typeof ApiEndlessLeaderboardSeedRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -231,6 +230,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
   '/api/daily-skins': typeof ApiDailySkinsRoute
+  '/api/endless-leaderboard': typeof ApiEndlessLeaderboardRoute
   '/api/in-game-medals': typeof ApiInGameMedalsRoute
   '/api/official-creators': typeof ApiOfficialCreatorsRoute
   '/api/profiles': typeof ApiProfilesRoute
@@ -239,7 +239,6 @@ export interface FileRoutesById {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
-  '/api/endless-leaderboard/$seed': typeof ApiEndlessLeaderboardSeedRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -261,6 +260,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/all-leaderboards'
     | '/api/daily-skins'
+    | '/api/endless-leaderboard'
     | '/api/in-game-medals'
     | '/api/official-creators'
     | '/api/profiles'
@@ -269,7 +269,6 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
-    | '/api/endless-leaderboard/$seed'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -289,6 +288,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/all-leaderboards'
     | '/api/daily-skins'
+    | '/api/endless-leaderboard'
     | '/api/in-game-medals'
     | '/api/official-creators'
     | '/api/profiles'
@@ -297,7 +297,6 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
-    | '/api/endless-leaderboard/$seed'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -317,6 +316,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/api/all-leaderboards'
     | '/api/daily-skins'
+    | '/api/endless-leaderboard'
     | '/api/in-game-medals'
     | '/api/official-creators'
     | '/api/profiles'
@@ -325,7 +325,6 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
-    | '/api/endless-leaderboard/$seed'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -346,6 +345,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiAllLeaderboardsRoute: typeof ApiAllLeaderboardsRoute
   ApiDailySkinsRoute: typeof ApiDailySkinsRoute
+  ApiEndlessLeaderboardRoute: typeof ApiEndlessLeaderboardRoute
   ApiInGameMedalsRoute: typeof ApiInGameMedalsRoute
   ApiOfficialCreatorsRoute: typeof ApiOfficialCreatorsRoute
   ApiProfilesRoute: typeof ApiProfilesRoute
@@ -354,7 +354,6 @@ export interface RootRouteChildren {
   ApiSiteRecordsRoute: typeof ApiSiteRecordsRoute
   ApiStartupDataRoute: typeof ApiStartupDataRoute
   ApiTasLeaderboardsRoute: typeof ApiTasLeaderboardsRoute
-  ApiEndlessLeaderboardSeedRoute: typeof ApiEndlessLeaderboardSeedRoute
   ApiLeaderboardLevelRoute: typeof ApiLeaderboardLevelRoute
   ApiLevelDetailsLevelIdRoute: typeof ApiLevelDetailsLevelIdRoute
   ApiPacksSlugRoute: typeof ApiPacksSlugRoute
@@ -397,6 +396,13 @@ declare module '@tanstack/react-router' {
       path: '/api/daily-skins'
       fullPath: '/api/daily-skins'
       preLoaderRoute: typeof ApiDailySkinsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/endless-leaderboard': {
+      id: '/api/endless-leaderboard'
+      path: '/api/endless-leaderboard'
+      fullPath: '/api/endless-leaderboard'
+      preLoaderRoute: typeof ApiEndlessLeaderboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/in-game-medals': {
@@ -453,13 +459,6 @@ declare module '@tanstack/react-router' {
       path: '/api/tas-leaderboards'
       fullPath: '/api/tas-leaderboards'
       preLoaderRoute: typeof ApiTasLeaderboardsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/endless-leaderboard/$seed': {
-      id: '/api/endless-leaderboard/$seed'
-      path: '/api/endless-leaderboard/$seed'
-      fullPath: '/api/endless-leaderboard/$seed'
-      preLoaderRoute: typeof ApiEndlessLeaderboardSeedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/leaderboard/$level': {
@@ -573,6 +572,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiAllLeaderboardsRoute: ApiAllLeaderboardsRoute,
   ApiDailySkinsRoute: ApiDailySkinsRoute,
+  ApiEndlessLeaderboardRoute: ApiEndlessLeaderboardRoute,
   ApiInGameMedalsRoute: ApiInGameMedalsRoute,
   ApiOfficialCreatorsRoute: ApiOfficialCreatorsRoute,
   ApiProfilesRoute: ApiProfilesRoute,
@@ -581,7 +581,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSiteRecordsRoute: ApiSiteRecordsRoute,
   ApiStartupDataRoute: ApiStartupDataRoute,
   ApiTasLeaderboardsRoute: ApiTasLeaderboardsRoute,
-  ApiEndlessLeaderboardSeedRoute: ApiEndlessLeaderboardSeedRoute,
   ApiLeaderboardLevelRoute: ApiLeaderboardLevelRoute,
   ApiLevelDetailsLevelIdRoute: ApiLevelDetailsLevelIdRoute,
   ApiPacksSlugRoute: ApiPacksSlugRoute,

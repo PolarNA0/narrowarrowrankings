@@ -26,28 +26,28 @@ interface SubmitBody {
 /** Max score we will accept, so a bogus client can't post an absurd number. */
 const MAX_SCORE = 100_000;
 
-export const Route = createFileRoute("/api/endless-leaderboard/$seed")({
+export const Route = createFileRoute("/api/endless-leaderboard")({
   server: {
     handlers: {
-      GET: async ({ params, request }) => {
+      GET: async ({ request }) => {
         const url = new URL(request.url);
 
         // `?entry=<id>` returns a single run *with* its input string, so a
         // viewer can replay the one run it is about to watch.
         const entryId = url.searchParams.get("entry");
         if (entryId) {
-          const entries = await readEndlessBoardPublic(params.seed);
+          const entries = await readEndlessBoardPublic();
           const found = entries.find((e) => e.id === entryId) ?? null;
           if (!found) return Response.json({ error: "No such entry" }, { status: 404 });
           return Response.json(found, { headers: { "cache-control": "no-store" } });
         }
 
-        const sorted = sortEndlessEntries(await readEndlessBoardPublic(params.seed));
+        const sorted = sortEndlessEntries(await readEndlessBoardPublic());
         const summary = url.searchParams.get("summary") === "1";
         const payload = summary ? sorted.map(toEndlessSummary) : sorted;
         return Response.json(payload, { headers: { "cache-control": "no-store" } });
       },
-      POST: async ({ params, request }) => {
+      POST: async ({ request }) => {
         let body: SubmitBody;
         try {
           body = (await request.json()) as SubmitBody;
@@ -59,6 +59,7 @@ export const Route = createFileRoute("/api/endless-leaderboard/$seed")({
         const arrowName = String(body.arrowName ?? "").trim();
         const inputs = String(body.inputs ?? "");
         const score = Math.round(Number(body.score));
+        const seed = Math.max(1, Math.floor(Number(body.seed) || 1));
 
         if (!/^[A-Za-z0-9_\-. ]{1,32}$/.test(username)) {
           return Response.json({ error: "Enter a valid name (1-32 letters)." }, { status: 400 });
@@ -71,8 +72,7 @@ export const Route = createFileRoute("/api/endless-leaderboard/$seed")({
           return Response.json({ error: "The run has no inputs to attach." }, { status: 400 });
         }
 
-        const seed = String(params.seed);
-        const existing = await readEndlessBoard(seed);
+        const existing = await readEndlessBoard();
         if (hasDuplicateInputs(existing, inputs)) {
           return Response.json(
             { error: "This exact run is already on the board. Tweak it before submitting." },
@@ -83,7 +83,7 @@ export const Route = createFileRoute("/api/endless-leaderboard/$seed")({
         const entry: EndlessEntry = {
           id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
           username,
-          seed: Number(seed),
+          seed,
           arrowName: arrowName || "Narrow Arrow",
           score,
           inputCount: decoded.length,
@@ -93,7 +93,7 @@ export const Route = createFileRoute("/api/endless-leaderboard/$seed")({
 
         let entries: EndlessEntry[];
         try {
-          entries = await addEndlessEntry(seed, entry);
+          entries = await addEndlessEntry(entry);
         } catch {
           return Response.json({ error: "Could not save that submission." }, { status: 500 });
         }
@@ -106,7 +106,7 @@ export const Route = createFileRoute("/api/endless-leaderboard/$seed")({
         });
       },
       /** Admin-only: remove one entry. */
-      DELETE: async ({ params, request }) => {
+      DELETE: async ({ request }) => {
         const url = new URL(request.url);
         const id = url.searchParams.get("id");
         if (!id) return Response.json({ error: "Missing entry id" }, { status: 400 });
@@ -117,7 +117,7 @@ export const Route = createFileRoute("/api/endless-leaderboard/$seed")({
 
         let entries: EndlessEntry[];
         try {
-          entries = await removeEndlessEntry(params.seed, id);
+          entries = await removeEndlessEntry(id);
         } catch {
           return Response.json({ error: "Could not remove that run." }, { status: 500 });
         }

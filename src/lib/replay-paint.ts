@@ -46,6 +46,53 @@ export interface PaintCtx {
    * with none; a moving wall is drawn translated by its offset at the tick.
    */
   motions?: SimMotion[];
+  /**
+   * World-space rectangle the canvas can show. Painters skip geometry entirely
+   * outside it. A generated endless course has ~1400 walls but only a handful
+   * are ever on screen, so without this every frame strokes the whole level.
+   */
+  view?: { minX: number; minY: number; maxX: number; maxY: number };
+}
+
+/** The world-space box a wall can occupy, accounting for rotation and motion. */
+function wallBounds(
+  w: SimWall,
+  motions?: SimMotion[],
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  let minX = Math.min(w.ax, w.bx);
+  let maxX = Math.max(w.ax, w.bx);
+  let minY = Math.min(w.ay, w.by);
+  let maxY = Math.max(w.ay, w.by);
+  if (w.pivot && w.rotationSpeed) {
+    // The wall sweeps a disc about the pivot; bound it by that disc.
+    const r = Math.sqrt(
+      Math.max(
+        (w.ax - w.pivot.x) ** 2 + (w.ay - w.pivot.y) ** 2,
+        (w.bx - w.pivot.x) ** 2 + (w.by - w.pivot.y) ** 2,
+      ),
+    );
+    minX = Math.min(minX, w.pivot.x - r);
+    maxX = Math.max(maxX, w.pivot.x + r);
+    minY = Math.min(minY, w.pivot.y - r);
+    maxY = Math.max(maxY, w.pivot.y + r);
+  }
+  // A mover travels as far as its offset, in either direction.
+  const m = motions && w.motion != null && w.motion >= 0 ? motions[w.motion] : undefined;
+  if (m) {
+    minX -= Math.abs(m.dx);
+    maxX += Math.abs(m.dx);
+    minY -= Math.abs(m.dy);
+    maxY += Math.abs(m.dy);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+/** Whether a wall can be skipped because it lies entirely off screen. */
+function offscreen(w: SimWall, pc: PaintCtx): boolean {
+  const view = pc.view;
+  if (!view) return false;
+  const b = wallBounds(w, pc.motions);
+  return b.maxX < view.minX || b.minX > view.maxX || b.maxY < view.minY || b.minY > view.maxY;
 }
 
 const wallColorFor = (type: string, mode: RenderMode) =>
@@ -140,8 +187,13 @@ export function drawFinish(
 
 /** Zones and portals, drawn under the walls in both modes. */
 export function paintZones(ctx: CanvasRenderingContext2D, geometry: SimGeometry, pc: PaintCtx) {
-  const { tx, ty, mode } = pc;
+  const { tx, ty, mode, view } = pc;
   for (const z of geometry.zones) {
+    if (
+      view &&
+      (z.x1 < view.minX || z.x0 > view.maxX || z.y1 < view.minY || z.y0 > view.maxY)
+    )
+      continue;
     const color = zoneColorFor(z.type, mode);
     // Trace the zone's own polygon so slanted/multi-point zones (e.g. Arctic
     // Dash) keep their shape; a zone with too few points falls back to its box.
@@ -369,6 +421,7 @@ export function paintWalls(
   const { tx, ty, scale, mode } = pc;
   ctx.lineCap = "round";
   for (const w of walls) {
+    if (offscreen(w, pc)) continue;
     let ax = w.ax;
     let ay = w.ay;
     let bx = w.bx;

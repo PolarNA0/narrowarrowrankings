@@ -199,12 +199,12 @@ export function EndlessView() {
     }
   }, []);
 
-  // Load the selected seed's board. Re-runs whenever the seed changes so the
-  // list always matches the course being played.
+  // The board is global — a score is sections survived, not tied to a course —
+  // so it loads once and refreshes after a submission.
   React.useEffect(() => {
     let alive = true;
     setBoardLoading(true);
-    void fetchEndlessBoard(seedText).then((entries) => {
+    void fetchEndlessBoard().then((entries) => {
       if (alive) {
         setBoard(entries);
         setBoardLoading(false);
@@ -213,7 +213,7 @@ export function EndlessView() {
     return () => {
       alive = false;
     };
-  }, [seedText]);
+  }, []);
 
   React.useEffect(() => {
     void loadCourse(1, ARROWS[0]);
@@ -317,8 +317,8 @@ export function EndlessView() {
   };
 
   const refreshBoard = React.useCallback(() => {
-    void fetchEndlessBoard(seedText, { force: true }).then(setBoard);
-  }, [seedText]);
+    void fetchEndlessBoard({ force: true }).then(setBoard);
+  }, []);
 
   const openSubmit = () => {
     const game = gameRef.current;
@@ -522,13 +522,13 @@ export function EndlessView() {
       <div className="rounded-lg border border-border bg-card">
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2">
           <h3 className="text-sm font-semibold flex items-center gap-2">
-            <Trophy className="w-4 h-4 text-amber-400" /> Seed {seedText} leaderboard
+            <Trophy className="w-4 h-4 text-amber-400" /> Endless leaderboard
           </h3>
           {boardLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
         </div>
         {board.length === 0 ? (
           <p className="px-4 py-6 text-center text-xs text-slate-500">
-            No scores on this seed yet — be the first.
+            No scores yet — be the first.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -539,6 +539,7 @@ export function EndlessView() {
                   <th className="px-4 py-2 font-medium">Player</th>
                   <th className="px-4 py-2 font-medium text-right">Sections</th>
                   <th className="px-4 py-2 font-medium">Arrow</th>
+                  <th className="px-4 py-2 font-medium text-right">Seed</th>
                 </tr>
               </thead>
               <tbody>
@@ -552,6 +553,9 @@ export function EndlessView() {
                       {entry.score}
                     </td>
                     <td className="px-4 py-2 text-xs text-slate-400">{entry.arrowName}</td>
+                    <td className="px-4 py-2 text-right font-mono text-xs text-slate-500">
+                      {entry.seed}
+                    </td>
                   </tr>
                 ))}
               </tbody>

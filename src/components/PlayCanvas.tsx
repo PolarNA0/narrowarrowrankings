@@ -270,18 +270,28 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = "#07070b";
       ctx.fillRect(0, 0, width, viewH);
-      paintZones(ctx, s.geometry, { tx, ty, scale, mode: s.mode });
+      // The visible world rect, padded so a wall just off screen (or its thick
+      // stroke) does not pop. The painters cull against it: an endless course
+      // has ~1400 walls but only a handful are ever on screen.
+      const pad = 40;
+      const view = {
+        minX: (-offX) / scale - pad,
+        maxX: (width - offX) / scale + pad,
+        minY: (-offY) / scale - pad,
+        maxY: (viewH - offY) / scale + pad,
+      };
+      paintZones(ctx, s.geometry, { tx, ty, scale, mode: s.mode, view });
       if (s.geometry.forceFields && s.geometry.forceFields.length > 0) {
         paintForceFields(
           ctx,
           s.geometry.forceFields,
-          { tx, ty, scale, mode: s.mode },
+          { tx, ty, scale, mode: s.mode, view },
           fieldParticles,
           performance.now() / 1000,
         );
       }
       if (s.geometry.triggers && s.geometry.triggers.length > 0) {
-        paintTriggers(ctx, s.geometry.triggers, { tx, ty, scale, mode: s.mode });
+        paintTriggers(ctx, s.geometry.triggers, { tx, ty, scale, mode: s.mode, view });
       }
       paintWalls(ctx, s.geometry.walls, tick, {
         tx,
@@ -289,6 +299,7 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
         scale,
         mode: s.mode,
         motions: s.geometry.movingBlocks,
+        view,
       });
 
       if (frame.ghostPath && frame.ghostPath.length > 1) {

@@ -1,16 +1,20 @@
 /**
- * Storage for endless-mode scores, keyed per seed in `app_docs`.
+ * Storage for endless-mode scores in `app_docs`.
+ *
+ * There is one global board: the score is sections survived, which is a measure
+ * of the player, not of any particular course. The seed a run was played on is
+ * kept on the entry for reference (and to reproduce it) but does not split the
+ * board.
  *
  * A score is site-owned (a run against a generated course, not a real level),
- * so it never touches the upstream leaderboard — an entry is a name, a score
- * and the input string that reproduces the run from the seed.
+ * so it never touches the upstream leaderboard.
  */
 import { supabase } from "@/integrations/supabase/client";
 
 export interface EndlessEntry {
   id: string;
   username: string;
-  /** The course seed this run was played on. */
+  /** The course seed this run was played on (informational). */
   seed: number;
   arrowName: string;
   /** Sections passed. */
@@ -21,17 +25,18 @@ export interface EndlessEntry {
 }
 
 export interface EndlessBoard {
-  seed: number;
   entries: EndlessEntry[];
 }
 
 const COLLECTION = "endless_boards";
+/** The single global board's doc id. */
+const DOC_ID = "global";
 
 /**
  * Local dev has no service-role key, so writes would fail RLS. Keep a
  * per-process board in memory there; production always uses Supabase.
  */
-const memoryBoards = new Map<string, EndlessEntry[]>();
+let memoryBoard: EndlessEntry[] = [];
 function memoryStoreEnabled(): boolean {
   return process.env.NODE_ENV !== "production" && !process.env.SUPABASE_SERVICE_ROLE_KEY;
 }
@@ -57,16 +62,30 @@ export function hasDuplicateInputs(entries: EndlessEntry[], inputs: string): boo
   return entries.some((e) => e.inputs === inputs);
 }
 
-/** Read one seed's endless board (empty when it has never been submitted to). */
-export async function readEndlessBoard(seed: string): Promise<EndlessEntry[]> {
-  if (memoryStoreEnabled()) return memoryBoards.get(seed) ?? [];
+async function write(entries: EndlessEntry[]): Promise<void> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error } = await supabaseAdmin.from("app_docs").upsert(
+    {
+      collection: COLLECTION,
+      doc_id: DOC_ID,
+      data: { entries } as never,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "collection,doc_id" },
+  );
+  if (error) throw new Error(error.message);
+}
+
+/** Read the global board (empty when it has never been submitted to). */
+export async function readEndlessBoard(): Promise<EndlessEntry[]> {
+  if (memoryStoreEnabled()) return memoryBoard;
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data } = await supabaseAdmin
       .from("app_docs")
       .select("data")
       .eq("collection", COLLECTION)
-      .eq("doc_id", seed)
+      .eq("doc_id", DOC_ID)
       .maybeSingle();
     const board = data?.data as unknown as EndlessBoard | undefined;
     return Array.isArray(board?.entries) ? board.entries : [];
@@ -76,14 +95,14 @@ export async function readEndlessBoard(seed: string): Promise<EndlessEntry[]> {
 }
 
 /** Public (RLS) read used by the API route so no service key is needed. */
-export async function readEndlessBoardPublic(seed: string): Promise<EndlessEntry[]> {
-  if (memoryStoreEnabled()) return memoryBoards.get(seed) ?? [];
+export async function readEndlessBoardPublic(): Promise<EndlessEntry[]> {
+  if (memoryStoreEnabled()) return memoryBoard;
   try {
     const { data, error } = await supabase
       .from("app_docs")
       .select("data")
       .eq("collection", COLLECTION)
-      .eq("doc_id", seed)
+      .eq("doc_id", DOC_ID)
       .maybeSingle();
     if (error) return [];
     const board = data?.data as unknown as EndlessBoard | undefined;
@@ -94,44 +113,24 @@ export async function readEndlessBoardPublic(seed: string): Promise<EndlessEntry
 }
 
 /** Append a submission and return the re-sorted board. */
-export async function addEndlessEntry(seed: string, entry: EndlessEntry): Promise<EndlessEntry[]> {
-  const entries = sortEndlessEntries([...(await readEndlessBoard(seed)), entry]);
+export async function addEndlessEntry(entry: EndlessEntry): Promise<EndlessEntry[]> {
+  const entries = sortEndlessEntries([...(await readEndlessBoard()), entry]);
   if (memoryStoreEnabled()) {
-    memoryBoards.set(seed, entries);
+    memoryBoard = entries;
     return entries;
   }
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { error } = await supabaseAdmin.from("app_docs").upsert(
-    {
-      collection: COLLECTION,
-      doc_id: seed,
-      data: { seed: Number(seed), entries } as never,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "collection,doc_id" },
-  );
-  if (error) throw new Error(error.message);
+  await write(entries);
   return entries;
 }
 
 /** Remove one entry by id and return the re-sorted board. */
-export async function removeEndlessEntry(seed: string, id: string): Promise<EndlessEntry[]> {
-  const entries = sortEndlessEntries((await readEndlessBoard(seed)).filter((e) => e.id !== id));
+export async function removeEndlessEntry(id: string): Promise<EndlessEntry[]> {
+  const entries = sortEndlessEntries((await readEndlessBoard()).filter((e) => e.id !== id));
   if (memoryStoreEnabled()) {
-    memoryBoards.set(seed, entries);
+    memoryBoard = entries;
     return entries;
   }
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { error } = await supabaseAdmin.from("app_docs").upsert(
-    {
-      collection: COLLECTION,
-      doc_id: seed,
-      data: { seed: Number(seed), entries } as never,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "collection,doc_id" },
-  );
-  if (error) throw new Error(error.message);
+  await write(entries);
   return entries;
 }
 
@@ -141,5 +140,4 @@ export async function removeEndlessEntry(seed: string, id: string): Promise<Endl
  */
 export type EndlessSummary = Omit<EndlessEntry, "inputs">;
 
-export const toEndlessSummary = ({ inputs: _inputs, ...rest }: EndlessEntry): EndlessSummary =>
-  rest;
+export const toEndlessSummary = ({ inputs: _inputs, ...rest }: EndlessEntry): EndlessSummary => rest;
