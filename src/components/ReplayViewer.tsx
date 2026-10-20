@@ -1035,6 +1035,7 @@ export function ReplayStage({
         ctx.fillRect(0, 0, width, HEIGHT);
         paintZonesLocal(ctx);
         paintFieldsLocal(ctx);
+        paintTriggersLocal(ctx);
         paintWallsLocal(ctx, geometry.walls, upto);
         for (const o of overlays) {
           const gp = o.sim.path;
