@@ -142,7 +142,7 @@ export class WebMWriter {
   private finished = false;
 
   constructor(private readonly opts: WebMStreamOptions) {
-    this.parts.push(this.header() as BlobPart);
+    this.parts.push(new Blob([this.header() as BlobPart]));
   }
 
   /** Append one encoded VP8/VP9 frame at its presentation time in ms. */
@@ -169,10 +169,12 @@ export class WebMWriter {
       body.element(ID.simpleBlock, block.result);
     }
     // Wrap the timecode + blocks in a Cluster element; without this the blocks
-    // are written straight into the Segment and no demuxer can read them.
+    // are written straight into the Segment and no demuxer can read them. Store
+    // the cluster as a Blob so its bytes leave the JS heap immediately instead of
+    // being held until `finish()`.
     const cluster = new ByteWriter();
     cluster.element(ID.cluster, body.result);
-    this.parts.push(cluster.result as BlobPart);
+    this.parts.push(new Blob([cluster.result as BlobPart]));
     this.group = [];
   }
 

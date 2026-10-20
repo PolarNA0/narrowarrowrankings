@@ -116,7 +116,11 @@ export class Mp4Writer {
 
   /** Append one length-prefixed (AVCC) H.264 access unit. */
   addFrame(data: Uint8Array, keyframe: boolean): void {
-    this.parts.push(data as BlobPart);
+    // Keep each frame as its own Blob so its bytes leave the JS heap the moment
+    // it is encoded. `finish()` then composes the clip from Blob parts, which is
+    // a reference rather than another full-size copy of the payload — holding
+    // the raw arrays until the end is what doubled the peak and crashed the tab.
+    this.parts.push(new Blob([data as BlobPart]));
     this.mdatLen += data.length;
     this.sizes.push(data.length);
     this.keyframes.push(keyframe);

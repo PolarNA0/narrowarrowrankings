@@ -139,7 +139,10 @@ export const MAX_EXPORT_PIXELS = 2_073_600;
  * The actual encode resolution for a requested output size. The preset is the
  * target, so the canvas is NOT multiplied by `devicePixelRatio` — on a Retina
  * display that turned a "1080p" request into a 4K encode (4x the memory). The
- * result is still clamped to `MAX_EXPORT_PIXELS` for defence in depth.
+ * result is still clamped to `MAX_EXPORT_PIXELS` for defence in depth, and on a
+ * low-memory device to a smaller cap: the H.264 encoder keeps several full frame
+ * buffers live, which is what pushes a phone's tab over its budget and crashes it
+ * ("Aw, Snap") part-way through the export.
  */
 export function resolveEncodeSize(
   width: number,
@@ -148,9 +151,74 @@ export function resolveEncodeSize(
   const w = Math.max(2, Math.round(width));
   const h = Math.max(2, Math.round(height));
   const pixels = w * h;
-  if (pixels <= MAX_EXPORT_PIXELS) return { width: w, height: h };
-  const scale = Math.sqrt(MAX_EXPORT_PIXELS / pixels);
+  const cap = Math.min(MAX_EXPORT_PIXELS, deviceEncodePixelCap());
+  if (pixels <= cap) return { width: w, height: h };
+  const scale = Math.sqrt(cap / pixels);
   return { width: Math.max(2, Math.round(w * scale)), height: Math.max(2, Math.round(h * scale)) };
+}
+
+/**
+ * A resolution cap for devices that report little memory. `navigator.deviceMemory`
+ * (GB, Chrome-only) is a coarse signal: at 4GB or less the tab's budget is tight
+ * enough that a 1080p encode is a real crash risk, so cap at 720p; at 2GB, 540p.
+ * Devices that do not report it keep the full 1080p cap.
+ */
+function deviceEncodePixelCap(): number {
+  const gb =
+    typeof navigator !== "undefined"
+      ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+      : undefined;
+  if (!gb) return MAX_EXPORT_PIXELS;
+  if (gb <= 2) return 921_600 / 2;
+  if (gb <= 4) return 921_600;
+  return MAX_EXPORT_PIXELS;
+}
+
+/**
+ * Budget for the encoded clip held in memory while muxing, in bytes. The muxer
+ * keeps every encoded frame until the container is finished and the final Blob
+ * copies that payload once more, so the encoder is tuned to keep the clip well
+ * under this. A long or high-bitrate run otherwise peaks at hundreds of MB and
+ * the browser kills the tab ("Aw, Snap") near the end of the export — the
+ * reported crash. Kept low because it fails on phones, where the tab's memory
+ * budget is a few hundred MB shared with the rest of the page.
+ */
+export const EXPORT_CLIP_BUDGET_BYTES = 32 * 1024 * 1024;
+
+/** Default per-frame bitrate as a fraction of the raw frame size (≈12%). */
+const EXPORT_BPP = 0.12;
+
+/**
+ * Pick the encode bitrate and frame rate that keep a clip of `durationMs` inside
+ * `EXPORT_CLIP_BUDGET_BYTES`. The bitrate is lowered first (a small, safe step);
+ * only a run so long that even a floor bitrate would overflow also drops the
+ * frame rate, the bigger lever but a visible change to the clip. Returns the
+ * requested settings untouched when the clip already fits.
+ */
+export function planEncode(
+  width: number,
+  height: number,
+  fps: number,
+  durationMs: number,
+): { bitrate: number; fps: number } {
+  const seconds = Math.max(0.1, durationMs / 1000);
+  const natural = Math.round(width * height * fps * EXPORT_BPP);
+  // A floor so an unusually long run stays watchable instead of turning to mush.
+  const minBitrate = Math.max(2_000_000, Math.round(width * height * 0.35));
+  const budgetBitrate = (EXPORT_CLIP_BUDGET_BYTES * 8) / seconds;
+  let bitrate = natural;
+  let outFps = fps;
+  if (natural > budgetBitrate) {
+    if (budgetBitrate >= minBitrate) {
+      bitrate = Math.floor(budgetBitrate);
+    } else {
+      bitrate = minBitrate;
+      const overflow = (minBitrate * seconds) / 8 / EXPORT_CLIP_BUDGET_BYTES;
+      outFps = Math.max(15, Math.round(fps / Math.max(1, overflow)));
+      if (outFps >= fps) outFps = Math.max(15, Math.floor(fps / 2));
+    }
+  }
+  return { bitrate: Math.min(natural, bitrate), fps: outFps };
 }
 
 /** Whether this browser can record a canvas at all. */
@@ -616,15 +684,20 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
 
   const totalTicks = Math.max(1, opts.sim.path.length - 1);
   const durationMs = totalTicks * SIM_TICK_MS;
+  // Tune the bitrate/frame rate so the encoded clip stays inside the memory
+  // budget instead of ballooning on a long or high-resolution run and crashing
+  // the tab. Short clips are untouched; only ones that would overflow change.
+  const plan = planEncode(canvas.width, canvas.height, opts.fps, durationMs);
+  const fps = plan.fps;
   // Frames are spread uniformly across the exact clip duration, so the last
   // frame lands precisely on the finish tick and the clip is neither short nor
   // padded. (`frameInterval` is the nominal 1/fps; the spacing below is within a
   // fraction of a millisecond of it.)
-  const frameCount = Math.max(2, Math.round(durationMs / (1000 / opts.fps)) + 1);
+  const frameCount = Math.max(2, Math.round(durationMs / (1000 / fps)) + 1);
   const lastFrame = frameCount - 1;
   const frameToTick = (f: number) => (f / lastFrame) * totalTicks;
   const frameToMs = (f: number) => (f / lastFrame) * durationMs;
-  const tickStep = 240 / opts.fps;
+  const tickStep = 240 / fps;
   const dt = (tickStep * SIM_TICK_MS) / 1000;
   const bounds = computeBounds(opts);
 
@@ -642,7 +715,7 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
   // (see the `output` callback below), so the clip is never buffered whole and
   // then copied again at the end — the peak that used to take the tab down on a
   // long export. Only the tiny header tables are built at `finish()`.
-  const defaultDurationNs = Math.round(1e9 / opts.fps);
+  const defaultDurationNs = Math.round(1e9 / fps);
   let writer: Mp4Writer | WebMWriter | null = null;
   let encodeError: unknown = null;
 
@@ -659,7 +732,7 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
       writer = new Mp4Writer({
         width: canvas.width,
         height: canvas.height,
-        fps: opts.fps,
+        fps,
         durationMs,
         description,
       });
@@ -691,8 +764,8 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
       encodeError = e;
     },
   });
-  const bitrate = Math.round(width * height * opts.fps * 0.12);
-  const keyEvery = Math.max(1, Math.round(opts.fps * 2));
+  const bitrate = plan.bitrate;
+  const keyEvery = Math.max(1, Math.round(fps * 2));
 
   /** Yield to the event loop so the host page can paint and stay responsive. */
   const yieldToHost = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -703,7 +776,7 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
       width: canvas.width,
       height: canvas.height,
       bitrate,
-      framerate: opts.fps,
+      framerate: fps,
     });
     for (let f = 0; f < frameCount; f++) {
       const tick = frameToTick(f);
@@ -818,10 +891,17 @@ async function exportWithMediaRecorder(opts: ExportOptions): Promise<Blob> {
     camera.reset(p0?.x ?? 0, p0?.y ?? 0);
   }
 
-  const stream = canvas.captureStream(opts.fps);
+  const totalTicks = Math.max(1, opts.sim.path.length - 1);
+  const durationMs = totalTicks * SIM_TICK_MS;
+  // `MediaRecorder` buffers the whole recording in memory, so a long run is the
+  // worst case here too. Use the same memory-aware bitrate/frame-rate plan as the
+  // offline path so this fallback cannot balloon either.
+  const plan = planEncode(width, height, opts.fps, durationMs);
+  const fps = plan.fps;
+  const stream = canvas.captureStream(fps);
   const recorder = new MediaRecorder(stream, {
     mimeType,
-    videoBitsPerSecond: Math.round(opts.width * opts.height * opts.fps * 0.12),
+    videoBitsPerSecond: plan.bitrate,
   });
   const chunks: Blob[] = [];
   recorder.ondataavailable = (e) => {
@@ -831,10 +911,8 @@ async function exportWithMediaRecorder(opts: ExportOptions): Promise<Blob> {
     recorder.onstop = () => resolve();
   });
 
-  const totalTicks = Math.max(1, opts.sim.path.length - 1);
-  const durationMs = totalTicks * SIM_TICK_MS;
-  const frameInterval = 1000 / opts.fps;
-  const tickStep = 240 / opts.fps;
+  const frameInterval = 1000 / fps;
+  const tickStep = 240 / fps;
   const dt = (tickStep * SIM_TICK_MS) / 1000;
 
   const stepCamera = (frame: number) => {
