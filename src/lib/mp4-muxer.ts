@@ -1,24 +1,26 @@
 /**
- * A minimal MP4 (ISO BMFF) muxer for a single H.264 video track, fed by the
- * WebCodecs `VideoEncoder`.
+ * A minimal streaming MP4 (ISO BMFF) writer for a single H.264 video track, fed
+ * by the WebCodecs `VideoEncoder`.
  *
- * The offline exporter used to write WebM/VP9. Chrome plays that back fine, but
- * WebM is not a universal container: QuickTime, Windows Media Player, many
- * mobile galleries and older Safari cannot open it at all and show their media
- * error placeholder (a grey frame with a sad face). H.264 in MP4 plays
- * everywhere, so it is the default output and WebM is only the fallback for
- * browsers whose encoder cannot produce H.264.
+ * Why streaming: the previous muxer took an array of every encoded frame and
+ * built the whole file in one pass at the end, so the clip existed twice in
+ * memory at the finish (the encoded frames plus the concatenated `mdat`) and a
+ * long or high-resolution export peaked high enough to take the tab down — the
+ * reported crash. This writer instead appends each frame's bytes to an ordered
+ * list of `Blob` parts as the encoder emits them, and only materialises the
+ * small header tables at the end. The frames are never copied a second time.
+ *
+ * The output plays everywhere: QuickTime, Windows Media Player, mobile galleries
+ * and Safari all open H.264-in-MP4, unlike WebM (which those players show as a
+ * grey "unsupported" frame).
  *
  * Only the boxes a player needs to demux and decode one track are written:
- * `ftyp`, `moov` (`mvhd`, one `trak` with `stsd`/`avcC`, `stts`, `stss`,
- * `stsc`, `stsz`, `stco`) and `mdat`. Samples are one chunk, so `stco` holds a
- * single offset. No edit lists, no fragmented MP4, no metadata tracks.
+ * `ftyp`, `moov` (`mvhd`, one `trak` with `stsd`/`avcC`, `stts`, `stss`, `stsc`,
+ * `stsz`, `stco`) and `mdat`. Samples are one chunk, so `stco` holds a single
+ * offset. No edit lists, no fragmented MP4, no metadata tracks.
  */
 
 const VIDEO_TIMESCALE = 90_000;
-
-/** Shared zero-length buffer used to release a frame once it is muxed. */
-const EMPTY = new Uint8Array(0);
 
 function concat(parts: Uint8Array[]): Uint8Array {
   let len = 0;
@@ -36,8 +38,6 @@ const u8 = (...v: number[]) => new Uint8Array(v);
 const u16 = (v: number) => new Uint8Array([(v >> 8) & 0xff, v & 0xff]);
 const u32 = (v: number) =>
   new Uint8Array([(v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff]);
-/** 64-bit big-endian; values here stay well inside 2^53. */
-const u64 = (v: number) => concat([u32(Math.floor(v / 4294967296)), u32(v >>> 0)]);
 const ascii = (s: string) => {
   const out = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
@@ -72,19 +72,11 @@ const UNITY_MATRIX = concat([
   u32(0x40000000),
 ]);
 
-export interface Mp4Frame {
-  /** Length-prefixed (AVCC) H.264 access unit, exactly as the encoder emitted it. */
-  data: Uint8Array;
-  /** Presentation time in milliseconds. */
-  timestampMs: number;
-  keyframe: boolean;
-}
-
-export interface Mp4Options {
+export interface Mp4StreamOptions {
   width: number;
   height: number;
   fps: number;
-  /** Exact clip duration in milliseconds. */
+  /** Exact clip duration in milliseconds (drives the `mvhd`/`tkhd`/`mdhd` duration). */
   durationMs: number;
   /** `AVCDecoderConfigurationRecord` (avcC payload) from the encoder's decoder config. */
   description: Uint8Array;
@@ -110,191 +102,194 @@ function runLength(values: number[]): Uint8Array {
 }
 
 /**
- * Mux encoded H.264 frames into a playable MP4 blob. Timing comes from the
- * encoder's own timestamps, so the clip is frame-exact rather than wall-clock.
+ * Append-only MP4 writer. `addFrame` is called once per encoded chunk; `finish`
+ * writes the header tables (which need the sample list) and returns the file.
  */
-export function muxMp4(frames: Mp4Frame[], opts: Mp4Options): Blob {
-  const n = frames.length;
-  const delta = Math.max(1, Math.round(VIDEO_TIMESCALE / opts.fps));
-  const total = Math.max(1, Math.round((opts.durationMs / 1000) * VIDEO_TIMESCALE));
-  const deltas: number[] = [];
-  for (let i = 0; i < n; i++)
-    deltas.push(i === n - 1 ? Math.max(1, total - delta * (n - 1)) : delta);
+export class Mp4Writer {
+  private readonly sizes: number[] = [];
+  private readonly keyframes: boolean[] = [];
+  private readonly parts: BlobPart[] = [];
+  private mdatLen = 0;
+  private finished = false;
 
-  const syncSamples: number[] = [];
-  frames.forEach((f, i) => {
-    if (f.keyframe || i === 0) syncSamples.push(i + 1);
-  });
+  constructor(private readonly opts: Mp4StreamOptions) {}
 
-  const ftyp = box(
-    "ftyp",
-    ascii("isom"),
-    u32(0x200),
-    ascii("isom"),
-    ascii("iso2"),
-    ascii("avc1"),
-    ascii("mp41"),
-  );
-
-  const mvhd = fullBox(
-    "mvhd",
-    0,
-    0,
-    u32(0),
-    u32(0),
-    u32(VIDEO_TIMESCALE),
-    u32(total),
-    u32(0x00010000),
-    u16(0x0100),
-    u16(0),
-    u32(0),
-    u32(0),
-    UNITY_MATRIX,
-    u32(0),
-    u32(2),
-  );
-
-  const tkhd = fullBox(
-    "tkhd",
-    0,
-    0x7,
-    u32(0),
-    u32(0),
-    u32(1),
-    u32(0),
-    u32(total),
-    u32(0),
-    u32(0),
-    u16(0),
-    u16(0),
-    u16(0),
-    u16(0),
-    UNITY_MATRIX,
-    u32((opts.width << 16) >>> 0),
-    u32((opts.height << 16) >>> 0),
-  );
-
-  const mdhd = fullBox(
-    "mdhd",
-    0,
-    0,
-    u32(0),
-    u32(0),
-    u32(VIDEO_TIMESCALE),
-    u32(total),
-    u16(0x55c4),
-    u16(0),
-  );
-
-  const hdlr = fullBox(
-    "hdlr",
-    0,
-    0,
-    u32(0),
-    ascii("vide"),
-    u32(0),
-    u32(0),
-    u32(0),
-    ascii("VideoHandler\0"),
-  );
-
-  const avcC = box("avcC", opts.description);
-  const avc1 = box(
-    "avc1",
-    u8(0, 0, 0, 0, 0, 0),
-    u16(1),
-    u16(0),
-    u16(0),
-    u32(0),
-    u32(0),
-    u32(0),
-    u16(opts.width),
-    u16(opts.height),
-    u32(0x00480000),
-    u32(0x00480000),
-    u32(0),
-    u16(1),
-    new Uint8Array(32), // compressorname
-    u16(0x0018),
-    u16(0xffff),
-    avcC,
-  );
-  const stsd = fullBox("stsd", 0, 0, u32(1), avc1);
-
-  const stts = fullBox("stts", 0, 0, runLength(deltas));
-
-  const stssBody = new Uint8Array(4 + syncSamples.length * 4);
-  stssBody.set(u32(syncSamples.length), 0);
-  syncSamples.forEach((s, i) => stssBody.set(u32(s), 4 + i * 4));
-  const stss = fullBox("stss", 0, 0, stssBody);
-
-  // One chunk holding every sample, so a single chunk offset suffices.
-  const stsc = fullBox("stsc", 0, 0, u32(1), u32(1), u32(n), u32(1));
-
-  const stszBody = new Uint8Array(8 + n * 4);
-  stszBody.set(u32(0), 0);
-  stszBody.set(u32(n), 4);
-  frames.forEach((f, i) => stszBody.set(u32(f.data.length), 8 + i * 4));
-  const stsz = fullBox("stsz", 0, 0, stszBody);
-
-  const vmhd = fullBox("vmhd", 0, 1, u16(0), u16(0), u16(0), u16(0));
-  const url = fullBox("url ", 0, 1);
-  const dref = fullBox("dref", 0, 0, u32(1), url);
-  const dinf = box("dinf", dref);
-
-  const moovNoStco = box(
-    "moov",
-    mvhd,
-    box(
-      "trak",
-      tkhd,
-      box("mdia", mdhd, hdlr, box("minf", vmhd, dinf, box("stbl", stsd, stts, stss, stsc, stsz))),
-    ),
-  );
-
-  // `stco` is built after we know where `mdat` lands. `stco` is inside `moov`,
-  // so its own size must be known first — it is fixed (one entry).
-  const stcoEmpty = fullBox("stco", 0, 0, u32(1), u32(0));
-  const moovLen = moovNoStco.length + stcoEmpty.length;
-  const mdatHeader = 8;
-  const dataOffset = ftyp.length + moovLen + mdatHeader;
-  const stco = fullBox("stco", 0, 0, u32(1), u32(dataOffset));
-
-  const moov = box(
-    "moov",
-    mvhd,
-    box(
-      "trak",
-      tkhd,
-      box(
-        "mdia",
-        mdhd,
-        hdlr,
-        box("minf", vmhd, dinf, box("stbl", stsd, stts, stss, stsc, stsz, stco)),
-      ),
-    ),
-  );
-
-  // Write the whole `mdat` payload into one buffer and release each frame as it
-  // is copied. Building it with `concat`/`box` instead held several full copies
-  // of every encoded frame at once — five times the clip size — which is what
-  // exhausted memory and crashed the tab on a long or high-resolution export.
-  let payloadLen = 0;
-  for (const f of frames) payloadLen += f.data.length;
-  const mdat = new Uint8Array(mdatHeader + payloadLen);
-  mdat.set(u32(mdat.length), 0);
-  mdat.set(ascii("mdat"), 4);
-  let off = mdatHeader;
-  for (let i = 0; i < n; i++) {
-    const data = frames[i].data;
-    mdat.set(data, off);
-    off += data.length;
-    frames[i] = { ...frames[i], data: EMPTY };
+  /** Append one length-prefixed (AVCC) H.264 access unit. */
+  addFrame(data: Uint8Array, keyframe: boolean): void {
+    this.parts.push(data as BlobPart);
+    this.mdatLen += data.length;
+    this.sizes.push(data.length);
+    this.keyframes.push(keyframe);
   }
 
-  // The Blob copies its parts once, so hand it the three buffers directly rather
-  // than concatenating them into a fourth full-size array first.
-  return new Blob([ftyp as BlobPart, moov as BlobPart, mdat as BlobPart], {
-    type: "video/mp4",
-  });
+  /** Write the header tables and return the finished MP4 blob. */
+  finish(): Blob {
+    if (this.finished) throw new Error("Mp4Writer.finish() called twice");
+    this.finished = true;
+    const { width, height, fps, durationMs, description } = this.opts;
+    const n = this.sizes.length;
+
+    const delta = Math.max(1, Math.round(VIDEO_TIMESCALE / fps));
+    const total = Math.max(1, Math.round((durationMs / 1000) * VIDEO_TIMESCALE));
+    const deltas: number[] = [];
+    for (let i = 0; i < n; i++)
+      deltas.push(i === n - 1 ? Math.max(1, total - delta * (n - 1)) : delta);
+
+    const syncSamples: number[] = [];
+    this.keyframes.forEach((k, i) => {
+      if (k || i === 0) syncSamples.push(i + 1);
+    });
+
+    const ftyp = box(
+      "ftyp",
+      ascii("isom"),
+      u32(0x200),
+      ascii("isom"),
+      ascii("iso2"),
+      ascii("avc1"),
+      ascii("mp41"),
+    );
+
+    const mvhd = fullBox(
+      "mvhd",
+      0,
+      0,
+      u32(0),
+      u32(0),
+      u32(VIDEO_TIMESCALE),
+      u32(total),
+      u32(0x00010000),
+      u16(0x0100),
+      u16(0),
+      u32(0),
+      u32(0),
+      UNITY_MATRIX,
+      u32(0),
+      u32(2),
+    );
+
+    const tkhd = fullBox(
+      "tkhd",
+      0,
+      0x7,
+      u32(0),
+      u32(0),
+      u32(1),
+      u32(0),
+      u32(total),
+      u32(0),
+      u32(0),
+      u16(0),
+      u16(0),
+      u16(0),
+      u16(0),
+      UNITY_MATRIX,
+      u32((width << 16) >>> 0),
+      u32((height << 16) >>> 0),
+    );
+
+    const mdhd = fullBox(
+      "mdhd",
+      0,
+      0,
+      u32(0),
+      u32(0),
+      u32(VIDEO_TIMESCALE),
+      u32(total),
+      u16(0x55c4),
+      u16(0),
+    );
+
+    const hdlr = fullBox(
+      "hdlr",
+      0,
+      0,
+      u32(0),
+      ascii("vide"),
+      u32(0),
+      u32(0),
+      u32(0),
+      ascii("VideoHandler\0"),
+    );
+
+    const avcC = box("avcC", description);
+    const avc1 = box(
+      "avc1",
+      u8(0, 0, 0, 0, 0, 0),
+      u16(1),
+      u16(0),
+      u16(0),
+      u32(0),
+      u32(0),
+      u32(0),
+      u16(width),
+      u16(height),
+      u32(0x00480000),
+      u32(0x00480000),
+      u32(0),
+      u16(1),
+      new Uint8Array(32), // compressorname
+      u16(0x0018),
+      u16(0xffff),
+      avcC,
+    );
+    const stsd = fullBox("stsd", 0, 0, u32(1), avc1);
+
+    const stts = fullBox("stts", 0, 0, runLength(deltas));
+
+    const stssBody = new Uint8Array(4 + syncSamples.length * 4);
+    stssBody.set(u32(syncSamples.length), 0);
+    syncSamples.forEach((s, i) => stssBody.set(u32(s), 4 + i * 4));
+    const stss = fullBox("stss", 0, 0, stssBody);
+
+    // One chunk holding every sample, so a single chunk offset suffices.
+    const stsc = fullBox("stsc", 0, 0, u32(1), u32(1), u32(n), u32(1));
+
+    const stszBody = new Uint8Array(8 + n * 4);
+    stszBody.set(u32(0), 0);
+    stszBody.set(u32(n), 4);
+    this.sizes.forEach((size, i) => stszBody.set(u32(size), 8 + i * 4));
+    const stsz = fullBox("stsz", 0, 0, stszBody);
+
+    const vmhd = fullBox("vmhd", 0, 1, u16(0), u16(0), u16(0), u16(0));
+    const url = fullBox("url ", 0, 1);
+    const dref = fullBox("dref", 0, 0, u32(1), url);
+    const dinf = box("dinf", dref);
+
+    const moovOf = (stco: Uint8Array) =>
+      box(
+        "moov",
+        mvhd,
+        box(
+          "trak",
+          tkhd,
+          box(
+            "mdia",
+            mdhd,
+            hdlr,
+            box("minf", vmhd, dinf, box("stbl", stsd, stts, stss, stsc, stsz, stco)),
+          ),
+        ),
+      );
+
+    // `stco` is the only box whose body depends on where `mdat` lands, and its
+    // size is fixed, so build the file once with a zero offset purely to measure
+    // the header, then rebuild with the real offset.
+    const moovPlaceholder = moovOf(fullBox("stco", 0, 0, u32(1), u32(0)));
+    const mdatHeader = 8;
+    const dataOffset = ftyp.length + moovPlaceholder.length + mdatHeader;
+    const moov = moovOf(fullBox("stco", 0, 0, u32(1), u32(dataOffset)));
+    if (moov.length !== moovPlaceholder.length) {
+      throw new Error("MP4 header size drifted while writing stco");
+    }
+
+    const mdatHeaderBytes = concat([u32(mdatHeader + this.mdatLen), ascii("mdat")]);
+
+    // The Blob copies each part once, so hand it the header, the tables and the
+    // encoded frames directly — no concatenated copy of the whole clip.
+    return new Blob(
+      [ftyp as BlobPart, moov as BlobPart, mdatHeaderBytes as BlobPart, ...this.parts],
+      { type: "video/mp4" },
+    );
+  }
 }

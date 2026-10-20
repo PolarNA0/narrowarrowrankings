@@ -38,8 +38,8 @@ import {
   getBackgroundCanvas,
   type BackgroundTheme,
 } from "@/lib/replay-background";
-import { muxWebM, type WebMFrame } from "@/lib/webm-muxer";
-import { muxMp4 } from "@/lib/mp4-muxer";
+import { WebMWriter } from "@/lib/webm-muxer";
+import { Mp4Writer } from "@/lib/mp4-muxer";
 import type { ArrowKind } from "@/lib/arrow-sprites";
 
 /** How the camera frames the run. */
@@ -638,31 +638,60 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
     camera.follow(p.x, p.y, vx, vy, upto === 0 ? 1 : dt);
   };
 
-  const frames: WebMFrame[] = [];
+  // Frames stream straight into the container writer as the encoder emits them
+  // (see the `output` callback below), so the clip is never buffered whole and
+  // then copied again at the end — the peak that used to take the tab down on a
+  // long export. Only the tiny header tables are built at `finish()`.
+  const defaultDurationNs = Math.round(1e9 / opts.fps);
+  let writer: Mp4Writer | WebMWriter | null = null;
   let encodeError: unknown = null;
-  let description: Uint8Array | null = null;
+
+  // MP4 needs its `avcC` decoder description before the first frame can be
+  // muxed; it arrives with the encoder's first key chunk. WebM needs nothing up
+  // front, so its writer is created on the first frame.
+  const ensureWriter = (meta?: EncodedVideoChunkMetadata): boolean => {
+    if (writer) return true;
+    if (picked.mp4) {
+      const d = meta?.decoderConfig?.description;
+      if (!d) return false;
+      const description =
+        d instanceof Uint8Array ? new Uint8Array(d) : new Uint8Array(d as ArrayBuffer);
+      writer = new Mp4Writer({
+        width: canvas.width,
+        height: canvas.height,
+        fps: opts.fps,
+        durationMs,
+        description,
+      });
+    } else {
+      writer = new WebMWriter({
+        width: canvas.width,
+        height: canvas.height,
+        codec: picked.webmCodec,
+        durationMs,
+        defaultDurationNs,
+      });
+    }
+    return true;
+  };
+
   const encoder = new VideoEncoder({
     output: (chunk, meta) => {
       const data = new Uint8Array(chunk.byteLength);
       chunk.copyTo(data);
-      frames.push({
-        data,
-        timestamp: chunk.timestamp / 1000,
-        keyframe: chunk.type === "key",
-      });
-      // The `avcC` decoder config only arrives with the first (key) chunk.
-      if (!description && meta?.decoderConfig?.description) {
-        const d = meta.decoderConfig.description;
-        description =
-          d instanceof Uint8Array ? new Uint8Array(d) : new Uint8Array(d as ArrayBuffer);
+      const keyframe = chunk.type === "key";
+      if (!ensureWriter(meta)) {
+        encodeError = new Error("The H.264 encoder produced no decoder description.");
+        return;
       }
+      if (writer instanceof Mp4Writer) writer.addFrame(data, keyframe);
+      else writer?.addFrame(data, chunk.timestamp / 1000, keyframe);
     },
     error: (e) => {
       encodeError = e;
     },
   });
   const bitrate = Math.round(width * height * opts.fps * 0.12);
-  const defaultDurationNs = Math.round(1e9 / opts.fps);
   const keyEvery = Math.max(1, Math.round(opts.fps * 2));
 
   /** Yield to the event loop so the host page can paint and stay responsive. */
@@ -720,35 +749,15 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
     return null;
   }
   encoder.close();
-  if (encodeError || frames.length === 0) return null;
+  // `writer` is assigned inside the encoder's output callback, which TypeScript's
+  // flow analysis cannot see, so widen it before the null check.
+  const muxed = writer as Mp4Writer | WebMWriter | null;
+  if (encodeError || !muxed) return null;
 
   opts.onProgress?.(1);
-  // H.264 → MP4 (universally playable). Anything else → WebM. An avc1 encode
-  // with no `avcC` description cannot be put in a valid MP4, so it is reported
-  // as a failure (the caller retries with the WebM codecs) rather than being
-  // written out mislabelled as VP8 — a file no player can decode.
-  let blob: Blob;
-  if (picked.mp4) {
-    if (!description) return null;
-    blob = muxMp4(
-      frames.map((f) => ({ data: f.data, timestampMs: f.timestamp, keyframe: f.keyframe })),
-      {
-        width: canvas.width,
-        height: canvas.height,
-        fps: opts.fps,
-        durationMs,
-        description,
-      },
-    );
-  } else {
-    blob = muxWebM(frames, {
-      width: canvas.width,
-      height: canvas.height,
-      codec: picked.webmCodec,
-      durationMs,
-      defaultDurationNs,
-    });
-  }
+  // The writer already holds the muxed clip; `finish()` only appends the header
+  // tables (MP4) or the last cluster (WebM).
+  const blob = muxed.finish();
 
   // Last line of defence: confirm the file is actually a decodable video before
   // handing it to the user. A wrong container or a bad mux would otherwise only

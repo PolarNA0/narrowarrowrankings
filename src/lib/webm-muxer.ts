@@ -1,14 +1,13 @@
 /**
- * A minimal WebM (Matroska) muxer, enough for a single video track of VP8/VP9
- * inter frames as produced by the WebCodecs `VideoEncoder`.
+ * A minimal streaming WebM (Matroska) writer for a single video track of
+ * VP8/VP9 inter frames, fed by the WebCodecs `VideoEncoder`.
  *
- * The replay export used to record the canvas in real time with `MediaRecorder`,
- * which ties the clip to wall-clock time: under load the recorder drops or
- * duplicates frames, and the tail of the run is cut off because the encoder is
- * still catching up when `stop()` is called. Encoding each frame offline with
- * `VideoEncoder` and muxing here makes the export deterministic — every frame is
- * written at its exact timestamp, the duration is exact, and the export runs as
- * fast as the CPU allows instead of in real time.
+ * This is the fallback container for browsers that cannot encode H.264; the
+ * default is MP4 (`mp4-muxer.ts`), which every desktop and mobile player opens.
+ * Like that writer, it appends each frame as the encoder emits it rather than
+ * buffering the whole clip and muxing at the end, so a long export does not
+ * double its peak memory. The Segment is declared with an unknown size, so the
+ * file needs no second pass once the frames are written.
  *
  * Only the elements a player needs to demux and decode the track are written:
  * EBML header, Segment > Info (timecode scale + duration), Tracks (one video
@@ -90,28 +89,6 @@ function uintBytes(value: number): number[] {
   return bytes;
 }
 
-export interface WebMFrame {
-  /** Encoded VP8/VP9 payload. */
-  data: Uint8Array;
-  /** Presentation time in milliseconds (the encoder's timestamp). */
-  timestamp: number;
-  keyframe: boolean;
-}
-
-export interface WebMOptions {
-  width: number;
-  height: number;
-  /** Matroska codec id: `V_VP8` or `V_VP9`. */
-  codec: "V_VP8" | "V_VP9";
-  /** Track duration in milliseconds, written to Segment > Info. */
-  durationMs: number;
-  /** Nominal frame duration in ns, written to the track (optional hint). */
-  defaultDurationNs?: number;
-}
-
-/** Shared zero-length buffer used to release a frame once it is muxed. */
-const EMPTY = new Uint8Array(0);
-
 const ID = {
   ebml: [0x1a, 0x45, 0xdf, 0xa3],
   segment: [0x18, 0x53, 0x80, 0x67],
@@ -142,102 +119,131 @@ const ID = {
   pixelHeight: [0xba],
 };
 
+export interface WebMStreamOptions {
+  width: number;
+  height: number;
+  /** Matroska codec id: `V_VP8` or `V_VP9`. */
+  codec: "V_VP8" | "V_VP9";
+  /** Track duration in milliseconds, written to Segment > Info. */
+  durationMs: number;
+  /** Nominal frame duration in ns, written to the track (optional hint). */
+  defaultDurationNs?: number;
+}
+
 /**
- * Mux encoded frames into a playable WebM blob. Timestamps are written verbatim
- * as SimpleBlock timecodes relative to each cluster's base, so the clip's timing
- * is exactly what the encoder produced rather than wall-clock elapsed time.
+ * Append-only WebM writer. Frames are accumulated into a cluster until the next
+ * keyframe, then the finished cluster's bytes are appended to the output part
+ * list — so at most one cluster's worth of encoded frames is held at a time.
  */
-export function muxWebM(frames: WebMFrame[], opts: WebMOptions): Blob {
-  const w = new ByteWriter();
+export class WebMWriter {
+  private readonly parts: BlobPart[] = [];
+  private group: Array<{ data: Uint8Array; timestamp: number; keyframe: boolean }> = [];
+  private base = 0;
+  private finished = false;
 
-  // EBML header.
-  {
-    const body = new ByteWriter();
-    body.element(ID.ebmlVersion, [1]);
-    body.element(ID.ebmlReadVersion, [1]);
-    body.element(ID.ebmlMaxIdLength, [4]);
-    body.element(ID.ebmlMaxSizeLength, [8]);
-    const docType = new ByteWriter();
-    docType.ascii("webm");
-    body.element(ID.docType, docType.result);
-    body.element(ID.docTypeVersion, [2]);
-    body.element(ID.docTypeReadVersion, [2]);
-    w.element(ID.ebml, body.result);
+  constructor(private readonly opts: WebMStreamOptions) {
+    this.parts.push(this.header() as BlobPart);
   }
 
-  // Segment, written with an unknown-size header so its length need not be known
-  // up front (the whole clip is built in memory and concatenated at the end).
-  w.bytes(ID.segment);
-  w.bytes([0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
-
-  // Info: 1ms timecode scale and the exact duration.
-  {
-    const body = new ByteWriter();
-    body.element(ID.timecodeScale, [0x0f, 0x42, 0x40]); // 1_000_000
-    const dur = new ByteWriter();
-    dur.float64(opts.durationMs);
-    body.element(ID.duration, dur.result);
-    const mux = new ByteWriter();
-    mux.ascii("na-rankings");
-    body.element(ID.muxingApp, mux.result);
-    const write = new ByteWriter();
-    write.ascii("na-rankings");
-    body.element(ID.writingApp, write.result);
-    w.element(ID.info, body.result);
+  /** Append one encoded VP8/VP9 frame at its presentation time in ms. */
+  addFrame(data: Uint8Array, timestamp: number, keyframe: boolean): void {
+    if (keyframe && this.group.length) {
+      this.flush();
+      this.base = Math.round(timestamp);
+    }
+    this.group.push({ data, timestamp, keyframe });
   }
 
-  // Tracks: one video track.
-  {
-    const track = new ByteWriter();
-    track.element(ID.trackNumber, [1]);
-    track.element(ID.trackUid, [1]);
-    track.element(ID.trackType, [1]); // 1 = video
-    const codec = new ByteWriter();
-    codec.ascii(opts.codec);
-    track.element(ID.codecId, codec.result);
-    if (opts.defaultDurationNs)
-      track.element(ID.defaultDuration, uintBytes(opts.defaultDurationNs));
-    const video = new ByteWriter();
-    video.element(ID.pixelWidth, uintBytes(opts.width));
-    video.element(ID.pixelHeight, uintBytes(opts.height));
-    track.element(ID.video, video.result);
-    const tracks = new ByteWriter();
-    tracks.element(ID.trackEntry, track.result);
-    w.element(ID.tracks, tracks.result);
-  }
-
-  // Clusters: one per keyframe, so a block's signed 16-bit relative timecode
-  // always fits. `base` is the cluster's timecode in the 1ms scale.
-  const flush = (group: WebMFrame[], base: number) => {
+  private flush(): void {
+    const group = this.group;
     if (!group.length) return;
-    const cluster = new ByteWriter();
-    cluster.element(ID.timecode, uintBytes(base));
+    const body = new ByteWriter();
+    body.element(ID.timecode, uintBytes(this.base));
     for (const f of group) {
-      const rel = Math.max(-32768, Math.min(32767, Math.round(f.timestamp - base)));
+      const rel = Math.max(-32768, Math.min(32767, Math.round(f.timestamp - this.base)));
       const block = new ByteWriter();
       block.u8(0x81); // track number 1 as a VINT
       block.bytes([(rel >> 8) & 0xff, rel & 0xff]);
       block.u8(f.keyframe ? 0x80 : 0x00);
       block.bytes(f.data);
-      cluster.element(ID.simpleBlock, block.result);
-      // Release the encoded frame once it is in the output buffer; holding every
-      // frame until the end doubles the memory a long clip needs.
-      f.data = EMPTY;
+      body.element(ID.simpleBlock, block.result);
     }
-    w.element(ID.cluster, cluster.result);
-  };
-
-  let group: WebMFrame[] = [];
-  let base = 0;
-  for (const f of frames) {
-    if (f.keyframe && group.length) {
-      flush(group, base);
-      group = [];
-      base = Math.round(f.timestamp);
-    }
-    group.push(f);
+    // Wrap the timecode + blocks in a Cluster element; without this the blocks
+    // are written straight into the Segment and no demuxer can read them.
+    const cluster = new ByteWriter();
+    cluster.element(ID.cluster, body.result);
+    this.parts.push(cluster.result as BlobPart);
+    this.group = [];
   }
-  flush(group, base);
 
-  return new Blob([w.result as BlobPart], { type: "video/webm" });
+  /** Flush the last cluster and return the finished WebM blob. */
+  finish(): Blob {
+    if (this.finished) throw new Error("WebMWriter.finish() called twice");
+    this.finished = true;
+    this.flush();
+    return new Blob(this.parts, { type: "video/webm" });
+  }
+
+  private header(): Uint8Array {
+    const w = new ByteWriter();
+
+    // EBML header.
+    {
+      const body = new ByteWriter();
+      body.element(ID.ebmlVersion, [1]);
+      body.element(ID.ebmlReadVersion, [1]);
+      body.element(ID.ebmlMaxIdLength, [4]);
+      body.element(ID.ebmlMaxSizeLength, [8]);
+      const docType = new ByteWriter();
+      docType.ascii("webm");
+      body.element(ID.docType, docType.result);
+      body.element(ID.docTypeVersion, [2]);
+      body.element(ID.docTypeReadVersion, [2]);
+      w.element(ID.ebml, body.result);
+    }
+
+    // Segment, written with an unknown-size header so its length need not be
+    // known up front (the whole clip is built in memory and concatenated at the
+    // end). `0x01 ff…` is the 8-byte "unknown size" VINT.
+    w.bytes(ID.segment);
+    w.bytes([0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+
+    // Info: 1ms timecode scale and the exact duration.
+    {
+      const body = new ByteWriter();
+      body.element(ID.timecodeScale, [0x0f, 0x42, 0x40]); // 1_000_000
+      const dur = new ByteWriter();
+      dur.float64(this.opts.durationMs);
+      body.element(ID.duration, dur.result);
+      const mux = new ByteWriter();
+      mux.ascii("na-rankings");
+      body.element(ID.muxingApp, mux.result);
+      const write = new ByteWriter();
+      write.ascii("na-rankings");
+      body.element(ID.writingApp, write.result);
+      w.element(ID.info, body.result);
+    }
+
+    // Tracks: one video track.
+    {
+      const track = new ByteWriter();
+      track.element(ID.trackNumber, [1]);
+      track.element(ID.trackUid, [1]);
+      track.element(ID.trackType, [1]); // 1 = video
+      const codec = new ByteWriter();
+      codec.ascii(this.opts.codec);
+      track.element(ID.codecId, codec.result);
+      if (this.opts.defaultDurationNs)
+        track.element(ID.defaultDuration, uintBytes(this.opts.defaultDurationNs));
+      const video = new ByteWriter();
+      video.element(ID.pixelWidth, uintBytes(this.opts.width));
+      video.element(ID.pixelHeight, uintBytes(this.opts.height));
+      track.element(ID.video, video.result);
+      const tracks = new ByteWriter();
+      tracks.element(ID.trackEntry, track.result);
+      w.element(ID.tracks, tracks.result);
+    }
+
+    return w.result;
+  }
 }
