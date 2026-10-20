@@ -30,10 +30,13 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize,
+  Maximize2,
+  Minimize2,
   Wind,
   Magnet,
   Globe,
   Zap,
+  Crosshair,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -109,10 +112,11 @@ export function LevelEditorView({
   const [acceleratorAccel, setAcceleratorAccel] = React.useState(DEFAULT_ACCELERATOR_ACCEL);
   // Grid snapping is on by default so zones/walls come out symmetrical.
   const [snap, setSnap] = React.useState<number>(10);
-  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [loadingLevel, setLoadingLevel] = React.useState(false);
   const [sourceLevelId, setSourceLevelId] = React.useState<string>("");
   const [publishOpen, setPublishOpen] = React.useState(false);
+  const [fullscreen, setFullscreen] = React.useState(false);
 
   // Undo/redo history of whole levels (small, so a plain stack is fine).
   const historyRef = React.useRef<{ past: NalvlLevel[]; future: NalvlLevel[] }>({
@@ -141,7 +145,7 @@ export function LevelEditorView({
     if (initialLevel) {
       historyRef.current = { past: [], future: [] };
       setLevel(initialLevel);
-      setSelectedId(null);
+      setSelectedIds([]);
       onLevelConsumed?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,7 +168,9 @@ export function LevelEditorView({
     setHistoryTick((t) => t + 1);
   };
 
-  const selected = level.obstacles.find((o) => o.id === selectedId) ?? null;
+  const selectedObstacles = level.obstacles.filter((o) => selectedIds.includes(o.id));
+  const selected = selectedObstacles.length === 1 ? selectedObstacles[0] : null;
+  const multiSelected = selectedObstacles.length > 1;
 
   const updateSelected = (patch: Partial<NonNullable<typeof selected>>) => {
     if (!selected) return;
@@ -175,9 +181,10 @@ export function LevelEditorView({
   };
 
   const deleteSelected = () => {
-    if (!selected) return;
-    applyLevel({ ...level, obstacles: level.obstacles.filter((o) => o.id !== selected.id) });
-    setSelectedId(null);
+    if (selectedIds.length === 0) return;
+    const ids = new Set(selectedIds);
+    applyLevel({ ...level, obstacles: level.obstacles.filter((o) => !ids.has(o.id)) });
+    setSelectedIds([]);
   };
 
   const loadFromPicker = async (id: string) => {
@@ -194,7 +201,7 @@ export function LevelEditorView({
       const next = rawLevelDataToNalvl(data);
       historyRef.current = { past: [], future: [] };
       setLevel(next);
-      setSelectedId(null);
+      setSelectedIds([]);
       toast.success(`Loaded “${next.name}” (${next.obstacles.length} obstacles)`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load level");
@@ -236,7 +243,7 @@ export function LevelEditorView({
       const next = parseNalvl(text);
       historyRef.current = { past: [], future: [] };
       setLevel(next);
-      setSelectedId(null);
+      setSelectedIds([]);
       toast.success(`Imported “${next.name}”`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not read level");
@@ -253,6 +260,13 @@ export function LevelEditorView({
   const heldRef = React.useRef<Set<string>>(new Set());
   const settingsRef = React.useRef(DEFAULT_INPUT_SETTINGS);
   const rafRef = React.useRef(0);
+  // Touch steering for test-play: mirrors PlayView's left/right half-screen
+  // zones. Without it, Test play is unusable on a phone (keyboard only).
+  const touchRef = React.useRef({ left: false, right: false });
+
+  const setTouch = (side: "left" | "right", down: boolean) => {
+    touchRef.current[side] = down;
+  };
 
   const startTest = async () => {
     if (level.obstacles.length === 0) {
@@ -264,12 +278,12 @@ export function LevelEditorView({
     const game = new PlayGame({
       data,
       arrowName: "Narrow Arrow",
-      sampleInput: () =>
-        symbolFromHeld(
-          resolveKeyboard(settingsRef.current, heldRef.current) === 2,
-          resolveKeyboard(settingsRef.current, heldRef.current) === 1,
-          resolveKeyboard(settingsRef.current, heldRef.current) === 3,
-        ),
+      sampleInput: () => {
+        const keySym = resolveKeyboard(settingsRef.current, heldRef.current);
+        const t = touchRef.current;
+        if (keySym !== 0) return keySym;
+        return symbolFromHeld(t.left, t.right, false);
+      },
       onEnd: (r) => {
         setTestPhase(game.phase);
         if (r.finished) toast.success(`Finished in ${((r.tick * SIM_TICK_MS) / 1000).toFixed(3)}s`);
@@ -350,9 +364,95 @@ export function LevelEditorView({
 
   React.useEffect(() => () => gameRef.current?.free(), []);
 
+  // Escape leaves fullscreen, matching the Play tab.
+  React.useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+
+  // The fullscreen stage fills the viewport below its toolbar. Measured in an
+  // effect rather than read during render so SSR does not touch `window`.
+  const [viewportHeight, setViewportHeight] = React.useState(0);
+  React.useEffect(() => {
+    if (!fullscreen) return;
+    const measure = () => setViewportHeight(window.innerHeight);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [fullscreen]);
+
   const canUndo = historyRef.current.past.length > 0;
   const canRedo = historyRef.current.future.length > 0;
   void historyTick;
+
+  // The stage is rendered both inline and in the fullscreen overlay, so it lives
+  // here rather than inside the layout below.
+  const stageHeight = fullscreen ? Math.max(320, viewportHeight - 48) : 520;
+  const stage = (
+    <div className="relative h-full w-full">
+      {testing ? (
+        <PlayCanvas
+          ref={playCanvasRef}
+          geometry={levelGeometryOf(level)}
+          getFrame={() => ({
+            path: gameRef.current?.path ?? [],
+            pathTicks: gameRef.current?.pathTicks ?? [],
+            tick: gameRef.current?.currentTick ?? 0,
+          })}
+          arrow="narrow"
+          arrowRadius={arrowConstants("Narrow Arrow").radius ?? 16}
+          bodyColor={themeColor(null)}
+          tailColor={themeColor(null)}
+          trailColor={trailColor(null)}
+          mode="game"
+          height={stageHeight}
+          fill={fullscreen}
+        />
+      ) : (
+        <LevelEditorCanvas
+          ref={canvasRef}
+          level={level}
+          tool={tool}
+          wallType={wallType}
+          zoneType={zoneType}
+          fieldDirection={fieldDirection}
+          fieldStrength={fieldStrength}
+          acceleratorSpeed={acceleratorSpeed}
+          acceleratorAccel={acceleratorAccel}
+          snap={snap}
+          selectedIds={selectedIds}
+          onSelect={setSelectedIds}
+          onChange={(next) => applyLevel(next)}
+          height={stageHeight}
+        />
+      )}
+      {/* Touch steering while test-playing: left half steers left, right half
+          right, both at once brakes. Mirrors the Play tab so a phone can drive. */}
+      {testing && (
+        <div className="absolute inset-0 flex lg:hidden">
+          {(["left", "right"] as const).map((side) => (
+            <div
+              key={side}
+              className="flex-1 touch-none select-none"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                setTouch(side, true);
+              }}
+              onPointerUp={() => setTouch(side, false)}
+              onPointerCancel={() => setTouch(side, false)}
+              onLostPointerCapture={() => setTouch(side, false)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   const tools: { id: EditorTool; icon: React.ReactNode; label: string }[] = [
     { id: "select", icon: <MousePointer2 className="w-4 h-4" />, label: "Select" },
@@ -519,8 +619,9 @@ export function LevelEditorView({
               </div>
             </div>
             <p className="text-[11px] text-slate-500">
-              Drag to draw; shift-drag or middle-drag to pan; scroll to zoom. With Select, drag a
-              body to move it or a handle to reshape.
+              Drag to draw; alt-drag or middle-drag to pan; scroll or pinch to zoom. With Select,
+              drag a body to move it or a handle to reshape, drag empty space to box-select, and
+              shift-click to add to the selection. The blue START marker is where the arrow spawns.
             </p>
           </div>
 
@@ -557,7 +658,7 @@ export function LevelEditorView({
                 onClick={() => {
                   historyRef.current = { past: [], future: [] };
                   applyLevel(starterLevel(), false);
-                  setSelectedId(null);
+                  setSelectedIds([]);
                 }}
               >
                 <FilePlus2 className="w-3.5 h-3.5" />
@@ -613,43 +714,11 @@ export function LevelEditorView({
 
         {/* Middle: canvas + test play */}
         <div className="space-y-3">
-          <div className="rounded-lg border border-white/10 bg-black/40 overflow-hidden">
-            {testing ? (
-              <PlayCanvas
-                ref={playCanvasRef}
-                geometry={levelGeometryOf(level)}
-                getFrame={() => ({
-                  path: gameRef.current?.path ?? [],
-                  pathTicks: gameRef.current?.pathTicks ?? [],
-                  tick: gameRef.current?.currentTick ?? 0,
-                })}
-                arrow="narrow"
-                arrowRadius={arrowConstants("Narrow Arrow").radius ?? 16}
-                bodyColor={themeColor(null)}
-                tailColor={themeColor(null)}
-                trailColor={trailColor(null)}
-                mode="game"
-                height={520}
-              />
-            ) : (
-              <LevelEditorCanvas
-                ref={canvasRef}
-                level={level}
-                tool={tool}
-                wallType={wallType}
-                zoneType={zoneType}
-                fieldDirection={fieldDirection}
-                fieldStrength={fieldStrength}
-                acceleratorSpeed={acceleratorSpeed}
-                acceleratorAccel={acceleratorAccel}
-                snap={snap}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                onChange={(next) => applyLevel(next)}
-                height={520}
-              />
-            )}
-          </div>
+          {!fullscreen && (
+            <div className="rounded-lg border border-white/10 bg-black/40 overflow-hidden">
+              {stage}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => zoomBy(1.2)}>
               <ZoomIn className="w-3.5 h-3.5" />
@@ -657,8 +726,24 @@ export function LevelEditorView({
             <Button variant="outline" size="sm" onClick={() => zoomBy(1 / 1.2)}>
               <ZoomOut className="w-3.5 h-3.5" />
             </Button>
-            <Button variant="outline" size="sm" onClick={fitView}>
+            <Button variant="outline" size="sm" onClick={fitView} title="Fit to level">
               <Maximize className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => canvasRef.current?.centerOnOrigin()}
+              title="Centre on the arrow's start"
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFullscreen(true)}
+              title="Fullscreen"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
             </Button>
             <div className="flex-1" />
             {testing ? (
@@ -699,9 +784,32 @@ export function LevelEditorView({
         {/* Right: inspector */}
         <div className="rounded-lg border border-white/10 bg-white/5 p-3 space-y-3">
           <Label className="text-xs">Inspector</Label>
-          {!selected ? (
+          {multiSelected ? (
+            <div className="space-y-3">
+              <p className="text-[11px] text-slate-400">
+                {selectedObstacles.length} obstacles selected.
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="flex-1" onClick={deleteSelected}>
+                  <Trash2 className="w-3.5 h-3.5 mr-1 text-red-400" /> Delete all
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setSelectedIds([])}
+                >
+                  Clear
+                </Button>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Drag any selected obstacle to move the whole group. Select one to edit its type.
+              </p>
+            </div>
+          ) : !selected ? (
             <p className="text-[11px] text-slate-500">
               Select an obstacle to edit it. Walls get a thickness and rotation; zones get a type.
+              Drag on empty space to box-select several; shift-click to add to the selection.
             </p>
           ) : (
             <div className="space-y-3">
@@ -944,6 +1052,48 @@ export function LevelEditorView({
           )}
         </div>
       </div>
+
+      {fullscreen && (
+        <div className="fixed inset-0 z-[70] flex flex-col bg-black">
+          <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+            <span className="text-xs font-bold uppercase tracking-widest text-slate-400">
+              {testing ? "Test play" : "Level editor"}
+            </span>
+            {testing && (
+              <span className="text-xs font-mono text-slate-300">
+                {testPhase} · {((testTick * SIM_TICK_MS) / 1000).toFixed(2)}s
+              </span>
+            )}
+            <div className="flex-1" />
+            {testing ? (
+              <Button variant="outline" size="sm" onClick={() => gameRef.current?.restart()}>
+                <RotateCcw className="w-3.5 h-3.5 mr-1" /> Restart
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={() => zoomBy(1.2)}>
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => zoomBy(1 / 1.2)}>
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={fitView} title="Fit to level">
+                  <Maximize className="w-3.5 h-3.5" />
+                </Button>
+              </>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFullscreen(false)}
+              title="Exit fullscreen (Esc)"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+          <div className="relative flex-1 overflow-hidden">{stage}</div>
+        </div>
+      )}
     </div>
   );
 }

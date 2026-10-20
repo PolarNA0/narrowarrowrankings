@@ -192,7 +192,7 @@ export function LevelGeneratorView({ onOpenInEditor }: LevelGeneratorViewProps) 
               acceleratorSpeed={1.5}
               acceleratorAccel={0.05}
               snap={0}
-              selectedId={null}
+              selectedIds={[]}
               onSelect={() => {}}
               onChange={() => {}}
               height={560}

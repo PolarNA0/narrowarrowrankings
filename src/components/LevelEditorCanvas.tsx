@@ -1,6 +1,6 @@
 /**
  * The Level Editor's canvas: renders a `NalvlLevel` and handles direct
- * manipulation (place, select, move, drag a vertex, delete).
+ * manipulation (place, select, move, drag a vertex, delete, box-select).
  *
  * It renders the level's own obstacles rather than the flattened
  * `SimGeometry`, because editing needs per-obstacle identity and per-point
@@ -32,6 +32,8 @@ export interface LevelEditorCanvasHandle {
   redraw(): void;
   fit(): void;
   zoomBy(factor: number): void;
+  /** Centre the camera on the arrow's spawn (the world origin). */
+  centerOnOrigin(): void;
 }
 
 export interface LevelEditorCanvasProps {
@@ -49,8 +51,8 @@ export interface LevelEditorCanvasProps {
   acceleratorAccel: number;
   /** Snap every placed/dragged point to this world-unit grid (0 = free). */
   snap: number;
-  selectedId: string | null;
-  onSelect(id: string | null): void;
+  selectedIds: string[];
+  onSelect(ids: string[]): void;
   onChange(level: NalvlLevel): void;
   height?: number;
   className?: string;
@@ -65,11 +67,16 @@ interface Camera {
 type Drag =
   | { kind: "pan"; startX: number; startY: number; camX: number; camY: number }
   | { kind: "vertex"; id: string; index: number; point: NalvlPoint }
-  | { kind: "move"; id: string; last: NalvlPoint }
+  | { kind: "move"; ids: string[]; last: NalvlPoint }
+  | { kind: "marquee"; start: NalvlPoint; cursor: NalvlPoint; additive: boolean }
   | { kind: "create"; points: NalvlPoint[]; cursor: NalvlPoint };
 
-const HANDLE_PX = 7;
-const HIT_PX = 8;
+const HANDLE_PX = 9;
+// Grab radius for a body/vertex. Deliberately generous — the old 8px target was
+// the main reason the editor felt finicky, especially with a finger.
+const HIT_PX = 11;
+/** Extra world-space slop so a wall thinner than a finger is still grabbable. */
+const MIN_HIT_WORLD = 6;
 
 function dist2(ax: number, ay: number, bx: number, by: number) {
   const dx = ax - bx;
@@ -100,7 +107,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       acceleratorSpeed,
       acceleratorAccel,
       snap,
-      selectedId,
+      selectedIds,
       onSelect,
       onChange,
       height = 520,
@@ -121,7 +128,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       acceleratorSpeed,
       acceleratorAccel,
       snap,
-      selectedId,
+      selectedIds,
     });
     propsRef.current = {
       level,
@@ -133,7 +140,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       acceleratorSpeed,
       acceleratorAccel,
       snap,
-      selectedId,
+      selectedIds,
     };
     const drawRef = React.useRef<() => void>(() => {});
 
@@ -192,6 +199,11 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         fit,
         zoomBy: (factor: number) => {
           camRef.current.scale = Math.max(0.05, Math.min(8, camRef.current.scale * factor));
+          drawRef.current();
+        },
+        centerOnOrigin: () => {
+          camRef.current.x = 0;
+          camRef.current.y = 0;
           drawRef.current();
         },
       }),
@@ -286,7 +298,10 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
           ctx.stroke();
           ctx.setLineDash([]);
         } else {
-          const core = Math.max(2, (o.thickness ?? 8) * cam.scale);
+          // A thin wall would otherwise be a hairline at low zoom, so the drawn
+          // stroke is floored at ~4px on screen. This is the single biggest
+          // "the editor is finicky" fix: you can now see and grab what you drew.
+          const core = Math.max(4, (o.thickness ?? 8) * cam.scale);
           ctx.strokeStyle = visual.color;
           ctx.lineCap = "round";
           if (pts.length === 1) {
@@ -353,6 +368,55 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       [toScreen, editorParticles],
     );
 
+    // The engine always spawns the arrow at the world origin, facing -y (up the
+    // screen). Nothing in the level payload moves it, so the author needs to see
+    // it: a run that starts inside a wall dies on tick 0 and looks like a bug.
+    const drawSpawn = React.useCallback(
+      (ctx: CanvasRenderingContext2D) => {
+        const c = toScreen({ x: 0, y: 0 });
+        const r = Math.max(14, 30 * camRef.current.scale);
+        ctx.save();
+        ctx.translate(c.x, c.y);
+        // Faint halo.
+        const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.6);
+        halo.addColorStop(0, "rgba(56,189,248,0.30)");
+        halo.addColorStop(1, "rgba(56,189,248,0)");
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        // Crosshair.
+        ctx.strokeStyle = "rgba(56,189,248,0.85)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-r, 0);
+        ctx.lineTo(r, 0);
+        ctx.moveTo(0, -r);
+        ctx.lineTo(0, r);
+        ctx.stroke();
+        // The arrow: a narrow chevron pointing up (-y), the spawn heading.
+        ctx.fillStyle = "#38bdf8";
+        ctx.strokeStyle = "rgba(2,6,23,0.85)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 0.75);
+        ctx.lineTo(r * 0.45, r * 0.55);
+        ctx.lineTo(0, r * 0.2);
+        ctx.lineTo(-r * 0.45, r * 0.55);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // Label.
+        ctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillStyle = "rgba(226,232,240,0.95)";
+        ctx.fillText("START", 0, -r * 0.9);
+        ctx.restore();
+      },
+      [toScreen],
+    );
+
     const draw = React.useCallback(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -360,7 +424,13 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       if (!ctx) return;
       const { width, height: h, dpr } = view.current;
       const cam = camRef.current;
-      const { level: lvl, selectedId: sel, tool: t, wallType: wt, zoneType: zt } = propsRef.current;
+      const {
+        level: lvl,
+        selectedIds: sel,
+        tool: t,
+        wallType: wt,
+        zoneType: zt,
+      } = propsRef.current;
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = "#07070b";
@@ -395,7 +465,9 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       ctx.lineTo(width, origin.y);
       ctx.stroke();
 
-      for (const o of lvl.obstacles) drawObstacle(ctx, o, o.id === sel, cam);
+      for (const o of lvl.obstacles) drawObstacle(ctx, o, sel.includes(o.id), cam);
+
+      drawSpawn(ctx);
 
       // Preview of an in-progress create drag.
       const drag = dragRef.current;
@@ -420,9 +492,23 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         }
         ctx.restore();
       }
+
+      // Box-select rectangle.
+      if (drag?.kind === "marquee") {
+        const a = toScreen(drag.start);
+        const b = toScreen(drag.cursor);
+        ctx.save();
+        ctx.fillStyle = "rgba(56,189,248,0.14)";
+        ctx.strokeStyle = "rgba(56,189,248,0.9)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+        ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+        ctx.restore();
+      }
       void wt;
       void zt;
-    }, [drawObstacle, toScreen, toWorld]);
+    }, [drawObstacle, drawSpawn, toScreen, toWorld]);
 
     drawRef.current = draw;
 
@@ -459,10 +545,11 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
 
     const hitTest = (world: NalvlPoint): { id: string; index: number } | { id: string } | null => {
       const lvl = propsRef.current.level;
-      const tol = HIT_PX / camRef.current.scale;
-      // Vertices of the selected obstacle first, so a handle wins over a body.
-      const sel = lvl.obstacles.find((o) => o.id === propsRef.current.selectedId);
-      if (sel) {
+      const tol = Math.max(HIT_PX / camRef.current.scale, MIN_HIT_WORLD);
+      // Vertices of any selected obstacle first, so a handle wins over a body.
+      for (const selId of propsRef.current.selectedIds) {
+        const sel = lvl.obstacles.find((o) => o.id === selId);
+        if (!sel) continue;
         for (let i = 0; i < sel.points.length; i++) {
           const p = sel.points[i];
           if (dist2(p.x, p.y, world.x, world.y) <= tol * tol) return { id: sel.id, index: i };
@@ -497,17 +584,72 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       });
     };
 
+    const translateMany = (ids: string[], dx: number, dy: number) => {
+      const lvl = propsRef.current.level;
+      const set = new Set(ids);
+      onChange({
+        ...lvl,
+        obstacles: lvl.obstacles.map((o) =>
+          set.has(o.id) ? { ...o, points: o.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) } : o,
+        ),
+      });
+    };
+
+    /** Obstacles with at least one vertex inside the rectangle. */
+    const obstaclesInRect = (a: NalvlPoint, b: NalvlPoint): string[] => {
+      const minX = Math.min(a.x, b.x);
+      const maxX = Math.max(a.x, b.x);
+      const minY = Math.min(a.y, b.y);
+      const maxY = Math.max(a.y, b.y);
+      const hit: string[] = [];
+      for (const o of propsRef.current.level.obstacles) {
+        if (o.points.some((p) => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)) {
+          hit.push(o.id);
+        }
+      }
+      return hit;
+    };
+
+    // Active pointers, for pinch-zoom / two-finger pan on touch devices.
+    const pointersRef = React.useRef<Map<number, { x: number; y: number }>>(new Map());
+    const pinchRef = React.useRef<{ dist: number; cx: number; cy: number; cam: Camera } | null>(
+      null,
+    );
+
+    const localPoint = (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+
+    const beginPinch = () => {
+      const pts = [...pointersRef.current.values()];
+      if (pts.length !== 2) return;
+      const [a, b] = pts;
+      pinchRef.current = {
+        dist: Math.hypot(a.x - b.x, a.y - b.y),
+        cx: (a.x + b.x) / 2,
+        cy: (a.y + b.y) / 2,
+        cam: { ...camRef.current },
+      };
+      // Two fingers means "navigate", not "edit".
+      dragRef.current = null;
+    };
+
     const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
+      const { x: sx, y: sy } = localPoint(e);
+      pointersRef.current.set(e.pointerId, { x: sx, y: sy });
+      canvas.setPointerCapture(e.pointerId);
+      if (pointersRef.current.size >= 2) {
+        beginPinch();
+        return;
+      }
+
       const world = snapWorld(toWorld(sx, sy));
       const t = propsRef.current.tool;
-      canvas.setPointerCapture(e.pointerId);
 
-      const panning = t === "pan" || e.button === 1 || e.shiftKey;
+      const panning = t === "pan" || e.button === 1 || e.altKey;
       if (panning) {
         const cam = camRef.current;
         dragRef.current = { kind: "pan", startX: sx, startY: sy, camX: cam.x, camY: cam.y };
@@ -517,13 +659,24 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       const hit = hitTest(world);
       if (t === "select") {
         if (hit && "index" in hit) {
-          onSelect(hit.id);
+          onSelect([hit.id]);
           dragRef.current = { kind: "vertex", id: hit.id, index: hit.index, point: world };
         } else if (hit) {
-          onSelect(hit.id);
-          dragRef.current = { kind: "move", id: hit.id, last: world };
+          const already = propsRef.current.selectedIds.includes(hit.id);
+          if (e.shiftKey) {
+            // Toggle membership; no move drag so the selection is not disturbed.
+            const next = already
+              ? propsRef.current.selectedIds.filter((id) => id !== hit.id)
+              : [...propsRef.current.selectedIds, hit.id];
+            onSelect(next);
+            return;
+          }
+          const ids = already ? propsRef.current.selectedIds : [hit.id];
+          if (!already) onSelect(ids);
+          dragRef.current = { kind: "move", ids, last: world };
         } else {
-          onSelect(null);
+          dragRef.current = { kind: "marquee", start: world, cursor: world, additive: e.shiftKey };
+          if (!e.shiftKey) onSelect([]);
         }
         return;
       }
@@ -531,7 +684,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       // A draw tool: dragging from an existing handle moves it; elsewhere it
       // starts a new obstacle.
       if (hit && "index" in hit) {
-        onSelect(hit.id);
+        onSelect([hit.id]);
         dragRef.current = { kind: "vertex", id: hit.id, index: hit.index, point: world };
         return;
       }
@@ -539,13 +692,28 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
     };
 
     const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const { x: sx, y: sy } = localPoint(e);
+      if (pointersRef.current.has(e.pointerId))
+        pointersRef.current.set(e.pointerId, { x: sx, y: sy });
+
+      // Pinch-zoom / two-finger pan.
+      const pinch = pinchRef.current;
+      if (pinch && pointersRef.current.size >= 2) {
+        const pts = [...pointersRef.current.values()];
+        const [a, b] = pts;
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        const cx = (a.x + b.x) / 2;
+        const cy = (a.y + b.y) / 2;
+        const cam = camRef.current;
+        cam.scale = Math.max(0.05, Math.min(8, pinch.cam.scale * (dist / Math.max(1, pinch.dist))));
+        cam.x = pinch.cam.x - (cx - pinch.cx) / cam.scale;
+        cam.y = pinch.cam.y - (cy - pinch.cy) / cam.scale;
+        draw();
+        return;
+      }
+
       const drag = dragRef.current;
       if (!drag) return;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
       const world = snapWorld(toWorld(sx, sy));
       if (drag.kind === "pan") {
         const cam = camRef.current;
@@ -562,21 +730,37 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         const dx = world.x - drag.last.x;
         const dy = world.y - drag.last.y;
         drag.last = world;
-        commitPoints(drag.id, (pts) => pts.map((p) => ({ x: p.x + dx, y: p.y + dy })));
+        translateMany(drag.ids, dx, dy);
         return;
       }
-      if (drag.kind === "create") {
+      if (drag.kind === "create" || drag.kind === "marquee") {
         drag.cursor = world;
         draw();
       }
     };
 
+    const endPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
+      pointersRef.current.delete(e.pointerId);
+      if (pointersRef.current.size < 2) pinchRef.current = null;
+      const canvas = canvasRef.current;
+      if (canvas && canvas.hasPointerCapture(e.pointerId))
+        canvas.releasePointerCapture(e.pointerId);
+    };
+
     const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
       const drag = dragRef.current;
       dragRef.current = null;
-      const canvas = canvasRef.current;
-      if (canvas) canvas.releasePointerCapture(e.pointerId);
-      if (!drag || drag.kind !== "create") {
+      endPointer(e);
+      if (!drag || (drag.kind !== "create" && drag.kind !== "marquee")) {
+        draw();
+        return;
+      }
+      if (drag.kind === "marquee") {
+        const inside = obstaclesInRect(drag.start, drag.cursor);
+        const next = drag.additive
+          ? [...new Set([...propsRef.current.selectedIds, ...inside])]
+          : inside;
+        onSelect(next);
         draw();
         return;
       }
@@ -613,7 +797,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
                 fieldDirection: fd,
                 fieldStrength: fs,
               };
-        onSelect(o.id);
+        onSelect([o.id]);
         onChange({ ...lvl, obstacles: [...lvl.obstacles, o] });
       } else if (t === "portal" || t === "accelerator") {
         if (!moved) {
@@ -628,14 +812,20 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
                 acceleratorSpeed: as,
                 acceleratorAccel: aa,
               };
-        onSelect(o.id);
+        onSelect([o.id]);
         onChange({ ...lvl, obstacles: [...lvl.obstacles, o] });
       } else {
         const pts = moved ? [round(start), round(end)] : [round(start)];
         const o = { ...defaultObstacle("wall", pts), wallType: wt };
-        onSelect(o.id);
+        onSelect([o.id]);
         onChange({ ...lvl, obstacles: [...lvl.obstacles, o] });
       }
+      draw();
+    };
+
+    const onPointerCancel = (e: React.PointerEvent<HTMLCanvasElement>) => {
+      dragRef.current = null;
+      endPointer(e);
       draw();
     };
 
@@ -663,6 +853,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onWheel={onWheel}
         onContextMenu={(e) => e.preventDefault()}
       />
