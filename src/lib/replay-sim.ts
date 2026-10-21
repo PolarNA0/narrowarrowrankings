@@ -1457,15 +1457,25 @@ export async function createReplayEngine(
     engine = new mod.GameMechanicsEngine(s as never);
   };
 
+  /**
+   * The pose before a step, but only when a mechanic actually needs it. Reading
+   * the pose is `JSON.parse(engine.state)` — a parse of the whole level, which
+   * costs about 0.002ms per obstacle (3ms on the endless course's ~1600 walls)
+   * and dwarfs the physics step itself. Endless has no switch/breakable/wire, so
+   * paying it every tick was ~99% of the frame. Read lazily, at most once.
+   */
+  const needsPrevPose = hasSwitches || hasBreakables || hasTriggers;
+
   return {
     step(symbol) {
-      const before = read(engine);
+      const before = needsPrevPose ? read(engine) : null;
       engine.process_ticks([symbolToInput(symbol)]);
       if (engine.player_state_code() === 0) {
-        if (hasSwitches || hasBreakables) applyTriggers(before.x, before.y, engine.get_ticks());
+        if (before && (hasSwitches || hasBreakables))
+          applyTriggers(before.x, before.y, engine.get_ticks());
         if (hasMotions || hasPointRewrites) applyGeometry(engine.get_ticks());
         if (hasFields) applyFields();
-        if (hasTriggers) {
+        if (hasTriggers && before) {
           armWire(before.x, before.y);
           applyWire(symbol);
         }
@@ -1473,14 +1483,15 @@ export async function createReplayEngine(
       return read(engine);
     },
     stepCode(symbol) {
-      const before = read(engine);
+      const before = needsPrevPose ? read(engine) : null;
       engine.process_ticks([symbolToInput(symbol)]);
       const code = engine.player_state_code();
       if (code === 0) {
-        if (hasSwitches || hasBreakables) applyTriggers(before.x, before.y, engine.get_ticks());
+        if (before && (hasSwitches || hasBreakables))
+          applyTriggers(before.x, before.y, engine.get_ticks());
         if (hasMotions || hasPointRewrites) applyGeometry(engine.get_ticks());
         if (hasFields) applyFields();
-        if (hasTriggers) {
+        if (hasTriggers && before) {
           armWire(before.x, before.y);
           applyWire(symbol);
         }
