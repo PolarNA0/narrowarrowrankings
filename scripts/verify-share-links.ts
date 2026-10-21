@@ -28,6 +28,9 @@ const win = {
     get origin() {
       return new URL(href).origin;
     },
+    get hostname() {
+      return new URL(href).hostname;
+    },
   },
   history: {
     replaceState(_s: unknown, _t: unknown, url: string) {
@@ -75,6 +78,41 @@ check("share: view=play", url.includes("v=play"), url);
 check("share: site is url-encoded", url.includes("site=id+with+spaces"), url);
 check("share: arrow is url-encoded", url.includes("arrow=Narrow+Arrow"), url);
 check("share: no stray level param", !url.includes("level="), url);
+
+// --- The shared origin is never a sign-in-gated preview host -------------------
+// The published site is public; a Lovable preview surface answers everyone else
+// with a 401. A link copied from the editor must point at the published site.
+const PUBLISHED = "https://narrowarrowrankings.lovable.app";
+const originFor = (h: string) => {
+  href = `https://${h}/?v=play&site=abc`;
+  return siteLevelShareUrl("abc");
+};
+const GATED = [
+  "id-preview--712a12a2-f4ed-4349-9678-37a309567c4c.lovable.app",
+  "project--712a12a2-f4ed-4349-9678-37a309567c4c.lovable.app",
+  "712a12a2-f4ed-4349-9678-37a309567c4c.lovableproject.com",
+  "712a12a2-f4ed-4349-9678-37a309567c4c.lovableproject-dev.com",
+  "preview.gpt-eng.com",
+  "abc.gptengineer.run",
+  "lovable.app",
+  "localhost",
+  "127.0.0.1",
+];
+for (const host of GATED) {
+  const out = originFor(host);
+  check(`share: gated host ${host} → published`, out.startsWith(`${PUBLISHED}/`), out);
+}
+// A real deployment keeps its own origin (a custom domain, say).
+check(
+  "share: a real host keeps its own origin",
+  originFor("ranks.example.com").startsWith("https://ranks.example.com/"),
+  originFor("ranks.example.com"),
+);
+check(
+  "share: the published site keeps its own origin",
+  originFor("narrowarrowrankings.lovable.app").startsWith(`${PUBLISHED}/`),
+  originFor("narrowarrowrankings.lovable.app"),
+);
 
 // --- A link with no arrow omits the param -------------------------------------
 const noArrow = siteLevelShareUrl("abc123");

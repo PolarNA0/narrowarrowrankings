@@ -67,6 +67,50 @@ export function writeUrlState(state: UrlState): void {
   if (next !== current) window.history.replaceState(null, "", next);
 }
 
+/**
+ * The origin a *shared* link should use.
+ *
+ * A share link must point at a host anyone can open. The published site is
+ * public, but a Lovable preview surface — the editor's iframe, an
+ * `id-preview--…lovable.app` host, or a `*.lovableproject.com` sandbox — sits
+ * behind a sign-in gate and answers everyone else with a 401. Copying a link
+ * while the app is open in the editor would therefore bake that gated host into
+ * the URL and send readers to a login wall instead of the level.
+ *
+ * So: on a preview/sandbox host, share the published site's origin instead of
+ * the one we happen to be rendered on. A real deployment keeps its own origin,
+ * and `VITE_PUBLIC_APP_URL` overrides both (e.g. a custom domain).
+ */
+const PUBLISHED_APP_ORIGIN = "https://narrowarrowrankings.lovable.app";
+
+/** Hosts that serve the app only to a signed-in previewer. */
+const PREVIEW_HOST_ZONES = [
+  "lovableproject.com",
+  "lovableproject-dev.com",
+  "gpt-eng.com",
+  "gptengineer.run",
+];
+
+function isGatedPreviewHost(host: string): boolean {
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "lovable.app" ||
+    host.startsWith("id-preview--") ||
+    host.startsWith("project--") ||
+    PREVIEW_HOST_ZONES.some((zone) => host === zone || host.endsWith(`.${zone}`))
+  );
+}
+
+/** The origin a copied link should use — never a gated preview host. */
+export function shareOrigin(): string {
+  if (typeof window === "undefined") return "";
+  const override = import.meta.env?.VITE_PUBLIC_APP_URL;
+  if (override) return String(override).replace(/\/+$/, "");
+  const host = window.location.hostname ?? "";
+  return isGatedPreviewHost(host) ? PUBLISHED_APP_ORIGIN : window.location.origin;
+}
+
 /** The absolute URL for the current state, for a "Copy link" button. */
 export function shareUrl(state: UrlState): string {
   if (typeof window === "undefined") return "";
@@ -76,7 +120,7 @@ export function shareUrl(state: UrlState): string {
     if (value) params.set(PARAM[key], value);
   }
   const query = params.toString();
-  return `${window.location.origin}${window.location.pathname}${query ? `?${query}` : ""}`;
+  return `${shareOrigin()}${window.location.pathname}${query ? `?${query}` : ""}`;
 }
 
 /**
