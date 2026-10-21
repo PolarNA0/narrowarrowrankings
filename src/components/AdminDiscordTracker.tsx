@@ -46,9 +46,18 @@ const DEFAULT_TAS_EMOJIS: Record<Slot, string> = {
 };
 
 /** The site feed's own emojis: the same custom Discord emojis the other feeds use. */
-const DEFAULT_SITE_TEMPLATE =
+// Kept in step with the server defaults in `site-tracker.server.ts`; the two
+// templates are separate because a WR and a lower placement say different
+// things.
+const DEFAULT_SITE_WR_TEMPLATE =
+  "{champion}{emoji} **{player}** beat the world record on {siteBadge}**{level}** with **{time}** [{wrDiff}]";
+const DEFAULT_SITE_POSITION_TEMPLATE =
+  "{emoji} **{player}** took position **{position}** on **{level}** with **{time}** [{wrDiff}]";
+/** The pre-split default, so a config saved with it adopts the new wording. */
+const LEGACY_SITE_TEMPLATE =
   "{emoji}{siteBadge} **{player}** set a new site record on **{level}** with **{time}** [{siteTag}]";
 const DEFAULT_SITE_BADGE = "";
+const DEFAULT_SITE_CHAMPION = "";
 const DEFAULT_SITE_EMOJIS: Record<Slot, string> = {
   narrow: "<:narrow:1356331491746910319>",
   speedy: "<:speedy:1356331493160386620>",
@@ -78,7 +87,11 @@ export function AdminDiscordTracker() {
   const [tasWebhookUrl, setTasWebhookUrl] = React.useState("");
   const [siteEnabled, setSiteEnabled] = React.useState(true);
   const [siteIntervalMinutes, setSiteIntervalMinutes] = React.useState(5);
-  const [siteTemplate, setSiteTemplate] = React.useState(DEFAULT_SITE_TEMPLATE);
+  const [siteTemplate, setSiteTemplate] = React.useState(DEFAULT_SITE_WR_TEMPLATE);
+  const [sitePositionTemplate, setSitePositionTemplate] = React.useState(
+    DEFAULT_SITE_POSITION_TEMPLATE,
+  );
+  const [siteChampion, setSiteChampion] = React.useState(DEFAULT_SITE_CHAMPION);
   const [siteBadge, setSiteBadge] = React.useState(DEFAULT_SITE_BADGE);
   const [siteEmojis, setSiteEmojis] = React.useState<Record<Slot, string>>(DEFAULT_SITE_EMOJIS);
   const [siteWebhookUrl, setSiteWebhookUrl] = React.useState("");
@@ -117,7 +130,16 @@ export function AdminDiscordTracker() {
         setSiteIntervalMinutes(
           Number(data.siteIntervalMinutes) || Number(data.intervalMinutes) || 5,
         );
-        setSiteTemplate(data.siteTemplate || DEFAULT_SITE_TEMPLATE);
+        // A config saved with the pre-split default adopts the new WR wording;
+        // anything hand-written is kept.
+        setSiteTemplate(
+          data.siteWrTemplate ||
+            (data.siteTemplate && data.siteTemplate !== LEGACY_SITE_TEMPLATE
+              ? data.siteTemplate
+              : DEFAULT_SITE_WR_TEMPLATE),
+        );
+        setSitePositionTemplate(data.sitePositionTemplate || DEFAULT_SITE_POSITION_TEMPLATE);
+        setSiteChampion(data.siteChampion ?? DEFAULT_SITE_CHAMPION);
         setSiteBadge(data.siteBadge ?? DEFAULT_SITE_BADGE);
         setSiteEmojis({
           narrow: pickTasEmoji("narrow", data.siteEmojis?.narrow),
@@ -149,7 +171,9 @@ export function AdminDiscordTracker() {
         tasWebhookUrl: tasWebhookUrl.trim(),
         siteEnabled,
         siteIntervalMinutes: Math.max(5, Number(siteIntervalMinutes) || 5),
-        siteTemplate,
+        siteWrTemplate: siteTemplate,
+        sitePositionTemplate,
+        siteChampion,
         siteBadge,
         siteEmojis,
         siteWebhookUrl: siteWebhookUrl.trim(),
@@ -565,6 +589,18 @@ export function AdminDiscordTracker() {
             </span>
           </div>
           <div className="flex items-center gap-3">
+            <Input
+              value={siteChampion}
+              onChange={(e) => setSiteChampion(e.target.value)}
+              className="w-40 bg-black/40 border-white/10 text-xs font-mono"
+              placeholder="<:champion:…>"
+            />
+            <span className="text-xs text-slate-400">
+              Mark shown before a world record (the <code>{"{champion}"}</code> tag). Clear it to
+              hide.
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
             <Switch checked={siteEnabled} onCheckedChange={setSiteEnabled} />
             <span className="text-xs text-slate-400">Site announcements enabled</span>
           </div>
@@ -617,7 +653,7 @@ export function AdminDiscordTracker() {
           </CardTitle>
           <CardDescription>
             {
-              'Tags: {emoji} {siteBadge} {player} {level} {time} {clock} {arrow} {author} {custom} {siteTag} {diff} {previous} — {emoji} is the arrow of the record run, {time} is seconds and {clock} the m:ss.mmm clock, {custom} prints "custom" for a level using site-only mechanics, {siteTag} is the ready-made "SITE -x.xxx" bracket, and {diff} the raw gain over the previous record.'
+              'Two messages: the world-record one (a run that takes 1st) and the position one (a run that places 2nd or worse, announced from the submit path). Tags: {emoji} {siteBadge} {champion} {player} {level} {time} {clock} {arrow} {author} {custom} {position} {wrDiff} {diff} {previous} {recordHolder} — {emoji} is the run\'s arrow, {time} is seconds and {clock} the m:ss.mmm clock, {position} is the place (1, 2, 3…), {wrDiff} is the ready-made "WR -x.xxx" (ahead) or "WR +x.xxx" (behind) bracket, {diff} the raw signed gap, {recordHolder} the current record holder and {champion} the mark above.'
             }
           </CardDescription>
         </CardHeader>
@@ -642,12 +678,28 @@ export function AdminDiscordTracker() {
               </div>
             ))}
           </div>
-          <Textarea
-            value={siteTemplate}
-            onChange={(e) => setSiteTemplate(e.target.value)}
-            rows={3}
-            className="bg-black/40 border-white/10 font-mono text-xs"
-          />
+          <div className="space-y-2">
+            <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+              World record (1st place)
+            </span>
+            <Textarea
+              value={siteTemplate}
+              onChange={(e) => setSiteTemplate(e.target.value)}
+              rows={3}
+              className="bg-black/40 border-white/10 font-mono text-xs"
+            />
+          </div>
+          <div className="space-y-2">
+            <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+              Position (2nd place or worse)
+            </span>
+            <Textarea
+              value={sitePositionTemplate}
+              onChange={(e) => setSitePositionTemplate(e.target.value)}
+              rows={3}
+              className="bg-black/40 border-white/10 font-mono text-xs"
+            />
+          </div>
           <Button
             onClick={save}
             disabled={saving}

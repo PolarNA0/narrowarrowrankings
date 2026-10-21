@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
   DEFAULT_SITE_EMOJIS,
-  DEFAULT_SITE_TEMPLATE,
+  DEFAULT_SITE_POSITION_TEMPLATE,
+  DEFAULT_SITE_WR_TEMPLATE,
   isDiscordWebhook,
   postDiscordMessage,
   runSiteCheck,
@@ -9,7 +10,11 @@ import {
 import { listSiteLevels } from "@/lib/site-levels.server";
 
 // Re-exported so the admin UI and any docs can import the defaults from here.
-export { DEFAULT_SITE_TEMPLATE, DEFAULT_SITE_EMOJIS } from "@/lib/site-tracker.server";
+export {
+  DEFAULT_SITE_EMOJIS,
+  DEFAULT_SITE_POSITION_TEMPLATE,
+  DEFAULT_SITE_WR_TEMPLATE,
+} from "@/lib/site-tracker.server";
 
 /**
  * The site level record tracker endpoint.

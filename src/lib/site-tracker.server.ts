@@ -20,12 +20,30 @@ import { arrowKind } from "@/lib/arrow-sprites";
 
 export type SiteArrowSlot = "narrow" | "speedy" | "energy";
 
-/** Default message: the arrow emoji, the player, the level, the time and the gain. */
-export const DEFAULT_SITE_TEMPLATE =
+/**
+ * The world-record message (a run that takes first place) and the position
+ * message (a run that places second or worse). They are separate templates
+ * because they say different things: one beats the record, the other joins the
+ * board behind it.
+ */
+export const DEFAULT_SITE_WR_TEMPLATE =
+  "{champion}{emoji} **{player}** beat the world record on {siteBadge}**{level}** with **{time}** [{wrDiff}]";
+
+export const DEFAULT_SITE_POSITION_TEMPLATE =
+  "{emoji} **{player}** took position **{position}** on **{level}** with **{time}** [{wrDiff}]";
+
+/**
+ * The default before the WR/position split. A config saved back then holds this
+ * string verbatim; it is treated as "never customized" so the new wording takes
+ * effect, while a hand-written template is always left alone.
+ */
+export const LEGACY_SITE_TEMPLATE =
   "{emoji}{siteBadge} **{player}** set a new site record on **{level}** with **{time}** [{siteTag}]";
 
 /** No badge by default; the tag exists so a deployment can add e.g. a globe. */
 export const DEFAULT_SITE_BADGE = "";
+/** No champion emote by default; the tag marks a world record. */
+export const DEFAULT_SITE_CHAMPION = "";
 
 export const DEFAULT_SITE_EMOJIS: Record<SiteArrowSlot, string> = {
   narrow: "<:narrow:1356331491746910319>",
@@ -36,6 +54,8 @@ export const DEFAULT_SITE_EMOJIS: Record<SiteArrowSlot, string> = {
 export interface SiteMessageValues {
   emoji: string;
   siteBadge: string;
+  /** Marks a world record, e.g. a trophy; empty on a position message. */
+  champion: string;
   player: string;
   level: string;
   time: string;
@@ -44,23 +64,34 @@ export interface SiteMessageValues {
   author: string;
   /** "custom" when the level uses the site-only puzzle/field mechanics, else "". */
   custom: string;
-  /** Ready-made bracket content, e.g. `SITE -0.155`; empty on a level's first record. */
+  /** The player's place on the board, e.g. "3". */
+  position: string;
+  /** Ready-made bracket content, e.g. `WR -0.155` or `WR +1.204`. */
+  wrDiff: string;
+  /** Alias of `{wrDiff}`, kept so older templates that used `{siteTag}` still fill. */
   siteTag: string;
-  /** Raw gain in seconds, or "—" when there is nothing to compare against. */
+  /** Raw signed gap in seconds: "-0.155" when ahead of the WR, "+1.204" behind, "—" with no WR. */
   diff: string;
   previous: string;
+  /** The record holder's name, or "—" when the board has no other run. */
+  recordHolder: string;
 }
 
 /**
- * Templates often carry a literal sign in front of a diff that already has one
- * (`[SITE -{diff}]` with `0.155` renders `[SITE --0.155]`), and a tag with no
- * value leaves an empty bracket pair. Collapse both so every bracket reads
+ * Templates often carry a literal sign in front of a diff that is already
+ * signed (`[WR +{diff}]` with `-0.155` renders `[WR +-0.155]`), and a tag with
+ * no value leaves an empty bracket pair. Collapse both so every bracket reads
  * cleanly, whichever template the deployment has saved.
+ *
+ * Two signs in a row are resolved in favour of the *value's* sign, which is the
+ * meaningful one: `[WR --3.000]` and `[WR +-3.000]` both mean 3.000 ahead, so
+ * both must render `[WR -3.000]`. Dropping the literal sign rather than the
+ * value's is what keeps a genuine negative gain from flipping to a positive one.
  */
 export function tidySiteTags(content: string): string {
   return content
-    .replace(/\[(SITE|site) ([+-])[+-]/g, "[$1 $2")
-    .replace(/ \[(SITE|site)\s*(-?—)?\s*\]/g, "")
+    .replace(/\[(WR|SITE|site) [+-](?=[+-])/g, "[$1 ")
+    .replace(/ ?\[(WR|SITE|site)\s*[+-]?\s*—?\s*\]/g, "")
     .replace(/\[\s*\] ?/g, "")
     .trim();
 }
@@ -71,6 +102,7 @@ export function renderSiteMessage(template: string, v: SiteMessageValues): strin
     template
       .replaceAll("{emoji}", v.emoji)
       .replaceAll("{siteBadge}", v.siteBadge)
+      .replaceAll("{champion}", v.champion)
       .replaceAll("{player}", v.player)
       .replaceAll("{level}", v.level)
       .replaceAll("{time}", v.time)
@@ -78,13 +110,27 @@ export function renderSiteMessage(template: string, v: SiteMessageValues): strin
       .replaceAll("{arrow}", v.arrow)
       .replaceAll("{author}", v.author)
       .replaceAll("{custom}", v.custom)
+      .replaceAll("{position}", v.position)
+      .replaceAll("{wrDiff}", v.wrDiff)
+      // `{tags}` and `{siteTag}` are the same ready-made bracket content; a
+      // template wraps them as `[{tags}]` and empty tags collapse cleanly.
       .replaceAll("{siteTag}", v.siteTag)
+      .replaceAll("{tags}", v.siteTag)
       .replaceAll("{diff}", v.diff)
       .replaceAll("{previous}", v.previous)
-      // `{tags}` is the ready-made bracket content; a template wraps it as
-      // `[{tags}]` and empty tags collapse without leaving a stray `[]`.
-      .replaceAll("{tags}", v.siteTag),
+      .replaceAll("{recordHolder}", v.recordHolder),
   );
+}
+
+/**
+ * Pick the template to render with. A config that predates the WR/position
+ * split holds the old default verbatim, which is treated as "not customized" so
+ * the new pair applies; anything hand-written is used as-is.
+ */
+export function resolveSiteTemplate(saved: string | undefined, kind: "wr" | "position"): string {
+  const fallback = kind === "wr" ? DEFAULT_SITE_WR_TEMPLATE : DEFAULT_SITE_POSITION_TEMPLATE;
+  if (!saved || saved === LEGACY_SITE_TEMPLATE) return fallback;
+  return saved;
 }
 
 export interface SitePrior {
@@ -131,8 +177,14 @@ interface SiteTrackerConfig {
   siteWebhookUrl?: string;
   siteEnabled?: boolean;
   siteIntervalMinutes?: number;
+  /** Legacy single template (pre WR/position split); read, never written anew. */
   siteTemplate?: string;
+  /** Template for a run that takes first place. */
+  siteWrTemplate?: string;
+  /** Template for a run that places second or worse. */
+  sitePositionTemplate?: string;
   siteBadge?: string;
+  siteChampion?: string;
   siteEmojis?: Partial<Record<SiteArrowSlot, string>>;
 }
 
@@ -148,6 +200,25 @@ export interface SiteCheckResult {
   skipped?: boolean;
   reason?: string;
   intervalMinutes?: number;
+  /** The messages this check built, in order. Exposed so a caller can preview
+   *  exactly what would be posted (and so the tracker's behaviour is testable
+   *  without a webhook). */
+  messages?: string[];
+}
+
+/**
+ * A live submission the tracker should announce: the run that was just added to
+ * a level's board. The route supplies it so a run that places second or worse
+ * can be announced as a position, which a bulk poll cannot see (it only compares
+ * each level's best against the baseline).
+ */
+export interface SiteSubmission {
+  levelId: string;
+  /** The stored entry's id, used to find its place on the board. */
+  id: string;
+  username: string;
+  timeMs: number;
+  arrowName: string;
 }
 
 /** "1:02.345" — the site board's own clock format, for the `{clock}` tag. */
@@ -189,30 +260,76 @@ function memoryStoreEnabled(): boolean {
 }
 
 /**
- * Build the Discord message for a level's record run. Pure, so the exact content
- * the tracker would post is testable without a webhook.
+ * Build the Discord message for a run that takes first place. Pure, so the exact
+ * content the tracker would post is testable without a webhook. The bracket is
+ * `WR -x.xxx` (the gain over the previous record), or empty on a level's first
+ * record where there is nothing to compare against.
  */
 export function buildSiteRecordMessage(
   level: { name: string; author: string; arrowName: string; hasCustomMechanics: boolean },
   best: { username: string; timeMs: number; arrowName: string },
   prior: SitePrior | undefined,
-  config: Pick<SiteTrackerConfig, "siteTemplate" | "siteBadge" | "siteEmojis"> = {},
+  config: Pick<
+    SiteTrackerConfig,
+    "siteTemplate" | "siteWrTemplate" | "siteBadge" | "siteChampion" | "siteEmojis"
+  > = {},
 ): string {
   const slot = arrowKind(best.arrowName || level.arrowName);
   const diffSec = prior ? (prior.timeMs - best.timeMs) / 1000 : null;
-  return renderSiteMessage(config.siteTemplate || DEFAULT_SITE_TEMPLATE, {
+  return renderSiteMessage(
+    resolveSiteTemplate(config.siteWrTemplate ?? config.siteTemplate, "wr"),
+    {
+      emoji: config.siteEmojis?.[slot] || DEFAULT_SITE_EMOJIS[slot],
+      siteBadge: config.siteBadge ?? DEFAULT_SITE_BADGE,
+      champion: config.siteChampion ?? DEFAULT_SITE_CHAMPION,
+      player: best.username,
+      level: level.name,
+      time: `${(best.timeMs / 1000).toFixed(3)}s`,
+      clock: clock(best.timeMs),
+      arrow: best.arrowName || level.arrowName,
+      author: level.author,
+      custom: level.hasCustomMechanics ? "custom" : "",
+      position: "1",
+      wrDiff: diffSec == null ? "" : `WR -${diffSec.toFixed(3)}`,
+      siteTag: diffSec == null ? "" : `WR -${diffSec.toFixed(3)}`,
+      diff: diffSec == null ? "—" : `-${diffSec.toFixed(3)}`,
+      previous: prior?.username ?? "—",
+      recordHolder: prior?.username ?? "—",
+    },
+  );
+}
+
+/**
+ * Build the Discord message for a run that places second or worse. `wrTimeMs` is
+ * the board's fastest time (the world record), so the bracket reads `WR +x.xxx`
+ * — how far this run sits behind it.
+ */
+export function buildSitePositionMessage(
+  level: { name: string; author: string; arrowName: string; hasCustomMechanics: boolean },
+  run: { username: string; timeMs: number; arrowName: string; position: number },
+  wr: SitePrior | undefined,
+  config: Pick<SiteTrackerConfig, "sitePositionTemplate" | "siteBadge" | "siteEmojis"> = {},
+): string {
+  const slot = arrowKind(run.arrowName || level.arrowName);
+  const gapSec = wr ? (run.timeMs - wr.timeMs) / 1000 : null;
+  return renderSiteMessage(resolveSiteTemplate(config.sitePositionTemplate, "position"), {
     emoji: config.siteEmojis?.[slot] || DEFAULT_SITE_EMOJIS[slot],
     siteBadge: config.siteBadge ?? DEFAULT_SITE_BADGE,
-    player: best.username,
+    // A position message is never a record, so the champion mark is empty.
+    champion: "",
+    player: run.username,
     level: level.name,
-    time: `${(best.timeMs / 1000).toFixed(3)}s`,
-    clock: clock(best.timeMs),
-    arrow: best.arrowName || level.arrowName,
+    time: `${(run.timeMs / 1000).toFixed(3)}s`,
+    clock: clock(run.timeMs),
+    arrow: run.arrowName || level.arrowName,
     author: level.author,
     custom: level.hasCustomMechanics ? "custom" : "",
-    siteTag: diffSec == null ? "" : `SITE -${diffSec.toFixed(3)}`,
-    diff: diffSec == null ? "—" : diffSec.toFixed(3),
-    previous: prior?.username ?? "—",
+    position: String(run.position),
+    wrDiff: gapSec == null ? "" : `WR +${gapSec.toFixed(3)}`,
+    siteTag: gapSec == null ? "" : `WR +${gapSec.toFixed(3)}`,
+    diff: gapSec == null ? "—" : `+${gapSec.toFixed(3)}`,
+    previous: wr?.username ?? "—",
+    recordHolder: wr?.username ?? "—",
   });
 }
 
@@ -249,10 +366,23 @@ async function writeDoc(docId: string, data: unknown): Promise<void> {
  * Check the given site levels for new records and announce them. Passing `force`
  * ignores the poll interval — the submit path uses it so a fresh record is
  * announced immediately.
+ *
+ * `submission` is a live run the route just stored. When the level's best is a
+ * new record it is announced as a world record (the usual path); when it is not
+ * — the run placed second or worse — it is announced as a position instead,
+ * which the poll alone cannot see. The record path is deliberately unchanged:
+ * the submission only *adds* a position message, it never suppresses the record
+ * message, so a submission that does set the record still announces it exactly
+ * once.
  */
 export async function runSiteCheck(
   levelIds: string[],
-  opts: { force?: boolean; announceAll?: boolean; fromSubmit?: boolean } = {},
+  opts: {
+    force?: boolean;
+    announceAll?: boolean;
+    fromSubmit?: boolean;
+    submission?: SiteSubmission;
+  } = {},
 ): Promise<SiteCheckResult> {
   let configRow: unknown;
   let stateRow: unknown;
@@ -286,6 +416,9 @@ export async function runSiteCheck(
 
   const next: SiteRecordState = { ...previous };
   const messages: string[] = [];
+  // A level whose best run set a record, so the position pass knows to leave it
+  // alone (its run was already announced as the world record).
+  const announcedRecords = new Set<string>();
 
   const wanted = new Set(levelIds);
   const levels = (await listSiteLevels()).filter((l) => wanted.has(l.id));
@@ -309,8 +442,16 @@ export async function runSiteCheck(
         fromSubmit: opts.fromSubmit,
       });
       next[level.id] = { username: best.username, timeMs: best.timeMs };
+
+      // With a live submission in hand, announce the level best only when the
+      // submission *is* that best. A submission that placed lower is announced
+      // by the position pass below; announcing the existing best here would
+      // credit the record holder's run to this submission instead.
+      const sub = opts.submission;
+      if (sub && sub.levelId === level.id && best.id !== sub.id) continue;
       if (!decision.announce) continue;
 
+      announcedRecords.add(level.id);
       messages.push(
         buildSiteRecordMessage(
           level,
@@ -328,6 +469,36 @@ export async function runSiteCheck(
 
   await Promise.all(Array.from({ length: 4 }, worker));
 
+  // A live submission that did not set the record: announce where it placed.
+  // Only the submission path can do this — the poll sees a level's best, not the
+  // run that was just added — so it is gated on `submission` being present.
+  if (opts.submission) {
+    const sub = opts.submission;
+    const level = levels.find((l) => l.id === sub.levelId);
+    if (level && !announcedRecords.has(level.id)) {
+      const entries = sortSiteScores(await readSiteScores(level.id));
+      const rank = entries.findIndex((e) => e.id === sub.id);
+      const wr = entries[0];
+      // rank 0 is the record (handled above); a missing id means the board
+      // changed under us, so there is nothing reliable to announce.
+      if (rank > 0 && wr) {
+        messages.push(
+          buildSitePositionMessage(
+            level,
+            {
+              username: sub.username,
+              timeMs: sub.timeMs,
+              arrowName: sub.arrowName || level.arrowName,
+              position: rank + 1,
+            },
+            { username: wr.username, timeMs: wr.timeMs },
+            config,
+          ),
+        );
+      }
+    }
+  }
+
   await writeDoc("siteRecordState", { ...next, __lastRunAt: new Date().toISOString() });
 
   let sent = 0;
@@ -342,5 +513,6 @@ export async function runSiteCheck(
     newRecords: messages.length,
     sent,
     baseline: isFirstRun,
+    messages,
   };
 }

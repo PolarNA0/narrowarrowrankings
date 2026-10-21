@@ -8,11 +8,15 @@
  * that had no board at the last check — is announced.
  */
 import {
-  DEFAULT_SITE_TEMPLATE,
+  DEFAULT_SITE_POSITION_TEMPLATE,
+  DEFAULT_SITE_WR_TEMPLATE,
+  buildSitePositionMessage,
   decideSiteRecord,
   renderSiteMessage,
+  resolveSiteTemplate,
   tidySiteTags,
   type SitePrior,
+  type SiteMessageValues,
 } from "@/lib/site-tracker.server";
 
 let failures = 0;
@@ -22,6 +26,27 @@ const check = (label: string, ok: boolean, detail?: unknown) => {
 };
 
 const prior = (timeMs: number, username = "Ash"): SitePrior => ({ username, timeMs });
+
+/** Every value a template can reference, so a render never has an undefined tag. */
+const values = (over: Partial<SiteMessageValues> = {}): SiteMessageValues => ({
+  emoji: "🏹",
+  siteBadge: "",
+  champion: "",
+  player: "Ash",
+  level: "Canyon Run",
+  time: "9.000s",
+  clock: "0:09.000",
+  arrow: "Narrow Arrow",
+  author: "Polar",
+  custom: "",
+  position: "1",
+  wrDiff: "",
+  siteTag: "",
+  diff: "—",
+  previous: "—",
+  recordHolder: "—",
+  ...over,
+});
 
 // --- Decision: cold tracker, no prior ----------------------------------------
 // A bulk poll that seeds a cold tracker stays silent, so switching the feed on
@@ -57,100 +82,108 @@ check("equal run: not new, not announced", !equal.isNew && !equal.announce);
 const forced = decideSiteRecord(undefined, 10_000, { isFirstRun: true, announceAll: true });
 check("announceAll: cold baseline is announced", forced.announce);
 
-// --- Rendering: the default template -----------------------------------------
-const rendered = renderSiteMessage(DEFAULT_SITE_TEMPLATE, {
-  emoji: "<:narrow:1>",
-  siteBadge: "",
-  player: "Ash",
-  level: "Canyon Run",
-  time: "9.000s",
-  clock: "0:09.000",
-  arrow: "Narrow Arrow",
-  author: "Polar",
-  custom: "custom",
-  siteTag: "SITE -3.000",
-  diff: "3.000",
-  previous: "Ash",
-});
+// --- Rendering: the default WR template --------------------------------------
+const rendered = renderSiteMessage(
+  DEFAULT_SITE_WR_TEMPLATE,
+  values({ siteTag: "WR -3.000", wrDiff: "WR -3.000", diff: "-3.000" }),
+);
 check(
-  "default template renders player/level/time/tag",
+  "default WR template renders player/level/time/tag",
   rendered.includes("**Ash**") &&
     rendered.includes("**Canyon Run**") &&
     rendered.includes("**9.000s**") &&
-    rendered.includes("[SITE -3.000]"),
+    rendered.includes("[WR -3.000]"),
   rendered,
 );
 
 // --- Rendering: a first record drops the empty bracket -----------------------
-// No previous record means no gain, so `[SITE --]` must not survive.
-const firstRender = renderSiteMessage(DEFAULT_SITE_TEMPLATE, {
-  emoji: "🏹",
-  siteBadge: "",
-  player: "Ash",
-  level: "Canyon Run",
-  time: "9.000s",
-  clock: "0:09.000",
-  arrow: "Narrow Arrow",
-  author: "Polar",
-  custom: "",
-  siteTag: "",
-  diff: "—",
-  previous: "—",
-});
+// No previous record means no gain, so `[WR -]` must not survive.
+const firstRender = renderSiteMessage(DEFAULT_SITE_WR_TEMPLATE, values());
 check(
   "first record: no empty bracket",
-  !firstRender.includes("[]") && !firstRender.includes("[SITE"),
+  !firstRender.includes("[]") && !firstRender.includes("[WR"),
   firstRender,
 );
+
+// --- Rendering: the default position template --------------------------------
+const posRender = renderSiteMessage(
+  DEFAULT_SITE_POSITION_TEMPLATE,
+  values({ position: "3", wrDiff: "WR +1.204", diff: "+1.204" }),
+);
+check(
+  "default position template renders place and gap",
+  posRender.includes("**Ash**") &&
+    posRender.includes("**3**") &&
+    posRender.includes("**Canyon Run**") &&
+    posRender.includes("[WR +1.204]"),
+  posRender,
+);
+
+// --- Rendering: a position message never carries the champion mark -----------
+// The guarantee lives in the builder, which hardcodes an empty `{champion}` and
+// does not even accept a `siteChampion`, so a configured trophy cannot leak in.
+const championPos = buildSitePositionMessage(
+  { name: "L", author: "P", arrowName: "Narrow Arrow", hasCustomMechanics: false },
+  { username: "Ash", timeMs: 9_000, arrowName: "Narrow Arrow", position: 2 },
+  { username: "Kai", timeMs: 8_000 },
+  { sitePositionTemplate: "{champion}{player}", siteBadge: "" },
+);
+check("position builder: ignores any champion mark", championPos === "Ash", championPos);
 
 // --- tidySiteTags heals a legacy doubled sign --------------------------------
 check(
   "tidy collapses a doubled sign",
-  tidySiteTags("[SITE --3.000]") === "[SITE -3.000]",
-  tidySiteTags("[SITE --3.000]"),
+  tidySiteTags("[WR --3.000]") === "[WR -3.000]",
+  tidySiteTags("[WR --3.000]"),
 );
 check(
   "tidy drops a value-less bracket",
-  tidySiteTags("Ash won [SITE —] today") === "Ash won today",
-  tidySiteTags("Ash won [SITE —] today"),
+  tidySiteTags("Ash won [WR —] today") === "Ash won today",
+  tidySiteTags("Ash won [WR —] today"),
 );
 
 // --- Rendering: a saved legacy template with `-{diff}` still reads cleanly ----
+// `{diff}` is signed, so a literal `-` in front of a negative gain must not
+// double up, and a literal `+` in front of a positive one must not either.
 check(
   "legacy `-[{diff}]` template does not double the sign",
-  renderSiteMessage("[SITE -{diff}]", {
-    emoji: "🏹",
-    siteBadge: "",
-    player: "Ash",
-    level: "Canyon Run",
-    time: "9.000s",
-    clock: "0:09.000",
-    arrow: "Narrow Arrow",
-    author: "Polar",
-    custom: "",
-    siteTag: "SITE -3.000",
-    diff: "3.000",
-    previous: "Ash",
-  }) === "[SITE -3.000]",
+  renderSiteMessage("[WR -{diff}]", values({ diff: "-3.000" })) === "[WR -3.000]",
+  renderSiteMessage("[WR -{diff}]", values({ diff: "-3.000" })),
+);
+check(
+  "legacy `+[{diff}]` template does not double the sign",
+  renderSiteMessage("[WR +{diff}]", values({ diff: "+1.204" })) === "[WR +1.204]",
+  renderSiteMessage("[WR +{diff}]", values({ diff: "+1.204" })),
+);
+check(
+  "legacy `+[{diff}]` template keeps a genuine negative sign",
+  renderSiteMessage("[WR +{diff}]", values({ diff: "-3.000" })) === "[WR -3.000]",
+  renderSiteMessage("[WR +{diff}]", values({ diff: "-3.000" })),
 );
 
 // --- Rendering: `{tags}` mirrors `{siteTag}` ---------------------------------
 check(
   "{tags} equals the site tag",
-  renderSiteMessage("[{tags}]", {
-    emoji: "🏹",
-    siteBadge: "",
-    player: "Ash",
-    level: "L",
-    time: "9.000s",
-    clock: "0:09.000",
-    arrow: "Narrow Arrow",
-    author: "Polar",
-    custom: "",
-    siteTag: "SITE -1.000",
-    diff: "1.000",
-    previous: "Ash",
-  }) === "[SITE -1.000]",
+  renderSiteMessage("[{tags}]", values({ siteTag: "WR -1.000" })) === "[WR -1.000]",
+  renderSiteMessage("[{tags}]", values({ siteTag: "WR -1.000" })),
+);
+
+// --- resolveSiteTemplate: a legacy saved config adopts the new wording -------
+// The old default was stored verbatim; it must not pin the old wording forever.
+check(
+  "a config holding the legacy default adopts the new WR template",
+  resolveSiteTemplate(
+    "{emoji}{siteBadge} **{player}** set a new site record on **{level}** with **{time}** [{siteTag}]",
+    "wr",
+  ) === DEFAULT_SITE_WR_TEMPLATE,
+);
+check(
+  "an empty config uses the default",
+  resolveSiteTemplate(undefined, "position") === DEFAULT_SITE_POSITION_TEMPLATE,
+);
+check(
+  "a hand-written template is kept",
+  resolveSiteTemplate("{player} did a thing", "wr") === "{player} did a thing",
 );
 
 // --- End to end: runSiteCheck against the in-memory stores -------------------
@@ -302,21 +335,22 @@ check(
 );
 check(
   "builder: first record has no empty bracket",
-  !firstMsg.includes("[]") && !firstMsg.includes("SITE"),
+  !firstMsg.includes("[]") && !firstMsg.includes("WR"),
   firstMsg,
 );
 check(
   "builder: {custom} renders for a mechanics level",
-  buildSiteRecordMessage(levelMeta, bestRun, undefined, { siteTemplate: "{custom}" }) === "custom",
+  buildSiteRecordMessage(levelMeta, bestRun, undefined, { siteWrTemplate: "{custom}" }) ===
+    "custom",
 );
 
 // A later record shows the gain over the previous holder.
 const improvedMsg = buildSiteRecordMessage(levelMeta, bestRun, prior(11_500, "Ash"), {
-  siteTemplate: "{player} took it from {previous} by {diff}s [{siteTag}]",
+  siteWrTemplate: "{player} took it from {previous} by {diff}s [{wrDiff}]",
 });
 check(
   "builder: an improvement names the previous holder and the gain",
-  improvedMsg === "Polar took it from Ash by 3.500s [SITE -3.500]",
+  improvedMsg === "Polar took it from Ash by -3.500s [WR -3.500]",
   improvedMsg,
 );
 
@@ -327,8 +361,180 @@ check(
     levelMeta,
     { username: "P", timeMs: 62_345, arrowName: "Speedy Arrow" },
     undefined,
-    { siteTemplate: "{clock}" },
+    { siteWrTemplate: "{clock}" },
   ) === "1:02.345",
+);
+
+// A legacy config (single `siteTemplate`) still drives the WR message.
+check(
+  "builder: a legacy siteTemplate still renders the WR message",
+  buildSiteRecordMessage(levelMeta, bestRun, undefined, {
+    siteTemplate: "{player} @ {level}",
+  }) === "Polar @ Wall Blink",
+);
+
+// --- Builder: the position message -------------------------------------------
+const wrRun = { username: "Ash", timeMs: 7_500 };
+const positionMsg = buildSitePositionMessage(
+  levelMeta,
+  { username: "Polar", timeMs: 8_000, arrowName: "Narrow Arrow", position: 3 },
+  wrRun,
+);
+check(
+  "position builder: names the player, place, level and gap",
+  positionMsg.includes("**Polar**") &&
+    positionMsg.includes("**3**") &&
+    positionMsg.includes("**Wall Blink**") &&
+    positionMsg.includes("[WR +0.500]"),
+  positionMsg,
+);
+check(
+  "position builder: never shows the champion mark",
+  !positionMsg.includes("{champion}") && !positionMsg.startsWith("🏆"),
+  positionMsg,
+);
+
+// --- End to end: a submission that places 2nd announces a position ------------
+const posLevelId = "site-e2e-pos";
+await addSiteLevel({
+  id: posLevelId,
+  name: "Position Run",
+  author: "Polar",
+  arrowName: "Narrow Arrow",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  data: { map_name: "Position Run", game_mode: "speedrun", obstacles: [] },
+});
+const named = (id: string, username: string, timeMs: number, inputs: string) => ({
+  id,
+  username,
+  timeMs,
+  arrowName: "Narrow Arrow",
+  inputCount: 10,
+  inputs,
+  createdAt: "2026-01-02T00:00:00.000Z",
+});
+
+// The record holder is already on the board.
+await addSiteScore(posLevelId, named("pos-a", "Ash", 7_000, "pos-run-a"));
+// Seed the baseline quietly so the record is not announced here.
+await runSiteCheck([posLevelId], { force: true, fromSubmit: true });
+
+// A slower run arrives: it is not a record, but it is a placement, and only the
+// submit path can see it. It must be announced as a position.
+await addSiteScore(posLevelId, named("pos-b", "Polar", 8_500, "pos-run-b"));
+const placed = await runSiteCheck([posLevelId], {
+  force: true,
+  fromSubmit: true,
+  submission: {
+    levelId: posLevelId,
+    id: "pos-b",
+    username: "Polar",
+    timeMs: 8_500,
+    arrowName: "Narrow Arrow",
+  },
+});
+check(
+  "e2e: a slower submission is announced as a position",
+  placed.newRecords === 1,
+  JSON.stringify(placed),
+);
+
+// The same run without the submission context is silent — a bulk poll cannot
+// see placements, only a new level best.
+await addSiteScore(posLevelId, named("pos-c", "Kai", 9_000, "pos-run-c"));
+const polled = await runSiteCheck([posLevelId], { force: true });
+check(
+  "e2e: a bulk poll does not announce a placement",
+  polled.newRecords === 0,
+  JSON.stringify(polled),
+);
+
+// A submission that *is* the new record announces the WR, not a position, and
+// only once.
+await addSiteScore(posLevelId, named("pos-d", "Ash", 6_000, "pos-run-d"));
+const newWr = await runSiteCheck([posLevelId], {
+  force: true,
+  fromSubmit: true,
+  submission: {
+    levelId: posLevelId,
+    id: "pos-d",
+    username: "Ash",
+    timeMs: 6_000,
+    arrowName: "Narrow Arrow",
+  },
+});
+check(
+  "e2e: a record submission announces once (WR, not also a position)",
+  newWr.newRecords === 1,
+  JSON.stringify(newWr),
+);
+
+// REGRESSION: a cold tracker, a level that already has a record, and a *slower*
+// submission. The submission must be announced as its own position — the
+// existing record holder's run must not be announced in its place.
+const coldLevelId = "site-e2e-cold";
+await addSiteLevel({
+  id: coldLevelId,
+  name: "Cold Run",
+  author: "Polar",
+  arrowName: "Narrow Arrow",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  data: { map_name: "Cold Run", game_mode: "speedrun", obstacles: [] },
+});
+await addSiteScore(coldLevelId, named("cold-a", "Ash", 7_000, "cold-run-a"));
+await addSiteScore(coldLevelId, named("cold-b", "Polar", 9_000, "cold-run-b"));
+const coldPlacement = await runSiteCheck([coldLevelId], {
+  force: true,
+  fromSubmit: true,
+  submission: {
+    levelId: coldLevelId,
+    id: "cold-b",
+    username: "Polar",
+    timeMs: 9_000,
+    arrowName: "Narrow Arrow",
+  },
+});
+check(
+  "e2e: a slower submission on a cold tracker announces exactly once (the placement, not the existing record)",
+  coldPlacement.newRecords === 1 &&
+    coldPlacement.messages?.[0]?.includes("took position **2**") === true &&
+    coldPlacement.messages?.[0]?.includes("**Polar**") === true,
+  JSON.stringify(coldPlacement.messages),
+);
+
+// A record submission announces the world record, naming the submitter — not a
+// position, and not the previous holder.
+check(
+  "e2e: a record submission's message is the WR for the submitter",
+  newWr.messages?.[0]?.includes("beat the world record") === true &&
+    newWr.messages?.[0]?.includes("**Ash**") === true,
+  JSON.stringify(newWr.messages),
+);
+
+// A non-record submission names the submitter as the one who placed, never the
+// record holder whose run sits above it.
+check(
+  "e2e: a placement names the submitter, not the record holder",
+  placed.messages?.[0]?.includes("**Polar**") === true &&
+    placed.messages?.[0]?.includes("**Ash**") === false,
+  JSON.stringify(placed.messages),
+);
+
+// --- A saved position template drives the message -----------------------------
+// Delivery itself is the same `postDiscordMessage` path proven above; what is
+// new is that the saved `sitePositionTemplate` (not just the default) is used.
+const delivered = buildSitePositionMessage(
+  { name: "Cold Run", author: "Polar", arrowName: "Narrow Arrow", hasCustomMechanics: false },
+  { username: "Polar", timeMs: 9_000, arrowName: "Narrow Arrow", position: 2 },
+  { username: "Ash", timeMs: 7_000 },
+  { sitePositionTemplate: "{player} placed {position} [{wrDiff}]" },
+);
+check(
+  "builder: a saved position template renders the placement",
+  delivered === "Polar placed 2 [WR +2.000]",
+  delivered,
 );
 
 console.log(`\n${failures === 0 ? "all" : `${failures} failing`} site tracker checks`);
