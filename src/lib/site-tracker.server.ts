@@ -104,20 +104,23 @@ export interface SiteDecision {
 /**
  * Decide whether a level's best run is a record worth announcing.
  *
- * A level+levelId is baselined once a best has been recorded for it. A run that
- * improves on a baselined best is a record — including the very first run on a
- * level that had no board at the last check, which should not go unannounced.
- * Only the run that *sets* the baseline (the first observation of a level while
- * the tracker is still cold) stays silent, and `announceAll` re-announces even
- * those.
+ * A faster run than the baselined best is always a record. The one silent case
+ * is a *bulk poll* seeding a cold tracker: when the feed is switched on it would
+ * otherwise post every pre-existing level's record at once, so the run that sets
+ * a level's baseline is quiet there.
+ *
+ * A live submission (`fromSubmit`) is never that case — the player just set the
+ * level's best, and there is no backlog to protect against — so a new level's
+ * first record is announced immediately rather than swallowed as a baseline.
  */
 export function decideSiteRecord(
   prior: SitePrior | undefined,
   bestMs: number,
-  opts: { isFirstRun: boolean; announceAll?: boolean },
+  opts: { isFirstRun: boolean; announceAll?: boolean; fromSubmit?: boolean },
 ): SiteDecision {
   const isNew = !prior || bestMs < prior.timeMs;
-  const announce = !!opts.announceAll || (isNew && (!!prior || !opts.isFirstRun));
+  const seedingBaseline = !prior && opts.isFirstRun && !opts.fromSubmit;
+  const announce = !!opts.announceAll || (isNew && !seedingBaseline);
   return { isNew, announce, diffSec: prior ? (prior.timeMs - bestMs) / 1000 : null };
 }
 
@@ -185,6 +188,34 @@ function memoryStoreEnabled(): boolean {
   return process.env.NODE_ENV !== "production" && !process.env.SUPABASE_SERVICE_ROLE_KEY;
 }
 
+/**
+ * Build the Discord message for a level's record run. Pure, so the exact content
+ * the tracker would post is testable without a webhook.
+ */
+export function buildSiteRecordMessage(
+  level: { name: string; author: string; arrowName: string; hasCustomMechanics: boolean },
+  best: { username: string; timeMs: number; arrowName: string },
+  prior: SitePrior | undefined,
+  config: Pick<SiteTrackerConfig, "siteTemplate" | "siteBadge" | "siteEmojis"> = {},
+): string {
+  const slot = arrowKind(best.arrowName || level.arrowName);
+  const diffSec = prior ? (prior.timeMs - best.timeMs) / 1000 : null;
+  return renderSiteMessage(config.siteTemplate || DEFAULT_SITE_TEMPLATE, {
+    emoji: config.siteEmojis?.[slot] || DEFAULT_SITE_EMOJIS[slot],
+    siteBadge: config.siteBadge ?? DEFAULT_SITE_BADGE,
+    player: best.username,
+    level: level.name,
+    time: `${(best.timeMs / 1000).toFixed(3)}s`,
+    clock: clock(best.timeMs),
+    arrow: best.arrowName || level.arrowName,
+    author: level.author,
+    custom: level.hasCustomMechanics ? "custom" : "",
+    siteTag: diffSec == null ? "" : `SITE -${diffSec.toFixed(3)}`,
+    diff: diffSec == null ? "—" : diffSec.toFixed(3),
+    previous: prior?.username ?? "—",
+  });
+}
+
 async function readDoc(docId: string): Promise<unknown> {
   if (memoryStoreEnabled()) return memoryDocs.get(docId) ?? null;
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -221,7 +252,7 @@ async function writeDoc(docId: string, data: unknown): Promise<void> {
  */
 export async function runSiteCheck(
   levelIds: string[],
-  opts: { force?: boolean; announceAll?: boolean } = {},
+  opts: { force?: boolean; announceAll?: boolean; fromSubmit?: boolean } = {},
 ): Promise<SiteCheckResult> {
   let configRow: unknown;
   let stateRow: unknown;
@@ -275,30 +306,22 @@ export async function runSiteCheck(
       const decision = decideSiteRecord(prior, best.timeMs, {
         isFirstRun,
         announceAll: opts.announceAll,
+        fromSubmit: opts.fromSubmit,
       });
       next[level.id] = { username: best.username, timeMs: best.timeMs };
       if (!decision.announce) continue;
 
-      const slot = arrowKind(best.arrowName || level.arrowName);
-      const emoji = config.siteEmojis?.[slot] || DEFAULT_SITE_EMOJIS[slot];
-      const template = config.siteTemplate || DEFAULT_SITE_TEMPLATE;
-      const badge = config.siteBadge ?? DEFAULT_SITE_BADGE;
-      const siteTag = decision.diffSec == null ? "" : `SITE -${decision.diffSec.toFixed(3)}`;
       messages.push(
-        renderSiteMessage(template, {
-          emoji,
-          siteBadge: badge,
-          player: best.username,
-          level: level.name,
-          time: `${(best.timeMs / 1000).toFixed(3)}s`,
-          clock: clock(best.timeMs),
-          arrow: best.arrowName || level.arrowName,
-          author: level.author,
-          custom: level.hasCustomMechanics ? "custom" : "",
-          siteTag,
-          diff: decision.diffSec == null ? "—" : decision.diffSec.toFixed(3),
-          previous: prior?.username ?? "—",
-        }),
+        buildSiteRecordMessage(
+          level,
+          {
+            username: best.username,
+            timeMs: best.timeMs,
+            arrowName: best.arrowName || level.arrowName,
+          },
+          prior,
+          config,
+        ),
       );
     }
   };

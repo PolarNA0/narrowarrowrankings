@@ -82,12 +82,14 @@ export const Route = createFileRoute("/api/site-leaderboard/$level")({
         const sorted = sortSiteScores(entries);
         const isRecord = isNewSiteRecord(existing, timeMs);
 
-        // Announce a new record right away through the site tracker. Best effort:
-        // a dead webhook must never fail the submission itself.
+        // Announce a new record right away through the site tracker. `fromSubmit`
+        // marks it as a live submission, so a level's first record is announced
+        // rather than swallowed as a baseline (only the bulk poll seeds quietly).
+        // Best effort: a dead webhook must never fail the submission itself.
         if (isRecord) {
           try {
             const { runSiteCheck } = await import("@/lib/site-tracker.server");
-            await runSiteCheck([params.level], { force: true });
+            await runSiteCheck([params.level], { force: true, fromSubmit: true });
           } catch {
             /* notification is best effort */
           }

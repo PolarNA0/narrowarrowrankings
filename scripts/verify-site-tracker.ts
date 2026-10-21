@@ -24,11 +24,17 @@ const check = (label: string, ok: boolean, detail?: unknown) => {
 const prior = (timeMs: number, username = "Ash"): SitePrior => ({ username, timeMs });
 
 // --- Decision: cold tracker, no prior ----------------------------------------
-// The first observation sets the baseline and stays silent, so switching the
-// feed on does not dump every level's existing record into Discord.
+// A bulk poll that seeds a cold tracker stays silent, so switching the feed on
+// does not dump every pre-existing level's record into Discord at once.
 const cold = decideSiteRecord(undefined, 10_000, { isFirstRun: true });
-check("cold first observation: new but silent", cold.isNew && !cold.announce);
-check("cold first observation: no diff", cold.diffSec === null);
+check("cold bulk poll: new but silent (seeds the baseline)", cold.isNew && !cold.announce);
+check("cold bulk poll: no diff", cold.diffSec === null);
+
+// REGRESSION: a live submission must never be swallowed as a baseline.
+// The first record on a freshly published level is a real record — the player
+// just set the level's best and there is no backlog to protect against.
+const coldSubmit = decideSiteRecord(undefined, 10_000, { isFirstRun: true, fromSubmit: true });
+check("cold live submit: announced (not swallowed)", coldSubmit.isNew && coldSubmit.announce);
 
 // --- Decision: warm tracker, a level seen for the first time -----------------
 // The level had no board last check, so its first run *is* a new record.
@@ -180,16 +186,29 @@ const score = (timeMs: number, inputs: string) => ({
 });
 
 await addSiteScore(levelId, score(12_000, "run-a"));
-const baseline = await runSiteCheck([levelId], { force: true });
+
+// REGRESSION: the exact production sequence that dropped the user's WR.
+// A level is published, then its first run is submitted. The submit path must
+// announce it — the tracker is cold, but this is a live submission, not a bulk
+// poll seeding a backlog.
+const firstSubmit = await runSiteCheck([levelId], { force: true, fromSubmit: true });
 check(
-  "e2e: cold run baselines the level and sends nothing",
-  baseline.baseline === true && baseline.tracked === 1 && baseline.newRecords === 0,
-  JSON.stringify(baseline),
+  "e2e: a level's first record is announced from the submit path",
+  firstSubmit.baseline === true && firstSubmit.tracked === 1 && firstSubmit.newRecords === 1,
+  JSON.stringify(firstSubmit),
+);
+
+// A later bulk poll must not re-announce it.
+const afterFirst = await runSiteCheck([levelId], { force: true });
+check(
+  "e2e: the poll does not re-announce the first record",
+  afterFirst.newRecords === 0,
+  JSON.stringify(afterFirst),
 );
 
 // A faster run is a record and is announced (no webhook, so sent stays 0).
 await addSiteScore(levelId, score(9_000, "run-b"));
-const improved = await runSiteCheck([levelId], { force: true });
+const improved = await runSiteCheck([levelId], { force: true, fromSubmit: true });
 check(
   "e2e: a faster run is announced once",
   improved.baseline === false && improved.newRecords === 1,
@@ -237,7 +256,10 @@ await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 const port = (server.address() as { port: number }).port;
 const url = (path: string) => `http://127.0.0.1:${port}${path}`;
 
-check("delivery: a 2xx webhook reports sent", (await postDiscordMessage(url("/ok"), "hi")) === true);
+check(
+  "delivery: a 2xx webhook reports sent",
+  (await postDiscordMessage(url("/ok"), "hi")) === true,
+);
 check(
   "delivery: the body carries the content and strict mentions",
   received?.content === "hi" &&
@@ -252,8 +274,62 @@ check(
   "delivery: an unreachable host reports not-sent",
   (await postDiscordMessage("http://127.0.0.1:1/nope", "hi")) === false,
 );
-check("delivery: only a discord.com webhook passes the guard", isDiscordWebhook("https://discord.com/api/webhooks/1/x") && !isDiscordWebhook(url("/ok")));
+check(
+  "delivery: only a discord.com webhook passes the guard",
+  isDiscordWebhook("https://discord.com/api/webhooks/1/x") && !isDiscordWebhook(url("/ok")),
+);
 await new Promise<void>((r) => server.close(() => r()));
+
+// --- The real message builder (what the tracker actually posts) ---------------
+const { buildSiteRecordMessage } = await import("@/lib/site-tracker.server");
+const levelMeta = {
+  name: "Wall Blink",
+  author: "Polar",
+  arrowName: "Narrow Arrow",
+  hasCustomMechanics: true,
+};
+const bestRun = { username: "Polar", timeMs: 8_000, arrowName: "Narrow Arrow" };
+
+// The user's exact case: a level's first record. It must read as a record, with
+// no leftover bracket and the custom tag set (the level uses blink walls).
+const firstMsg = buildSiteRecordMessage(levelMeta, bestRun, undefined);
+check(
+  "builder: first record names the player, level and time",
+  firstMsg.includes("**Polar**") &&
+    firstMsg.includes("**Wall Blink**") &&
+    firstMsg.includes("**8.000s**"),
+  firstMsg,
+);
+check(
+  "builder: first record has no empty bracket",
+  !firstMsg.includes("[]") && !firstMsg.includes("SITE"),
+  firstMsg,
+);
+check(
+  "builder: {custom} renders for a mechanics level",
+  buildSiteRecordMessage(levelMeta, bestRun, undefined, { siteTemplate: "{custom}" }) === "custom",
+);
+
+// A later record shows the gain over the previous holder.
+const improvedMsg = buildSiteRecordMessage(levelMeta, bestRun, prior(11_500, "Ash"), {
+  siteTemplate: "{player} took it from {previous} by {diff}s [{siteTag}]",
+});
+check(
+  "builder: an improvement names the previous holder and the gain",
+  improvedMsg === "Polar took it from Ash by 3.500s [SITE -3.500]",
+  improvedMsg,
+);
+
+// The clock tag uses the site board's m:ss.mmm format.
+check(
+  "builder: {clock} is m:ss.mmm",
+  buildSiteRecordMessage(
+    levelMeta,
+    { username: "P", timeMs: 62_345, arrowName: "Speedy Arrow" },
+    undefined,
+    { siteTemplate: "{clock}" },
+  ) === "1:02.345",
+);
 
 console.log(`\n${failures === 0 ? "all" : `${failures} failing`} site tracker checks`);
 process.exit(failures === 0 ? 0 : 1);

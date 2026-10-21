@@ -263,11 +263,19 @@ export function AdminDiscordTracker() {
     try {
       const res = await fetch("/api/public/site-wr-check?force=1");
       const payload = await res.json();
-      toast.success(
-        payload.baseline
-          ? `Baseline saved for ${payload.tracked} site records`
-          : `${payload.newRecords} new site records, ${payload.sent} sent`,
-      );
+      // A record found but nothing sent means the feed has no webhook — say so
+      // rather than reporting a cheerful "0 sent" that reads like success.
+      if (payload.newRecords > 0 && payload.sent === 0) {
+        toast.error(
+          `${payload.newRecords} site record${payload.newRecords === 1 ? "" : "s"} found but nothing was sent — set a webhook and save.`,
+        );
+      } else {
+        toast.success(
+          payload.baseline
+            ? `Baseline saved for ${payload.tracked} site records — use "Announce current records" to post them`
+            : `${payload.newRecords} new site records, ${payload.sent} sent`,
+        );
+      }
     } catch {
       toast.error("Site record check failed");
     } finally {
@@ -280,11 +288,17 @@ export function AdminDiscordTracker() {
     try {
       const res = await fetch("/api/public/site-wr-check?force=1&announce=all");
       const payload = await res.json();
-      toast.success(
-        payload.sent
-          ? `Re-announced ${payload.sent} current site record${payload.sent === 1 ? "" : "s"}`
-          : "No site records to announce (set a webhook first)",
-      );
+      if (payload.sent === 0) {
+        toast.error(
+          payload.newRecords > 0
+            ? `${payload.newRecords} site record${payload.newRecords === 1 ? "" : "s"} found but nothing was sent — set a webhook and save.`
+            : "No site records to announce.",
+        );
+      } else {
+        toast.success(
+          `Re-announced ${payload.sent} current site record${payload.sent === 1 ? "" : "s"}`,
+        );
+      }
     } catch {
       toast.error("Site announcement failed");
     } finally {
