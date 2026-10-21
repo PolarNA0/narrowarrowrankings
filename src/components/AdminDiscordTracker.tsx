@@ -45,6 +45,16 @@ const DEFAULT_TAS_EMOJIS: Record<Slot, string> = {
   energy: "<:energy:1356331490010464421>",
 };
 
+/** The site feed's own emojis: the same custom Discord emojis the other feeds use. */
+const DEFAULT_SITE_TEMPLATE =
+  "{emoji}{siteBadge} **{player}** set a new site record on **{level}** with **{time}** [{siteTag}]";
+const DEFAULT_SITE_BADGE = "";
+const DEFAULT_SITE_EMOJIS: Record<Slot, string> = {
+  narrow: "<:narrow:1356331491746910319>",
+  speedy: "<:speedy:1356331493160386620>",
+  energy: "<:energy:1356331490010464421>",
+};
+
 /** The old built-in emoji set, so a saved config that still carries it picks up
  *  the new custom ones instead of overriding them. */
 const LEGACY_TAS_EMOJIS = new Set(["🏆", "🏹", "💨", "⚡"]);
@@ -66,9 +76,16 @@ export function AdminDiscordTracker() {
   const [tasChampion, setTasChampion] = React.useState(DEFAULT_TAS_CHAMPION);
   const [tasBadge, setTasBadge] = React.useState(DEFAULT_TAS_BADGE);
   const [tasWebhookUrl, setTasWebhookUrl] = React.useState("");
+  const [siteEnabled, setSiteEnabled] = React.useState(true);
+  const [siteIntervalMinutes, setSiteIntervalMinutes] = React.useState(5);
+  const [siteTemplate, setSiteTemplate] = React.useState(DEFAULT_SITE_TEMPLATE);
+  const [siteBadge, setSiteBadge] = React.useState(DEFAULT_SITE_BADGE);
+  const [siteEmojis, setSiteEmojis] = React.useState<Record<Slot, string>>(DEFAULT_SITE_EMOJIS);
+  const [siteWebhookUrl, setSiteWebhookUrl] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [checking, setChecking] = React.useState(false);
   const [tasChecking, setTasChecking] = React.useState(false);
+  const [siteChecking, setSiteChecking] = React.useState(false);
 
   React.useEffect(() => {
     (async () => {
@@ -96,6 +113,18 @@ export function AdminDiscordTracker() {
         );
         setTasBadge(data.tasBadge ?? DEFAULT_TAS_BADGE);
         setTasWebhookUrl(data.tasWebhookUrl || "");
+        setSiteEnabled(data.siteEnabled !== false);
+        setSiteIntervalMinutes(
+          Number(data.siteIntervalMinutes) || Number(data.intervalMinutes) || 5,
+        );
+        setSiteTemplate(data.siteTemplate || DEFAULT_SITE_TEMPLATE);
+        setSiteBadge(data.siteBadge ?? DEFAULT_SITE_BADGE);
+        setSiteEmojis({
+          narrow: pickTasEmoji("narrow", data.siteEmojis?.narrow),
+          speedy: pickTasEmoji("speedy", data.siteEmojis?.speedy),
+          energy: pickTasEmoji("energy", data.siteEmojis?.energy),
+        });
+        setSiteWebhookUrl(data.siteWebhookUrl || "");
       } catch {
         /* first-time setup */
       }
@@ -118,6 +147,12 @@ export function AdminDiscordTracker() {
         tasChampion,
         tasBadge,
         tasWebhookUrl: tasWebhookUrl.trim(),
+        siteEnabled,
+        siteIntervalMinutes: Math.max(5, Number(siteIntervalMinutes) || 5),
+        siteTemplate,
+        siteBadge,
+        siteEmojis,
+        siteWebhookUrl: siteWebhookUrl.trim(),
       });
       toast.success("Discord trackers saved");
     } catch (error) {
@@ -208,6 +243,55 @@ export function AdminDiscordTracker() {
     }
   };
 
+  const sendSiteTest = async () => {
+    try {
+      const res = await fetch("/api/public/site-wr-check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ webhookUrl: (siteWebhookUrl || webhookUrl).trim() }),
+      });
+      const payload = await res.json();
+      if (payload.ok) toast.success("Site test message sent to Discord");
+      else toast.error(payload.error || `Discord replied ${payload.status}`);
+    } catch {
+      toast.error("Could not reach the webhook");
+    }
+  };
+
+  const runSiteCheck = async () => {
+    setSiteChecking(true);
+    try {
+      const res = await fetch("/api/public/site-wr-check?force=1");
+      const payload = await res.json();
+      toast.success(
+        payload.baseline
+          ? `Baseline saved for ${payload.tracked} site records`
+          : `${payload.newRecords} new site records, ${payload.sent} sent`,
+      );
+    } catch {
+      toast.error("Site record check failed");
+    } finally {
+      setSiteChecking(false);
+    }
+  };
+
+  const announceAllSite = async () => {
+    setSiteChecking(true);
+    try {
+      const res = await fetch("/api/public/site-wr-check?force=1&announce=all");
+      const payload = await res.json();
+      toast.success(
+        payload.sent
+          ? `Re-announced ${payload.sent} current site record${payload.sent === 1 ? "" : "s"}`
+          : "No site records to announce (set a webhook first)",
+      );
+    } catch {
+      toast.error("Site announcement failed");
+    } finally {
+      setSiteChecking(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="bg-white/5 border-white/10">
@@ -218,7 +302,7 @@ export function AdminDiscordTracker() {
           <CardDescription>
             Paste a Discord webhook URL — real-game category world records (non-overall arrow
             records) are announced there. Records are checked automatically every 5 minutes. The TAS
-            tracker below shares this webhook.
+            and site level trackers below share this webhook unless you give them their own.
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-6 space-y-4">
@@ -426,6 +510,130 @@ export function AdminDiscordTracker() {
               />
             </div>
           ))}
+          <Button
+            onClick={save}
+            disabled={saving}
+            className="bg-[var(--app-accent)] text-slate-950 font-bold hover:bg-[var(--app-accent)]/80"
+          >
+            <Save className="w-4 h-4 mr-2" /> {saving ? "Saving..." : "Save settings"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-white/5 border-white/10">
+        <CardHeader className="border-b border-white/10 pb-4">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
+            <Webhook className="w-4 h-4 text-[var(--app-accent)]" /> Site Level Webhook
+          </CardTitle>
+          <CardDescription>
+            Announces records on site-hosted levels (authored in the Level editor). A site level has
+            one board, so each level's fastest run is announced here — separate from the real-game
+            and TAS feeds. Uses the webhook above unless you paste a separate one here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6 space-y-4">
+          <Input
+            value={siteWebhookUrl}
+            onChange={(e) => setSiteWebhookUrl(e.target.value)}
+            placeholder="Leave blank to reuse the webhook above"
+            className="bg-black/40 border-white/10 font-mono text-xs"
+          />
+          <div className="flex items-center gap-3">
+            <Input
+              value={siteBadge}
+              onChange={(e) => setSiteBadge(e.target.value)}
+              className="w-40 bg-black/40 border-white/10 text-xs font-mono"
+              placeholder="<a:SITE:…>"
+            />
+            <span className="text-xs text-slate-400">
+              Badge shown right after the arrow emoji (the <code>{"{siteBadge}"}</code> tag). Clear
+              it to hide.
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Switch checked={siteEnabled} onCheckedChange={setSiteEnabled} />
+            <span className="text-xs text-slate-400">Site announcements enabled</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Input
+              type="number"
+              min={5}
+              step={5}
+              value={siteIntervalMinutes}
+              onChange={(e) => setSiteIntervalMinutes(Number(e.target.value))}
+              className="w-24 bg-black/40 border-white/10 text-xs"
+            />
+            <span className="text-xs text-slate-400">
+              Minutes between site checks (minimum 5). Save to apply.
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={sendSiteTest}
+              variant="outline"
+              className="border-white/10 hover:bg-white/5"
+            >
+              <Send className="w-4 h-4 mr-2" /> Send test
+            </Button>
+            <Button
+              onClick={runSiteCheck}
+              disabled={siteChecking}
+              variant="outline"
+              className="border-white/10 hover:bg-white/5"
+            >
+              <RefreshCw className={siteChecking ? "w-4 h-4 mr-2 animate-spin" : "w-4 h-4 mr-2"} />{" "}
+              Check site now
+            </Button>
+            <Button
+              onClick={announceAllSite}
+              disabled={siteChecking}
+              variant="outline"
+              className="border-white/10 hover:bg-white/5"
+            >
+              <Send className="w-4 h-4 mr-2" /> Announce current records
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-white/5 border-white/10">
+        <CardHeader className="border-b border-white/10 pb-4">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-slate-400">
+            Site Message
+          </CardTitle>
+          <CardDescription>
+            {
+              'Tags: {emoji} {siteBadge} {player} {level} {time} {clock} {arrow} {author} {custom} {siteTag} {diff} {previous} — {emoji} is the arrow of the record run, {time} is seconds and {clock} the m:ss.mmm clock, {custom} prints "custom" for a level using site-only mechanics, {siteTag} is the ready-made "SITE -x.xxx" bracket, and {diff} the raw gain over the previous record.'
+            }
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6 space-y-5">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                Arrow emojis (by the record run&apos;s arrow)
+              </span>
+            </div>
+            {SLOTS.map(({ key, label }) => (
+              <div key={key} className="flex items-center justify-between gap-3">
+                <span className="text-[10px] uppercase tracking-widest text-slate-500">
+                  {label}
+                </span>
+                <Input
+                  value={siteEmojis[key]}
+                  onChange={(e) => setSiteEmojis((prev) => ({ ...prev, [key]: e.target.value }))}
+                  className="w-32 bg-black/40 border-white/10 text-xs"
+                  placeholder="emoji"
+                />
+              </div>
+            ))}
+          </div>
+          <Textarea
+            value={siteTemplate}
+            onChange={(e) => setSiteTemplate(e.target.value)}
+            rows={3}
+            className="bg-black/40 border-white/10 font-mono text-xs"
+          />
           <Button
             onClick={save}
             disabled={saving}

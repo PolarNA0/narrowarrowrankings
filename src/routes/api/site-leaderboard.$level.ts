@@ -81,6 +81,18 @@ export const Route = createFileRoute("/api/site-leaderboard/$level")({
 
         const sorted = sortSiteScores(entries);
         const isRecord = isNewSiteRecord(existing, timeMs);
+
+        // Announce a new record right away through the site tracker. Best effort:
+        // a dead webhook must never fail the submission itself.
+        if (isRecord) {
+          try {
+            const { runSiteCheck } = await import("@/lib/site-tracker.server");
+            await runSiteCheck([params.level], { force: true });
+          } catch {
+            /* notification is best effort */
+          }
+        }
+
         return Response.json({
           isRecord,
           isPersonalBest: isPersonalBest(existing, username, timeMs),

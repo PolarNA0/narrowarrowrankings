@@ -28,6 +28,7 @@ import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
 import { Route as ApiPacksSlugRouteImport } from './routes/api/packs.$slug'
 import { Route as ApiPublicCategoryWrCheckRouteImport } from './routes/api/public/category-wr-check'
 import { Route as ApiPublicSheetsExportRouteImport } from './routes/api/public/sheets-export'
+import { Route as ApiPublicSiteWrCheckRouteImport } from './routes/api/public/site-wr-check'
 import { Route as ApiPublicTasWrCheckRouteImport } from './routes/api/public/tas-wr-check'
 import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
 import { Route as ApiSiteLeaderboardLevelRouteImport } from './routes/api/site-leaderboard.$level'
@@ -132,6 +133,11 @@ const ApiPublicSheetsExportRoute = ApiPublicSheetsExportRouteImport.update({
   path: '/api/public/sheets-export',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicSiteWrCheckRoute = ApiPublicSiteWrCheckRouteImport.update({
+  id: '/api/public/site-wr-check',
+  path: '/api/public/site-wr-check',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicTasWrCheckRoute = ApiPublicTasWrCheckRouteImport.update({
   id: '/api/public/tas-wr-check',
   path: '/api/public/tas-wr-check',
@@ -187,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
+  '/api/public/site-wr-check': typeof ApiPublicSiteWrCheckRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/site-leaderboard/$level': typeof ApiSiteLeaderboardLevelRoute
@@ -215,6 +222,7 @@ export interface FileRoutesByTo {
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
+  '/api/public/site-wr-check': typeof ApiPublicSiteWrCheckRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/site-leaderboard/$level': typeof ApiSiteLeaderboardLevelRoute
@@ -244,6 +252,7 @@ export interface FileRoutesById {
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
+  '/api/public/site-wr-check': typeof ApiPublicSiteWrCheckRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/site-leaderboard/$level': typeof ApiSiteLeaderboardLevelRoute
@@ -274,6 +283,7 @@ export interface FileRouteTypes {
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
     | '/api/public/sheets-export'
+    | '/api/public/site-wr-check'
     | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
     | '/api/site-leaderboard/$level'
@@ -302,6 +312,7 @@ export interface FileRouteTypes {
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
     | '/api/public/sheets-export'
+    | '/api/public/site-wr-check'
     | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
     | '/api/site-leaderboard/$level'
@@ -330,6 +341,7 @@ export interface FileRouteTypes {
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
     | '/api/public/sheets-export'
+    | '/api/public/site-wr-check'
     | '/api/public/tas-wr-check'
     | '/api/runs/$runId'
     | '/api/site-leaderboard/$level'
@@ -359,6 +371,7 @@ export interface RootRouteChildren {
   ApiPacksSlugRoute: typeof ApiPacksSlugRoute
   ApiPublicCategoryWrCheckRoute: typeof ApiPublicCategoryWrCheckRoute
   ApiPublicSheetsExportRoute: typeof ApiPublicSheetsExportRoute
+  ApiPublicSiteWrCheckRoute: typeof ApiPublicSiteWrCheckRoute
   ApiPublicTasWrCheckRoute: typeof ApiPublicTasWrCheckRoute
   ApiRunsRunIdRoute: typeof ApiRunsRunIdRoute
   ApiSiteLeaderboardLevelRoute: typeof ApiSiteLeaderboardLevelRoute
@@ -503,6 +516,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicSheetsExportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/site-wr-check': {
+      id: '/api/public/site-wr-check'
+      path: '/api/public/site-wr-check'
+      fullPath: '/api/public/site-wr-check'
+      preLoaderRoute: typeof ApiPublicSiteWrCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/tas-wr-check': {
       id: '/api/public/tas-wr-check'
       path: '/api/public/tas-wr-check'
@@ -586,6 +606,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPacksSlugRoute: ApiPacksSlugRoute,
   ApiPublicCategoryWrCheckRoute: ApiPublicCategoryWrCheckRoute,
   ApiPublicSheetsExportRoute: ApiPublicSheetsExportRoute,
+  ApiPublicSiteWrCheckRoute: ApiPublicSiteWrCheckRoute,
   ApiPublicTasWrCheckRoute: ApiPublicTasWrCheckRoute,
   ApiRunsRunIdRoute: ApiRunsRunIdRoute,
   ApiSiteLeaderboardLevelRoute: ApiSiteLeaderboardLevelRoute,
