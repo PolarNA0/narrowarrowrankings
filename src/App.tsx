@@ -153,9 +153,10 @@ import { LevelEditorView } from "@/components/LevelEditorView";
 import { LevelGeneratorView } from "@/components/LevelGeneratorView";
 import type { NalvlLevel } from "@/lib/nalvl";
 import { PlayView } from "@/components/PlayView";
+import { siteIdOf } from "@/components/LevelPicker";
 import { EndlessView } from "@/components/EndlessView";
 import { fetchTasBoardSummary, type TasSummary } from "@/lib/tas-leaderboard";
-import { readUrlState, writeUrlState, shareUrl } from "@/lib/url-state";
+import { readUrlState, writeUrlState, shareUrl, type UrlState } from "@/lib/url-state";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 import { useInGameMedals } from "@/hooks/useInGameMedals";
 import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
@@ -434,7 +435,9 @@ export default function App() {
 
   const [view, setView] = useState<AppView>(() => {
     const fromUrl = initialUrlState.view;
-    if (!fromUrl) return "leaderboard";
+    // A site level link opens Play even if it names no view, so the link always
+    // lands on the level rather than the default leaderboard.
+    if (!fromUrl) return initialUrlState.site ? "play" : "leaderboard";
     // `profile` and `compare` are real views but live outside the nav groups
     // (they are reached from a player), so they are listed explicitly. They
     // also need a player to render, which is why a link without one falls back.
@@ -455,7 +458,35 @@ export default function App() {
     arrowName: string;
     tick: number;
     key: string;
-  } | null>(null);
+  } | null>(() => {
+    // A shared site level link (`?v=play&site=<id>&arrow=…`) opens straight in
+    // Play, so the reader lands on the level instead of the default board.
+    const site = initialUrlState.site;
+    if (!site) return null;
+    return {
+      levelId: `site:${site}`,
+      arrowName: initialUrlState.arrow ?? "",
+      tick: -1,
+      key: `url:${site}:${initialUrlState.arrow ?? ""}`,
+    };
+  });
+  /** The level+arrow Play has loaded, so the URL can point at what is on screen. */
+  const [playSelection, setPlaySelection] = useState<{ levelId: string; arrowName: string } | null>(
+    // Seeded from a site level link, so the URL stays stable from first paint
+    // instead of momentarily dropping the `site` param before Play reports back.
+    initialUrlState.site
+      ? { levelId: `site:${initialUrlState.site}`, arrowName: initialUrlState.arrow ?? "" }
+      : null,
+  );
+  // Stable identity, and a no-op when nothing changed, so Play's report does not
+  // re-render the shell on every level/arrow effect.
+  const handlePlaySelection = React.useCallback((levelId: string, arrowName: string) => {
+    setPlaySelection((prev) =>
+      prev && prev.levelId === levelId && prev.arrowName === arrowName
+        ? prev
+        : { levelId, arrowName },
+    );
+  }, []);
   // The TAS leaderboard's picked level lives here, not inside the view, so
   // switching Tools tabs (which unmounts the view) keeps the selection instead
   // of snapping back to the first level.
@@ -1482,19 +1513,34 @@ export default function App() {
       void fetchAllLevels();
   };
 
+  /**
+   * The shareable state of what is on screen. Play carries a site level's own
+   * `site`/`arrow` pair so a link opens that level; the TAS board has its own
+   * level picker, so its selection is what the URL carries while it is open.
+   */
+  const shareState = React.useCallback((): UrlState => {
+    const siteId = view === "play" && playSelection ? siteIdOf(playSelection.levelId) : null;
+    // A site level is identified by `site`, not `level` (it is not in the
+    // upstream level list), so the default level is not carried alongside it.
+    const level = view === "tas-board" ? tasBoardLevelId : siteId ? undefined : selectedLevel;
+    return {
+      view,
+      level,
+      player: selectedPlayer ?? undefined,
+      site: siteId ?? undefined,
+      arrow: siteId ? playSelection?.arrowName : undefined,
+    };
+  }, [view, selectedLevel, tasBoardLevelId, selectedPlayer, playSelection]);
+
   // Keep the URL in step with the shareable state, so the address bar is always
-  // a link to what is on screen (and can be copied or bookmarked). The TAS board
-  // has its own level picker, so its selection is what the URL carries while it
-  // is the open view.
+  // a link to what is on screen (and can be copied or bookmarked).
   useEffect(() => {
-    const level = view === "tas-board" ? tasBoardLevelId : selectedLevel;
-    writeUrlState({ view, level, player: selectedPlayer ?? undefined });
-  }, [view, selectedLevel, tasBoardLevelId, selectedPlayer]);
+    writeUrlState(shareState());
+  }, [shareState]);
 
   /** Copy the current view as a link, for sharing a level or profile. */
   const copyShareLink = async () => {
-    const level = view === "tas-board" ? tasBoardLevelId : selectedLevel;
-    const url = shareUrl({ view, level, player: selectedPlayer ?? undefined });
+    const url = shareUrl(shareState());
     try {
       await navigator.clipboard.writeText(url);
       toast.success("Link copied to clipboard.");
@@ -2682,6 +2728,7 @@ export default function App() {
             focus={playFocus}
             onFocusHandled={() => setPlayFocus(null)}
             siteLevel={playSiteLevel}
+            onSelectionChange={handlePlaySelection}
           />
         ) : view === "score" ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (

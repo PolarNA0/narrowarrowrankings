@@ -1,6 +1,8 @@
 import * as React from "react";
 import {
   ArrowLeft,
+  Check,
+  Copy,
   Globe,
   Loader2,
   MoveHorizontal,
@@ -33,7 +35,48 @@ import {
 } from "@/lib/site-levels";
 import { TasReplayViewer } from "@/components/ReplayViewer";
 import { siteLevelToRawData } from "@/lib/site-levels";
+import { siteLevelShareUrl } from "@/lib/url-state";
 import type { RawLevelData } from "@/lib/replay-sim";
+
+/**
+ * Copy a site level's share link. The link opens the level in Play, so pasting
+ * it into Discord or a chat drops the reader straight into the level.
+ */
+function ShareLinkButton({
+  levelId,
+  arrowName,
+  size = "sm",
+  label,
+}: {
+  levelId: string;
+  arrowName: string;
+  size?: "sm" | "default";
+  label?: string;
+}) {
+  const [copied, setCopied] = React.useState(false);
+  const copy = async () => {
+    const url = siteLevelShareUrl(levelId, arrowName);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      window.prompt("Copy this link:", url);
+    }
+    setCopied(true);
+    toast.success("Share link copied — it opens the level in Play.");
+    window.setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <Button
+      size={size}
+      variant="outline"
+      onClick={() => void copy()}
+      title="Copy a link that opens this level in Play"
+    >
+      {copied ? <Check className="w-3.5 h-3.5 mr-1.5" /> : <Copy className="w-3.5 h-3.5 mr-1.5" />}
+      {label ?? "Link"}
+    </Button>
+  );
+}
 
 export interface SiteLoadRequest {
   levelId: string;
@@ -250,6 +293,10 @@ export function SiteLevelsView({
                   <Play className="w-3.5 h-3.5 mr-1.5" /> Play
                 </Button>
               )}
+              <ShareLinkButton
+                levelId={level.id}
+                arrowName={cardArrows[level.id] ?? level.arrowName}
+              />
               {isAdmin && (
                 <Button
                   size="sm"
@@ -362,6 +409,7 @@ function SiteLevelDetail({
         {onPlay && (
           <div className="flex items-center gap-2">
             <ArrowSelect value={playArrow} onChange={setPlayArrow} />
+            <ShareLinkButton levelId={levelId} arrowName={playArrow} />
             <Button size="sm" onClick={() => onPlay(levelId, playArrow)}>
               <Play className="w-3.5 h-3.5 mr-1.5" /> Play
             </Button>

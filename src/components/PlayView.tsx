@@ -145,6 +145,7 @@ export function PlayView({
   focus,
   onFocusHandled,
   siteLevel,
+  onSelectionChange,
 }: {
   levels: LevelOption[];
   /** A checkpoint handed over from a TAS viewer, to load and play immediately. */
@@ -156,6 +157,11 @@ export function PlayView({
    * as a pseudo-entry in the level list.
    */
   siteLevel?: { level: NalvlLevel; key: string } | null;
+  /**
+   * Reports the level+arrow now loaded, so the shell can keep the URL pointing
+   * at what is on screen (a site level is then a shareable link).
+   */
+  onSelectionChange?: (levelId: string, arrowName: string) => void;
 }) {
   const [levelId, setLevelId] = React.useState(levels[0]?.id ?? "");
   const [levelName, setLevelName] = React.useState(levels[0]?.name ?? "");
@@ -351,6 +357,12 @@ export function PlayView({
   React.useEffect(() => {
     if (levelId) void loadLevel(levelId, arrowName);
   }, [levelId, arrowName, siteRevision, loadLevel]);
+
+  // Tell the shell what is loaded, so the URL tracks it. The in-memory editor
+  // level has no id to share, so it is not reported.
+  React.useEffect(() => {
+    if (levelId && levelId !== SITE_LEVEL_ID) onSelectionChange?.(levelId, arrowName);
+  }, [levelId, arrowName, onSelectionChange]);
 
   // A level handed over from the editor: keep its payload in a ref (so the
   // async load can read it without a fetch) and select it. Handing over the

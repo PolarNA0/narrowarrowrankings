@@ -18,9 +18,20 @@ export interface UrlState {
   view?: string;
   level?: string;
   player?: string;
+  /** A site-hosted level's raw id, so a link can open it directly. */
+  site?: string;
+  /** The arrow a site level link should be played with. */
+  arrow?: string;
 }
 
-const PARAM = { view: "v", level: "level", player: "player" } as const;
+const PARAM = {
+  view: "v",
+  level: "level",
+  player: "player",
+  site: "site",
+  arrow: "arrow",
+} as const;
+const KEYS = ["view", "level", "player", "site", "arrow"] as const;
 
 /**
  * Read the shared state from the current URL. Called once to seed initial React
@@ -30,12 +41,10 @@ export function readUrlState(): UrlState {
   if (typeof window === "undefined") return {};
   const params = new URLSearchParams(window.location.search);
   const out: UrlState = {};
-  const view = params.get(PARAM.view);
-  const level = params.get(PARAM.level);
-  const player = params.get(PARAM.player);
-  if (view) out.view = view;
-  if (level) out.level = level;
-  if (player) out.player = player;
+  for (const key of KEYS) {
+    const value = params.get(PARAM[key]);
+    if (value) out[key] = value;
+  }
   return out;
 }
 
@@ -47,7 +56,7 @@ export function readUrlState(): UrlState {
 export function writeUrlState(state: UrlState): void {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams(window.location.search);
-  for (const key of ["view", "level", "player"] as const) {
+  for (const key of KEYS) {
     const value = state[key];
     if (value) params.set(PARAM[key], value);
     else params.delete(PARAM[key]);
@@ -62,10 +71,21 @@ export function writeUrlState(state: UrlState): void {
 export function shareUrl(state: UrlState): string {
   if (typeof window === "undefined") return "";
   const params = new URLSearchParams();
-  for (const key of ["view", "level", "player"] as const) {
+  for (const key of KEYS) {
     const value = state[key];
     if (value) params.set(PARAM[key], value);
   }
   const query = params.toString();
   return `${window.location.origin}${window.location.pathname}${query ? `?${query}` : ""}`;
+}
+
+/**
+ * A link that opens a site-hosted level straight in Play. This is what the
+ * "Copy link" button on a site level hands out, so pasting it into Discord or a
+ * chat drops the reader into the level rather than the default board.
+ */
+export function siteLevelShareUrl(siteId: string, arrowName?: string): string {
+  // No `level` param: a site level is not in the upstream level list, and
+  // `site` alone is what Play resolves.
+  return shareUrl({ view: "play", site: siteId, arrow: arrowName || undefined });
 }
