@@ -76,6 +76,7 @@ export const NAV_GROUPS = [
     label: "Play",
     items: [
       { id: "play", label: "Play" },
+      { id: "race", label: "1v1 Race" },
       { id: "endless", label: "Endless" },
     ],
   },

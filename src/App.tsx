@@ -153,6 +153,7 @@ import { LevelEditorView } from "@/components/LevelEditorView";
 import { LevelGeneratorView } from "@/components/LevelGeneratorView";
 import type { NalvlLevel } from "@/lib/nalvl";
 import { PlayView } from "@/components/PlayView";
+import { RaceView, type RacePlayTarget } from "@/components/RaceView";
 import { siteIdOf } from "@/components/LevelPicker";
 import { EndlessView } from "@/components/EndlessView";
 import { fetchTasBoardSummary, type TasSummary } from "@/lib/tas-leaderboard";
@@ -499,6 +500,8 @@ export default function App() {
   const [playSiteLevel, setPlaySiteLevel] = useState<{ level: NalvlLevel; key: string } | null>(
     null,
   );
+  /** The 1v1 race the Play tab is currently running a round for. */
+  const [raceTarget, setRaceTarget] = useState<RacePlayTarget | null>(null);
   const [showRankLegend, setShowRankLegend] = useState(false);
   const [wrsTab, setWrsTab] = useState<"wrs" | "hof" | "history" | "arrows">("wrs");
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
@@ -1495,6 +1498,9 @@ export default function App() {
 
   const navigateView = (next: NavigableView) => {
     setView(next);
+    // Leaving Play abandons any race round it was pinned to, so a later visit to
+    // Play is a normal free-play session rather than a silent race submission.
+    if (next !== "play") setRaceTarget(null);
     if (
       ![
         "leaderboard",
@@ -2706,6 +2712,13 @@ export default function App() {
           <BruteView />
         ) : view === "endless" ? (
           <EndlessView />
+        ) : view === "race" ? (
+          <RaceView
+            onPlayRace={(target) => {
+              setRaceTarget(target);
+              navigateView("play");
+            }}
+          />
         ) : view === "editor" ? (
           <LevelEditorView
             initialLevel={editorLevel}
@@ -2729,6 +2742,13 @@ export default function App() {
             onFocusHandled={() => setPlayFocus(null)}
             siteLevel={playSiteLevel}
             onSelectionChange={handlePlaySelection}
+            race={raceTarget}
+            onRaceSubmitted={() => {
+              // The round is committed — go back to the room to see the standings
+              // and pick up the next round.
+              setRaceTarget(null);
+              setView("race");
+            }}
           />
         ) : view === "score" ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (

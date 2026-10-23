@@ -30,6 +30,8 @@ import { Route as ApiPublicCategoryWrCheckRouteImport } from './routes/api/publi
 import { Route as ApiPublicSheetsExportRouteImport } from './routes/api/public/sheets-export'
 import { Route as ApiPublicSiteWrCheckRouteImport } from './routes/api/public/site-wr-check'
 import { Route as ApiPublicTasWrCheckRouteImport } from './routes/api/public/tas-wr-check'
+import { Route as ApiRaceLobbiesIndexRouteImport } from './routes/api/race-lobbies.index'
+import { Route as ApiRaceLobbiesCodeRouteImport } from './routes/api/race-lobbies.$code'
 import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
 import { Route as ApiSiteLeaderboardLevelRouteImport } from './routes/api/site-leaderboard.$level'
 import { Route as ApiSiteLevelsLevelRouteImport } from './routes/api/site-levels.$level'
@@ -143,6 +145,16 @@ const ApiPublicTasWrCheckRoute = ApiPublicTasWrCheckRouteImport.update({
   path: '/api/public/tas-wr-check',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRaceLobbiesIndexRoute = ApiRaceLobbiesIndexRouteImport.update({
+  id: '/api/race-lobbies/',
+  path: '/api/race-lobbies/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRaceLobbiesCodeRoute = ApiRaceLobbiesCodeRouteImport.update({
+  id: '/api/race-lobbies/$code',
+  path: '/api/race-lobbies/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRunsRunIdRoute = ApiRunsRunIdRouteImport.update({
   id: '/api/runs/$runId',
   path: '/api/runs/$runId',
@@ -195,6 +207,7 @@ export interface FileRoutesByFullPath {
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/site-wr-check': typeof ApiPublicSiteWrCheckRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
+  '/api/race-lobbies/$code': typeof ApiRaceLobbiesCodeRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/site-leaderboard/$level': typeof ApiSiteLeaderboardLevelRoute
   '/api/site-levels/$level': typeof ApiSiteLevelsLevelRoute
@@ -202,6 +215,7 @@ export interface FileRoutesByFullPath {
   '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs/': typeof ApiPacksIndexRoute
+  '/api/race-lobbies/': typeof ApiRaceLobbiesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -224,6 +238,7 @@ export interface FileRoutesByTo {
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/site-wr-check': typeof ApiPublicSiteWrCheckRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
+  '/api/race-lobbies/$code': typeof ApiRaceLobbiesCodeRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/site-leaderboard/$level': typeof ApiSiteLeaderboardLevelRoute
   '/api/site-levels/$level': typeof ApiSiteLevelsLevelRoute
@@ -231,6 +246,7 @@ export interface FileRoutesByTo {
   '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs': typeof ApiPacksIndexRoute
+  '/api/race-lobbies': typeof ApiRaceLobbiesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -254,6 +270,7 @@ export interface FileRoutesById {
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/site-wr-check': typeof ApiPublicSiteWrCheckRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
+  '/api/race-lobbies/$code': typeof ApiRaceLobbiesCodeRoute
   '/api/runs/$runId': typeof ApiRunsRunIdRoute
   '/api/site-leaderboard/$level': typeof ApiSiteLeaderboardLevelRoute
   '/api/site-levels/$level': typeof ApiSiteLevelsLevelRoute
@@ -261,6 +278,7 @@ export interface FileRoutesById {
   '/api/tas-leaderboard/$level': typeof ApiTasLeaderboardLevelRoute
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs/': typeof ApiPacksIndexRoute
+  '/api/race-lobbies/': typeof ApiRaceLobbiesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -285,6 +303,7 @@ export interface FileRouteTypes {
     | '/api/public/sheets-export'
     | '/api/public/site-wr-check'
     | '/api/public/tas-wr-check'
+    | '/api/race-lobbies/$code'
     | '/api/runs/$runId'
     | '/api/site-leaderboard/$level'
     | '/api/site-levels/$level'
@@ -292,6 +311,7 @@ export interface FileRouteTypes {
     | '/api/tas-leaderboard/$level'
     | '/api/user/$username'
     | '/api/packs/'
+    | '/api/race-lobbies/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -314,6 +334,7 @@ export interface FileRouteTypes {
     | '/api/public/sheets-export'
     | '/api/public/site-wr-check'
     | '/api/public/tas-wr-check'
+    | '/api/race-lobbies/$code'
     | '/api/runs/$runId'
     | '/api/site-leaderboard/$level'
     | '/api/site-levels/$level'
@@ -321,6 +342,7 @@ export interface FileRouteTypes {
     | '/api/tas-leaderboard/$level'
     | '/api/user/$username'
     | '/api/packs'
+    | '/api/race-lobbies'
   id:
     | '__root__'
     | '/'
@@ -343,6 +365,7 @@ export interface FileRouteTypes {
     | '/api/public/sheets-export'
     | '/api/public/site-wr-check'
     | '/api/public/tas-wr-check'
+    | '/api/race-lobbies/$code'
     | '/api/runs/$runId'
     | '/api/site-leaderboard/$level'
     | '/api/site-levels/$level'
@@ -350,6 +373,7 @@ export interface FileRouteTypes {
     | '/api/tas-leaderboard/$level'
     | '/api/user/$username'
     | '/api/packs/'
+    | '/api/race-lobbies/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -373,12 +397,14 @@ export interface RootRouteChildren {
   ApiPublicSheetsExportRoute: typeof ApiPublicSheetsExportRoute
   ApiPublicSiteWrCheckRoute: typeof ApiPublicSiteWrCheckRoute
   ApiPublicTasWrCheckRoute: typeof ApiPublicTasWrCheckRoute
+  ApiRaceLobbiesCodeRoute: typeof ApiRaceLobbiesCodeRoute
   ApiRunsRunIdRoute: typeof ApiRunsRunIdRoute
   ApiSiteLeaderboardLevelRoute: typeof ApiSiteLeaderboardLevelRoute
   ApiSkinsSplatRoute: typeof ApiSkinsSplatRoute
   ApiTasLeaderboardLevelRoute: typeof ApiTasLeaderboardLevelRoute
   ApiUserUsernameRoute: typeof ApiUserUsernameRoute
   ApiPacksIndexRoute: typeof ApiPacksIndexRoute
+  ApiRaceLobbiesIndexRoute: typeof ApiRaceLobbiesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -530,6 +556,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicTasWrCheckRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/race-lobbies/': {
+      id: '/api/race-lobbies/'
+      path: '/api/race-lobbies'
+      fullPath: '/api/race-lobbies/'
+      preLoaderRoute: typeof ApiRaceLobbiesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/race-lobbies/$code': {
+      id: '/api/race-lobbies/$code'
+      path: '/api/race-lobbies/$code'
+      fullPath: '/api/race-lobbies/$code'
+      preLoaderRoute: typeof ApiRaceLobbiesCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/runs/$runId': {
       id: '/api/runs/$runId'
       path: '/api/runs/$runId'
@@ -608,12 +648,14 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicSheetsExportRoute: ApiPublicSheetsExportRoute,
   ApiPublicSiteWrCheckRoute: ApiPublicSiteWrCheckRoute,
   ApiPublicTasWrCheckRoute: ApiPublicTasWrCheckRoute,
+  ApiRaceLobbiesCodeRoute: ApiRaceLobbiesCodeRoute,
   ApiRunsRunIdRoute: ApiRunsRunIdRoute,
   ApiSiteLeaderboardLevelRoute: ApiSiteLeaderboardLevelRoute,
   ApiSkinsSplatRoute: ApiSkinsSplatRoute,
   ApiTasLeaderboardLevelRoute: ApiTasLeaderboardLevelRoute,
   ApiUserUsernameRoute: ApiUserUsernameRoute,
   ApiPacksIndexRoute: ApiPacksIndexRoute,
+  ApiRaceLobbiesIndexRoute: ApiRaceLobbiesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -33,6 +33,7 @@ import {
   SlidersHorizontal,
   Gauge,
   History,
+  Swords,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -91,6 +92,7 @@ import {
 } from "@/lib/play-history";
 import { submitSiteRun } from "@/lib/site-levels";
 import { submitTasRun } from "@/lib/tas-leaderboard";
+import { submitLobbyRun } from "@/lib/race-lobby";
 import {
   arrowConstants,
   SIM_TICK_MS,
@@ -163,6 +165,8 @@ export function PlayView({
   onFocusHandled,
   siteLevel,
   onSelectionChange,
+  race,
+  onRaceSubmitted,
 }: {
   levels: LevelOption[];
   /** A checkpoint handed over from a TAS viewer, to load and play immediately. */
@@ -179,6 +183,20 @@ export function PlayView({
    * at what is on screen (a site level is then a shareable link).
    */
   onSelectionChange?: (levelId: string, arrowName: string) => void;
+  /**
+   * The 1v1 race this run belongs to. When set, the level and arrow are pinned to
+   * the lobby's and a finished 1× run is posted to the lobby instead of the level
+   * board — a race run belongs to the match, not the public board.
+   */
+  race?: {
+    code: string;
+    username: string;
+    round: number;
+    levelId: string;
+    arrowName: string;
+  } | null;
+  /** Called after a race run is submitted, so the lobby view can refresh. */
+  onRaceSubmitted?: () => void;
 }) {
   const [levelId, setLevelId] = React.useState(levels[0]?.id ?? "");
   const [levelName, setLevelName] = React.useState(levels[0]?.name ?? "");
@@ -214,6 +232,10 @@ export function PlayView({
   // Refs mirror the two so the stable `onEnd` callback reads their live values.
   const playerNameRef = React.useRef("");
   const autoUploadRef = React.useRef(true);
+  // The live race, read by the same stable callback. A race run is posted to the
+  // lobby, never to the public board.
+  const raceRef = React.useRef(race ?? null);
+  raceRef.current = race ?? null;
 
   // Fullscreen play: an immersive overlay with a big canvas, a top-centre clock,
   // a pause button whose popover carries the camera settings, and an exit button.
@@ -393,6 +415,22 @@ export function PlayView({
   React.useEffect(() => {
     if (levelId) void loadLevel(levelId, arrowName);
   }, [levelId, arrowName, siteRevision, loadLevel]);
+
+  // A race pins the level and arrow to the lobby's: switching away mid-match would
+  // submit a run on a level nobody else is racing. `key` is included so rejoining
+  // a different lobby re-pins even when the level happens to match.
+  const raceKey = race ? `${race.code}:${race.round}:${race.levelId}:${race.arrowName}` : "";
+  const raceKeyRef = React.useRef("");
+  React.useEffect(() => {
+    if (!race || raceKeyRef.current === raceKey) return;
+    raceKeyRef.current = raceKey;
+    setLevelId(race.levelId);
+    setArrowName(race.arrowName);
+    setSiteRevision((r) => r + 1);
+    toast.message(`Race round ${race.round + 1} — ${race.arrowName}`, {
+      description: "Finish a 1× run to post it to the match.",
+    });
+  }, [race, raceKey]);
 
   // Tell the shell what is loaded, so the URL tracks it. The in-memory editor
   // level has no id to share, so it is not reported.
@@ -702,6 +740,36 @@ export function PlayView({
       isPb,
     });
     refreshHistory();
+
+    // A race run belongs to the match, not the public board: post it to the lobby
+    // and stop. The lobby decides the winner, and the same run does not also land
+    // on a level board where it would count twice.
+    const live = raceRef.current;
+    if (live) {
+      if (!r.realTime) {
+        toast.message(`Finished in ${fmtTime(timeMs / 1000)} at ${r.speed}×`, {
+          description: "A race only accepts a 1× run.",
+        });
+        return;
+      }
+      void submitLobbyRun(live.code, {
+        username: live.username,
+        round: live.round,
+        timeMs,
+        inputs,
+        arrowName: arrowForRun,
+        finished: true,
+      })
+        .then(() => {
+          toast.success(`Round ${live.round + 1} posted — ${fmtTime(timeMs / 1000)}`);
+          onRaceSubmitted?.();
+        })
+        .catch((e: unknown) => {
+          const message = e instanceof Error ? e.message : "Could not post that run";
+          toast.error("Race run not posted", { description: message });
+        });
+      return;
+    }
 
     // Auto-upload. Only a site level's own board auto-accepts a run: it folds to
     // one row per player, so repeated plays just improve your row. The community
@@ -1120,6 +1188,17 @@ export function PlayView({
 
   return (
     <div className="space-y-4">
+      {race && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--app-accent)]/40 bg-[var(--app-accent)]/10 px-3 py-2">
+          <Swords className="w-4 h-4 text-[var(--app-accent)]" />
+          <span className="text-sm font-semibold text-[var(--app-accent)]">
+            1v1 race — round {race.round + 1}
+          </span>
+          <span className="text-[11px] text-slate-400">
+            {race.levelId} · {race.arrowName} · finish a 1× run to post it
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-3 py-2">
         <Label
           htmlFor="play-username"
