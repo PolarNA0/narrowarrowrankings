@@ -32,6 +32,7 @@ import { Route as ApiPublicSiteWrCheckRouteImport } from './routes/api/public/si
 import { Route as ApiPublicTasWrCheckRouteImport } from './routes/api/public/tas-wr-check'
 import { Route as ApiRaceLobbiesIndexRouteImport } from './routes/api/race-lobbies.index'
 import { Route as ApiRaceLobbiesCodeRouteImport } from './routes/api/race-lobbies.$code'
+import { Route as ApiRaceMatchesIndexRouteImport } from './routes/api/race-matches.index'
 import { Route as ApiRunsRunIdRouteImport } from './routes/api/runs.$runId'
 import { Route as ApiSiteLeaderboardLevelRouteImport } from './routes/api/site-leaderboard.$level'
 import { Route as ApiSiteLevelsLevelRouteImport } from './routes/api/site-levels.$level'
@@ -155,6 +156,11 @@ const ApiRaceLobbiesCodeRoute = ApiRaceLobbiesCodeRouteImport.update({
   path: '/api/race-lobbies/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRaceMatchesIndexRoute = ApiRaceMatchesIndexRouteImport.update({
+  id: '/api/race-matches/',
+  path: '/api/race-matches/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRunsRunIdRoute = ApiRunsRunIdRouteImport.update({
   id: '/api/runs/$runId',
   path: '/api/runs/$runId',
@@ -216,6 +222,7 @@ export interface FileRoutesByFullPath {
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs/': typeof ApiPacksIndexRoute
   '/api/race-lobbies/': typeof ApiRaceLobbiesIndexRoute
+  '/api/race-matches/': typeof ApiRaceMatchesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -247,6 +254,7 @@ export interface FileRoutesByTo {
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs': typeof ApiPacksIndexRoute
   '/api/race-lobbies': typeof ApiRaceLobbiesIndexRoute
+  '/api/race-matches': typeof ApiRaceMatchesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -279,6 +287,7 @@ export interface FileRoutesById {
   '/api/user/$username': typeof ApiUserUsernameRoute
   '/api/packs/': typeof ApiPacksIndexRoute
   '/api/race-lobbies/': typeof ApiRaceLobbiesIndexRoute
+  '/api/race-matches/': typeof ApiRaceMatchesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -312,6 +321,7 @@ export interface FileRouteTypes {
     | '/api/user/$username'
     | '/api/packs/'
     | '/api/race-lobbies/'
+    | '/api/race-matches/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -343,6 +353,7 @@ export interface FileRouteTypes {
     | '/api/user/$username'
     | '/api/packs'
     | '/api/race-lobbies'
+    | '/api/race-matches'
   id:
     | '__root__'
     | '/'
@@ -374,6 +385,7 @@ export interface FileRouteTypes {
     | '/api/user/$username'
     | '/api/packs/'
     | '/api/race-lobbies/'
+    | '/api/race-matches/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -405,6 +417,7 @@ export interface RootRouteChildren {
   ApiUserUsernameRoute: typeof ApiUserUsernameRoute
   ApiPacksIndexRoute: typeof ApiPacksIndexRoute
   ApiRaceLobbiesIndexRoute: typeof ApiRaceLobbiesIndexRoute
+  ApiRaceMatchesIndexRoute: typeof ApiRaceMatchesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -570,6 +583,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRaceLobbiesCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/race-matches/': {
+      id: '/api/race-matches/'
+      path: '/api/race-matches'
+      fullPath: '/api/race-matches/'
+      preLoaderRoute: typeof ApiRaceMatchesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/runs/$runId': {
       id: '/api/runs/$runId'
       path: '/api/runs/$runId'
@@ -656,6 +676,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUserUsernameRoute: ApiUserUsernameRoute,
   ApiPacksIndexRoute: ApiPacksIndexRoute,
   ApiRaceLobbiesIndexRoute: ApiRaceLobbiesIndexRoute,
+  ApiRaceMatchesIndexRoute: ApiRaceMatchesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -30,6 +30,12 @@ export interface RaceLobby {
   closesAt: string | null;
   /** Set once the match has been settled, so a finished lobby stops accepting runs. */
   settledAt: string | null;
+  /**
+   * Set once the match has been copied into the durable archive. Kept on the
+   * lobby so a polling read does not re-attempt the archive write every tick.
+   * Absent on lobbies created before archiving existed — treat that as "not yet".
+   */
+  archivedAt?: string | null;
 }
 
 const COLLECTION = "race_lobbies";

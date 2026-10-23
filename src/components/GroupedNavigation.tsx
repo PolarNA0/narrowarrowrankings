@@ -28,6 +28,7 @@ export const NAV_GROUPS = [
       { id: "average", label: "Total time & average" },
       { id: "points", label: "Rank points" },
       { id: "position", label: "Position points" },
+      { id: "race-matches", label: "Recent matches" },
     ],
   },
   {

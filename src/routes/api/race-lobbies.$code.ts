@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { decodeInputSymbols } from "@/lib/replay";
+import { buildRaceMatch, archiveMatch } from "@/lib/race-matches.server";
 import {
   makeLobbyCode,
   normalizeLobbyCode,
@@ -67,7 +68,11 @@ export const Route = createFileRoute("/api/race-lobbies/$code")({
       GET: async ({ params }) => {
         const lobby = await readLobbyPublic(params.code);
         if (!lobby) return bad("No lobby with that code.", 404);
-        return Response.json(viewOf(lobby), { headers: { "cache-control": "no-store" } });
+        // Backfill the archive for a lobby that settled before archiving existed
+        // (or whose archive write failed). Guarded by `archivedAt`, so a poll
+        // writes at most once.
+        const view = lobby.settledAt ? await archiveSettledLobby(lobby) : lobby;
+        return Response.json(viewOf(view), { headers: { "cache-control": "no-store" } });
       },
 
       POST: async ({ params, request }) => {
@@ -132,7 +137,11 @@ export const Route = createFileRoute("/api/race-lobbies/$code")({
           // accepting runs without needing a separate call.
           const settled = raceSettles(submitted.lobby);
           const saved = await saveLobby(settled);
-          return Response.json(viewOf(saved));
+          // The lobby is transient; archive the result the moment it is decided
+          // so it survives the lobby's TTL. Best effort — a failed archive must
+          // not fail the run the player just posted.
+          const final = saved.settledAt ? await archiveSettledLobby(saved) : saved;
+          return Response.json(viewOf(final));
         }
 
         return bad("Unknown action.");
@@ -151,4 +160,41 @@ function raceSettles(lobby: RaceLobby): RaceLobby {
     ),
   );
   return complete ? { ...lobby, settledAt: new Date().toISOString() } : lobby;
+}
+
+/**
+ * Copy a settled lobby into the durable match archive, once. Best effort: an
+ * archive failure is logged and swallowed, because the run the player just posted
+ * has already been saved and must not be reported as failed over it. `archivedAt`
+ * on the lobby is the guard, so a polling read does not re-write every tick; it
+ * is only stamped after a successful write, so a failure is retried on the next
+ * call rather than being lost.
+ */
+async function archiveSettledLobby(lobby: RaceLobby): Promise<RaceLobby> {
+  if (!lobby.settledAt || lobby.archivedAt) return lobby;
+  try {
+    await archiveMatch(
+      buildRaceMatch({
+        code: lobby.code,
+        levelId: lobby.levelId,
+        levelName: lobby.levelName,
+        arrowName: lobby.arrowName,
+        mode: lobby.mode,
+        players: lobby.players,
+        runs: lobby.runs,
+        playedAt: lobby.settledAt,
+      }),
+    );
+  } catch (err) {
+    console.error("Failed to archive race match", lobby.code, err);
+    return lobby;
+  }
+  const stamped: RaceLobby = { ...lobby, archivedAt: new Date().toISOString() };
+  try {
+    await saveLobby(stamped);
+  } catch {
+    // The archive entry is already written; failing to stamp just means the next
+    // read re-attempts an idempotent write, which is harmless.
+  }
+  return stamped;
 }

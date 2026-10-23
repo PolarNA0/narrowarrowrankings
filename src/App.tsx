@@ -154,6 +154,7 @@ import { LevelGeneratorView } from "@/components/LevelGeneratorView";
 import type { NalvlLevel } from "@/lib/nalvl";
 import { PlayView } from "@/components/PlayView";
 import { RaceView, type RacePlayTarget } from "@/components/RaceView";
+import { RecentMatchesView } from "@/components/RecentMatchesView";
 import { siteIdOf } from "@/components/LevelPicker";
 import { EndlessView } from "@/components/EndlessView";
 import { fetchTasBoardSummary, type TasSummary } from "@/lib/tas-leaderboard";
@@ -2719,6 +2720,8 @@ export default function App() {
               navigateView("play");
             }}
           />
+        ) : view === "race-matches" ? (
+          <RecentMatchesView />
         ) : view === "editor" ? (
           <LevelEditorView
             initialLevel={editorLevel}
