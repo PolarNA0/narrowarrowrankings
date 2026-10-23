@@ -1090,12 +1090,30 @@ export interface ReplayEngine {
   /** Reset to the spawn pose (engine rebuild) and return the initial sample. */
   reset(): SimPoint;
   /**
+   * Reset to the spawn without the full-map `read` the return value would cost.
+   * The optimizer restores a checkpoint per candidate and never uses the pose,
+   * so this is the reset its inner loop wants.
+   */
+  resetQuiet(): void;
+  /**
+   * Rebuild the engine from a snapshot without returning the pose. The cheap
+   * counterpart of {@link restore} for the optimizer's per-candidate restore.
+   */
+  restoreQuiet(snapshot: string): void;
+  /**
    * Parse the engine's current full state into a sample, without stepping.
    * `step`/`stepCode` already advanced, so a caller that only needs the pose at
    * the render rate reads it once here instead of paying the full-state JSON
    * parse on every 240Hz tick.
    */
   read(): SimPoint;
+  /**
+   * The arrow's position and velocity, read cheaply from the head of the state
+   * string rather than a full-map `JSON.parse`. The optimizer's innermost loop
+   * calls this once per sampled tick, so it must stay a handful of `indexOf`
+   * scans; on a long level the full parse would dominate the search.
+   */
+  pose(): { x: number; y: number; vx: number; vy: number };
   /**
    * The engine's terminal-state code at the current tick, without stepping:
    * 0 playing, 1 finish, 2 dead. `step` already advanced, so callers that need
@@ -1169,6 +1187,38 @@ export async function createReplayEngine(
       finished: s.player.state === "finish",
       thrustPower: s.player.thrust_power ?? 0,
     };
+  };
+
+  // The player block serializes first, so the optimizer's innermost loop can
+  // scan the head of the state string instead of parsing the whole map. On a
+  // long level the copy out of wasm dominates, and this reads ~1KB of it. Falls
+  // back to the full parse if a field is missing, so a shape change degrades to
+  // correct-and-slow rather than silently reading garbage.
+  const HEAD_BYTES = 2048;
+  const numAt = (s: string, key: string, from: number): [number, number] => {
+    const i = s.indexOf(key, from);
+    if (i < 0) return [NaN, from];
+    return [parseFloat(s.slice(i + key.length, i + key.length + 32)), i + key.length];
+  };
+  const pose = (
+    engine: InstanceType<EngineModule["GameMechanicsEngine"]>,
+  ): { x: number; y: number; vx: number; vy: number } => {
+    const head = engine.head(HEAD_BYTES);
+    let o = head.indexOf('"translation"');
+    if (o < 0) {
+      const p = read(engine);
+      return { x: p.x, y: p.y, vx: 0, vy: 0 };
+    }
+    const [x, ox] = numAt(head, '"x":', o);
+    const [y, oy] = numAt(head, '"y":', ox);
+    o = head.indexOf('"velocity"', oy);
+    const [vx, ovx] = numAt(head, '"x":', o);
+    const [vy] = numAt(head, '"y":', ovx);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      const p = read(engine);
+      return { x: p.x, y: p.y, vx: 0, vy: 0 };
+    }
+    return { x, y, vx: Number.isFinite(vx) ? vx : 0, vy: Number.isFinite(vy) ? vy : 0 };
   };
 
   // Wind/suction fields are not part of the engine, so they are applied here as
@@ -1466,6 +1516,20 @@ export async function createReplayEngine(
    */
   const needsPrevPose = hasSwitches || hasBreakables || hasTriggers;
 
+  // Restore the run state that rides alongside the engine state in a snapshot
+  // envelope: the armed wire, door open flags, broken walls and event timeline.
+  const applyEnvelope = (parsed: SnapshotEnvelope): void => {
+    wire = parsed.wire ?? { armed: false, dirX: 0, dirY: 0, targetSpeed: 0, accel: 0 };
+    doorOpen.clear();
+    for (const [group, open] of parsed.doorOpen ?? []) doorOpen.set(group, open);
+    broken.clear();
+    for (const idx of parsed.broken ?? []) broken.add(idx);
+    timeline.switchFires = parsed.timeline?.switchFires ?? [];
+    timeline.brokenAt = parsed.timeline?.brokenAt ?? [];
+    firedSwitches.clear();
+    for (const f of timeline.switchFires) firedSwitches.add(f.group);
+  };
+
   return {
     step(symbol) {
       const before = needsPrevPose ? read(engine) : null;
@@ -1505,8 +1569,26 @@ export async function createReplayEngine(
       if (hasMotions || hasPointRewrites) applyGeometry(0);
       return read(engine);
     },
+    // The optimizer restores a checkpoint on every candidate and never uses the
+    // returned pose, so the full-map `read` there is pure waste. These skip it.
+    resetQuiet() {
+      engine.free();
+      engine = new mod.GameMechanicsEngine(state());
+      resetSiteState();
+      if (hasMotions || hasPointRewrites) applyGeometry(0);
+    },
+    restoreQuiet(snapshot) {
+      const parsed = JSON.parse(snapshot) as SnapshotEnvelope;
+      const engineState = parsed.engine !== undefined ? parsed.engine : parsed;
+      engine.free();
+      engine = mod.GameMechanicsEngine.from_state(engineState as never);
+      applyEnvelope(parsed);
+    },
     read() {
       return read(engine);
+    },
+    pose() {
+      return pose(engine);
     },
     code() {
       return engine.player_state_code();
@@ -1531,15 +1613,7 @@ export async function createReplayEngine(
       const engineState = parsed.engine !== undefined ? parsed.engine : parsed;
       engine.free();
       engine = mod.GameMechanicsEngine.from_state(engineState as never);
-      wire = parsed.wire ?? { armed: false, dirX: 0, dirY: 0, targetSpeed: 0, accel: 0 };
-      doorOpen.clear();
-      for (const [group, open] of parsed.doorOpen ?? []) doorOpen.set(group, open);
-      broken.clear();
-      for (const idx of parsed.broken ?? []) broken.add(idx);
-      timeline.switchFires = parsed.timeline?.switchFires ?? [];
-      timeline.brokenAt = parsed.timeline?.brokenAt ?? [];
-      firedSwitches.clear();
-      for (const f of timeline.switchFires) firedSwitches.add(f.group);
+      applyEnvelope(parsed);
       return read(engine);
     },
     timeline() {

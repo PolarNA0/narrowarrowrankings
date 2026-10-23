@@ -261,6 +261,29 @@ export class GameMechanicsEngine {
         }
     }
     /**
+     * Decode only the first `maxLen` bytes of the state JSON.
+     *
+     * The player block serializes first, so a caller that only needs the pose
+     * (the optimizer's innermost loop) can scan this head instead of paying to
+     * copy the whole map string out of wasm — the copy, not the parse, is the
+     * cost on a long level.
+     * @param {number} maxLen
+     * @returns {string}
+     */
+    head(maxLen) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.gamemechanicsengine_state(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            const len = Math.min(deferred1_1 >>> 0, maxLen >>> 0);
+            return getStringFromWasm0(ret[0], len);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * @returns {number}
      */
     get_ticks() {

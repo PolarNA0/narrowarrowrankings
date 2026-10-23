@@ -38,7 +38,12 @@ import { ReplayStage } from "@/components/ReplayViewer";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { LevelPicker, siteIdOf } from "@/components/LevelPicker";
 import { fetchTasBoard, type TasEntry } from "@/lib/tas-leaderboard";
-import { fetchSiteLevel, fetchSiteScores, siteLevelToRawData, type SiteScoreEntry } from "@/lib/site-levels";
+import {
+  fetchSiteLevel,
+  fetchSiteScores,
+  siteLevelToRawData,
+  type SiteScoreEntry,
+} from "@/lib/site-levels";
 import { fetchLeaderboard } from "@/services/api";
 import { fetchRunInputs } from "@/hooks/useCompareGhosts";
 import type { LeaderboardEntry } from "@/types";
@@ -48,6 +53,7 @@ import {
   type BruteResult,
   type BruteResultLite,
 } from "@/lib/tas-brute";
+import { TUNING_ARMS } from "@/lib/tas-sectioned";
 import { encodeInputSymbols } from "@/lib/replay";
 import { SIM_TICK_MS } from "@/lib/replay-sim";
 import { waypointsToSymbols, simplifyStroke } from "@/lib/path-seed";
@@ -78,7 +84,8 @@ const fmt = (tick: number | null) =>
 /** How many search workers to run in parallel. */
 function workerCount(): number {
   const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
-  return Math.max(1, Math.min(8, cores - 1));
+  // Cap at 16 (leaving one core for the UI), matching the competitor's pool.
+  return Math.max(1, Math.min(16, cores - 1));
 }
 
 /**
@@ -233,6 +240,13 @@ function BruteSearch({
   const [t0, setT0] = React.useState(6);
   const [scale, setScale] = React.useState(1);
   const [refine, setRefine] = React.useState(true);
+  /**
+   * Search strategy. "whole" anneals the whole run against the finish; "sectioned"
+   * cuts the run at rotating boundaries and optimizes each section against a gate
+   * at its end, locking winners in as it goes. Sectioned is the stronger search on
+   * anything with real corners; whole-run is a good fallback for short levels.
+   */
+  const [strategy, setStrategy] = React.useState<"whole" | "sectioned">("sectioned");
   const [entries, setEntries] = React.useState<TasEntry[]>([]);
   const [seedId, setSeedId] = React.useState<string>("auto");
   // Which arrow's human board feeds the seed picker. "" merges all three; a
@@ -361,7 +375,8 @@ function BruteSearch({
     return siteEntries.find((e) => e.id === seedId) ?? null;
   }, [isSiteLevel, siteEntries, seedId]);
 
-  const canSeed = entries.length > 0 || humanEntries.length > 0 || siteEntries.length > 0 || !!drawnSeed;
+  const canSeed =
+    entries.length > 0 || humanEntries.length > 0 || siteEntries.length > 0 || !!drawnSeed;
 
   const seedTimeMs = seedEntry?.timeMs ?? siteSeed?.timeMs ?? null;
 
@@ -643,6 +658,27 @@ function BruteSearch({
             }
           };
           const basin = BASIN_SPREAD[i % BASIN_SPREAD.length];
+          if (strategy === "sectioned") {
+            // Sectioned search: each worker gets a different personality arm
+            // (temperature, boldness, micro/divergence rewards) and its own RNG
+            // seed, so the pool covers several search styles at once. A line drawn
+            // on the map becomes soft route guides the search is rewarded for
+            // following in order.
+            worker.postMessage({
+              type: "start-sectioned",
+              options: {
+                seedSymbols,
+                levelData,
+                arrowName: seedArrow,
+                budgetMs,
+                sections: "auto",
+                tuning: TUNING_ARMS[i % TUNING_ARMS.length],
+                waypoints: drawnPath.length >= 2 ? simplifyStroke(drawnPath, 64) : undefined,
+                rngSeed: (Date.now() ^ ((i + 1) * 0x9e3779b9)) & 0x7fffffff,
+              },
+            });
+            return;
+          }
           worker.postMessage({
             type: "start",
             options: {
@@ -884,6 +920,22 @@ function BruteSearch({
             </Select>
           </Field>
 
+          <Field label="Strategy">
+            <Select value={strategy} onValueChange={(v) => setStrategy(v as "whole" | "sectioned")}>
+              <SelectTrigger className="h-9 text-xs bg-white/5 border-white/10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200">
+                <SelectItem value="sectioned" className="text-xs">
+                  Sectioned (gates, recommended)
+                </SelectItem>
+                <SelectItem value="whole" className="text-xs">
+                  Whole-run (single pass)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+
           <Field label="Refine (1-tick polish)">
             <Button
               variant="outline"
@@ -1071,7 +1123,9 @@ function BruteSearch({
       {result && result.sim.path.length > 1 && (
         <ResultPreview
           result={result}
-          arrowName={seedEntry?.arrowName ?? siteSeed?.arrowName ?? humanSeed?.arrow_name ?? "Narrow Arrow"}
+          arrowName={
+            seedEntry?.arrowName ?? siteSeed?.arrowName ?? humanSeed?.arrow_name ?? "Narrow Arrow"
+          }
           geometry={geometry}
         />
       )}
@@ -1084,7 +1138,8 @@ function BruteSearch({
             onClick={() => setSubmitOpen(true)}
             disabled={!result.improved}
           >
-            <Send className="w-3.5 h-3.5 mr-1" /> {isSiteLevel ? "Submit to site board" : "Submit as my TAS"}
+            <Send className="w-3.5 h-3.5 mr-1" />{" "}
+            {isSiteLevel ? "Submit to site board" : "Submit as my TAS"}
           </Button>
           <span className="text-[11px] text-slate-500">
             {isSiteLevel
@@ -1100,7 +1155,9 @@ function BruteSearch({
           onOpenChange={setSubmitOpen}
           levelId={siteId ?? levelId}
           levelName={levelName || levelId}
-          arrowName={seedEntry?.arrowName ?? siteSeed?.arrowName ?? humanSeed?.arrow_name ?? "Narrow Arrow"}
+          arrowName={
+            seedEntry?.arrowName ?? siteSeed?.arrowName ?? humanSeed?.arrow_name ?? "Narrow Arrow"
+          }
           timeMs={result.timeMs}
           inputs={result.inputs}
           inputCount={result.inputCount}

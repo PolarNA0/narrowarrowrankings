@@ -122,10 +122,18 @@ export interface EvalResult {
   minDist: number | null;
   /** Tick the evaluation resumed from (0 when replayed from the spawn). */
   fromTick: number;
+  /**
+   * A caller-supplied cost, when the search is not the whole-run finish-time
+   * search. The sectioned search scores a candidate against a gate, which needs
+   * more than the terminal tick, so its sim stashes the cost here and the search
+   * reads it back through {@link SearchHooks.score} instead of `scoreEval`.
+   */
+  score?: number;
 }
 
 /** Cost of an evaluation; lower is better, a real finish always beats a DNF. */
 export function scoreEval(res: EvalResult): number {
+  if (res.score !== undefined) return res.score;
   if (res.code === 1 && res.ticks != null) return res.ticks;
   const d = res.minDist ?? 4000;
   return DNF_SCORE + d * DNF_TICKS_PER_UNIT + (res.ticks ?? 0) * DNF_TIME_W;
@@ -517,6 +525,8 @@ export function anneal(
   budgetMs: number,
   hooks: SearchHooks,
   scale = 1,
+  bold = 1,
+  reheatFloor = 0.15,
 ): { flat: number[]; best: number; steps: number; reheats: number } {
   const rnd = makeRng(rngSeed);
   let cur = toSegs(seedFlat);
@@ -538,7 +548,11 @@ export function anneal(
   while (budgetMs <= 0 || Date.now() - start < budgetMs) {
     if (hooks.shouldStop?.()) break;
     steps++;
-    const cand = mutate(cur, rnd, scale);
+    // `bold` applies several mutations per step: one inches along the current
+    // line, several can jump to a different basin, which is what a worker told
+    // to "try more things" needs.
+    let cand = cur;
+    for (let k = 0; k < bold; k++) cand = mutate(cand, rnd, scale);
     const flat = expand(cand);
     const maxTicks = haveFinish ? bestTicks + 16 : 0;
     const res = sim(flat, maxTicks);
@@ -565,7 +579,7 @@ export function anneal(
     T *= 0.9997;
     // Reheat when too cold, or when the best has stalled for a long stretch, so
     // a dead basin is not ground forever. Restart from the best.
-    if (T < 0.15 || sinceImprove > 6000) {
+    if (T < reheatFloor || sinceImprove > 6000) {
       reheats++;
       T = Math.max(2.0, t0 * 0.5);
       cur = toSegs(bestFlat);

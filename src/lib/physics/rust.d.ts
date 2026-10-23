@@ -125,6 +125,12 @@ export class GameMechanicsEngine {
    * JS-friendly constructor that creates the engine from an ApiGameState.
    */
   constructor(state: ApiGameState);
+  /**
+   * Decode only the first `maxLen` bytes of the state JSON. The player block
+   * serializes first, so a pose-only reader scans this head instead of copying
+   * the whole map string out of wasm.
+   */
+  head(maxLen: number): string;
   get_ticks(): number;
   /**
    * The run's cumulative statistics counters as a small JSON object.
