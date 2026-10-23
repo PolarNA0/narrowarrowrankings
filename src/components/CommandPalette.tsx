@@ -19,6 +19,7 @@ interface Props {
 }
 
 const VIEWS: Array<{ id: string; label: string }> = [
+  { id: "daily", label: "Daily level" },
   { id: "leaderboard", label: "Levels" },
   { id: "average", label: "Average leaderboard" },
   { id: "wrs", label: "World records" },

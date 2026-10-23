@@ -147,6 +147,7 @@ import { SkinsView } from "@/components/SkinsView";
 import { TasEditorView } from "@/components/TasEditorView";
 import { TasLeaderboardView, type TasLoadRequest } from "@/components/TasLeaderboardView";
 import { SiteLevelsView } from "@/components/SiteLevelsView";
+import { DailyView } from "@/components/DailyView";
 import { SiteRecordsView } from "@/components/SiteRecordsView";
 import { BruteView } from "@/components/BruteView";
 import { LevelEditorView } from "@/components/LevelEditorView";
@@ -270,6 +271,20 @@ export default function App() {
   }, [dynamicLevels, extraLevels]);
 
   const dynamicPacksWithCustom = dynamicPacks;
+
+  // The daily rotation draws from the official levels, so it never features an
+  // admin-added or custom level the game itself would not offer.
+  const dailyCandidates = React.useMemo(
+    () => dynamicLevels.map((l) => ({ levelId: l.id, name: l.name })),
+    [dynamicLevels],
+  );
+
+  // The daily and level boards are the same upstream board, so both subtabs
+  // share one fetch (and its cache) rather than hitting the API twice.
+  const fetchDailyBoard = React.useCallback(
+    (levelId: string) => fetchLeaderboard(levelId, false, true),
+    [],
+  );
 
   const handleLevelClick = async (levelId: string) => {
     if (!levelId) return;
@@ -1674,6 +1689,16 @@ export default function App() {
             levelPacks={dynamicPacks}
             allUsernames={allUsernames}
             isFetchingAll={isFetchingAll}
+          />
+        ) : view === "daily" ? (
+          <DailyView
+            candidates={dailyCandidates}
+            fetchBoard={fetchDailyBoard}
+            loading={loading && !selectedLevel}
+            onOpenLevel={(id) => {
+              handleLevelClick(id);
+            }}
+            formatTime={(s) => formatTime(s, "seconds")}
           />
         ) : view === "profile" && selectedPlayer ? (
           isFetchingAll && !selectedPlayerStats ? (
