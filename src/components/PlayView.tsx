@@ -32,6 +32,7 @@ import {
   Minimize2,
   SlidersHorizontal,
   Gauge,
+  History,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -39,6 +40,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -75,6 +77,20 @@ import {
   savePlayCheckpoint,
   type PlayCheckpoint,
 } from "@/lib/play-checkpoints";
+import {
+  addPlayHistory,
+  clearPlayHistory,
+  loadAutoUpload,
+  loadPlayerName,
+  playHistoryFor,
+  saveAutoUpload,
+  savePlayerName,
+  setPlayHistoryUpload,
+  type PlayHistoryEntry,
+  type PlayUploadOutcome,
+} from "@/lib/play-history";
+import { submitSiteRun } from "@/lib/site-levels";
+import { submitTasRun } from "@/lib/tas-leaderboard";
 import {
   arrowConstants,
   SIM_TICK_MS,
@@ -190,6 +206,15 @@ export function PlayView({
   const [showSettings, setShowSettings] = React.useState(false);
   const [submitOpen, setSubmitOpen] = React.useState(false);
 
+  // The name runs upload under, plus the automatic-upload switch. Kept here (and
+  // mirrored to storage) so a finished run can post itself without a dialog.
+  const [playerName, setPlayerName] = React.useState("");
+  const [autoUpload, setAutoUpload] = React.useState(true);
+  const [history, setHistory] = React.useState<PlayHistoryEntry[]>([]);
+  // Refs mirror the two so the stable `onEnd` callback reads their live values.
+  const playerNameRef = React.useRef("");
+  const autoUploadRef = React.useRef(true);
+
   // Fullscreen play: an immersive overlay with a big canvas, a top-centre clock,
   // a pause button whose popover carries the camera settings, and an exit button.
   const [fullscreen, setFullscreen] = React.useState(false);
@@ -206,6 +231,9 @@ export function PlayView({
   // Set when a handoff asks for the run to begin as soon as the level loads
   // (e.g. the editor's "Open in Play"), so the clock starts without a Start click.
   const autoStartRef = React.useRef(false);
+  // `loadLevel` (and the `onEnd` it installs) is a stable callback, so it must
+  // not close over the finish handler's level name — read the live one instead.
+  const finishRef = React.useRef<(r: PlayResult, id: string, arrow: string) => void>(() => {});
 
   const gameRef = React.useRef<PlayGame | null>(null);
   const canvasRef = React.useRef<PlayCanvasHandle | null>(null);
@@ -305,7 +333,7 @@ export function PlayView({
             setResult(r);
             setPhase(game.phase);
             setTick(game.tick);
-            if (r.finished) handleFinish(r, id, arrowToUse);
+            if (r.finished) finishRef.current(r, id, arrowToUse);
           },
         });
         const ok = await game.load();
@@ -398,6 +426,24 @@ export function PlayView({
   React.useEffect(() => {
     refreshSaved();
   }, [refreshSaved]);
+
+  // The run log is per level+arrow, like the PBs and checkpoints.
+  const refreshHistory = React.useCallback(() => {
+    setHistory(playHistoryFor(levelId, arrowName));
+  }, [levelId, arrowName]);
+  React.useEffect(() => {
+    refreshHistory();
+  }, [refreshHistory]);
+
+  // The uploaded name and the automatic-upload switch survive a reload.
+  React.useEffect(() => {
+    const name = loadPlayerName();
+    const auto = loadAutoUpload();
+    setPlayerName(name);
+    setAutoUpload(auto);
+    playerNameRef.current = name;
+    autoUploadRef.current = auto;
+  }, []);
 
   // A checkpoint handed over from a TAS viewer: switch to its level+arrow and
   // resume from it. If that level+arrow is already loaded the resume is applied
@@ -558,36 +604,186 @@ export function PlayView({
 
   // ---- run control ----------------------------------------------------------
 
+  /**
+   * Post a finished run on the player's behalf, with no dialog. Returns the
+   * outcome so the history row can show what happened. A duplicate (the same
+   * inputs already on the board) is not an error worth shouting about.
+   */
+  const autoSubmitRun = async (
+    kind: "site" | "tas",
+    payload: {
+      levelId: string;
+      username: string;
+      arrowName: string;
+      timeMs: number;
+      inputs: string;
+      inputCount: number;
+    },
+  ): Promise<PlayUploadOutcome> => {
+    try {
+      const result = kind === "site" ? await submitSiteRun(payload) : await submitTasRun(payload);
+      const isRecord = result.isRecord;
+      const personalBest = "isPersonalBest" in result ? result.isPersonalBest : undefined;
+      if (isRecord) {
+        toast.success(`New record! ${payload.username} — ${(payload.timeMs / 1000).toFixed(3)}s`, {
+          description: `Fastest time on ${levelName || payload.levelId}.`,
+          duration: 6000,
+        });
+      } else if (personalBest === false) {
+        toast.info(`Uploaded — slower than your best on ${levelName || payload.levelId}`, {
+          description: "Only your fastest run is kept on the board.",
+        });
+      } else {
+        toast.success(`Uploaded — rank #${result.rank}`, {
+          description: `${(payload.timeMs / 1000).toFixed(3)}s on the ${kind === "site" ? "level" : "TAS"} board`,
+        });
+      }
+      return { kind, status: "ok", rank: result.rank, isRecord };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Upload failed";
+      // The board rejects an exact re-upload; that is not a failure to report.
+      if (message.toLowerCase().includes("already on the board")) {
+        return { kind, status: "duplicate", message };
+      }
+      toast.error("Automatic upload failed", { description: message });
+      return { kind, status: "error", message };
+    }
+  };
+
   const handleFinish = (r: PlayResult, id: string, arrowForRun: string) => {
     const timeMs = r.tick * SIM_TICK_MS;
+    const inputs = encodeInputSymbols(r.symbols);
+    const name = playerNameRef.current.trim();
+
     // A run made at a rate other than 1× is a testing aid, not a speedrun, so it
     // never sets a personal best (the local PB is compared against real runs).
+    let isPb = false;
     if (!r.realTime) {
       toast.message(`Finished in ${fmtTime(timeMs / 1000)} at ${r.speed}×`, {
         description: "Only 1× runs count towards your personal best.",
       });
+    } else {
+      const prev = loadBest(id, arrowForRun);
+      if (!prev || timeMs < prev.timeMs) {
+        const stored: StoredBest = {
+          inputs,
+          inputCount: r.symbols.length,
+          timeMs,
+        };
+        try {
+          window.localStorage.setItem(bestKey(id, arrowForRun), JSON.stringify(stored));
+        } catch {
+          /* storage blocked — the PB just isn't kept */
+        }
+        setBest(stored);
+        isPb = true;
+        if (prev) toast.success(`New personal best: ${fmtTime(timeMs / 1000)}`);
+        else toast.success(`Finished in ${fmtTime(timeMs / 1000)}`);
+      } else {
+        toast.message(`Finished in ${fmtTime(timeMs / 1000)}`, {
+          description: `PB is ${fmtTime(prev.timeMs / 1000)}`,
+        });
+      }
+    }
+
+    // Record the run before uploading: a run that is not submitted in time still
+    // has to survive a restart, which was the whole point of the log.
+    const recorded = addPlayHistory({
+      levelId: id,
+      levelName,
+      arrowName: arrowForRun,
+      tick: r.tick,
+      timeMs,
+      speed: r.speed,
+      finished: true,
+      realTime: r.realTime,
+      inputs,
+      inputCount: r.symbols.length,
+      isPb,
+    });
+    refreshHistory();
+
+    // Auto-upload. Only a site level's own board auto-accepts a run: it folds to
+    // one row per player, so repeated plays just improve your row. The community
+    // TAS board keeps every entry, so it stays a manual submit — auto-posting a
+    // casual play there would flood it. The editor's in-memory level has no board
+    // at all. A non-1× run is a testing aid, so it is never auto-uploaded.
+    if (!autoUploadRef.current || !name || id === SITE_LEVEL_ID) return;
+    const siteId = siteIdOf(id);
+    if (!siteId || !r.realTime) return;
+    void autoSubmitRun("site", {
+      levelId: siteId,
+      username: name,
+      arrowName: arrowForRun,
+      timeMs,
+      inputs,
+      inputCount: r.symbols.length,
+    }).then((outcome) => {
+      setPlayHistoryUpload(recorded.id, outcome);
+      refreshHistory();
+    });
+  };
+
+  React.useEffect(() => {
+    finishRef.current = handleFinish;
+  });
+
+  /**
+   * Re-post a logged run. This is the safety net behind automatic upload: if the
+   * upload failed (offline, a server blip) the run is still in the log, so it can
+   * be pushed to the board later without replaying it.
+   */
+  const retryUpload = (entry: PlayHistoryEntry) => {
+    const name = playerNameRef.current.trim();
+    if (!name) {
+      toast.error("Set your name in the Player bar first.");
       return;
     }
-    const prev = loadBest(id, arrowForRun);
-    if (!prev || timeMs < prev.timeMs) {
-      const stored: StoredBest = {
-        inputs: encodeInputSymbols(r.symbols),
-        inputCount: r.symbols.length,
-        timeMs,
-      };
-      try {
-        window.localStorage.setItem(bestKey(id, arrowForRun), JSON.stringify(stored));
-      } catch {
-        /* storage blocked — the PB just isn't kept */
-      }
-      setBest(stored);
-      if (prev) toast.success(`New personal best: ${fmtTime(timeMs / 1000)}`);
-      else toast.success(`Finished in ${fmtTime(timeMs / 1000)}`);
-    } else {
-      toast.message(`Finished in ${fmtTime(timeMs / 1000)}`, {
-        description: `PB is ${fmtTime(prev.timeMs / 1000)}`,
-      });
+    const siteId = siteIdOf(entry.levelId);
+    if (!siteId) {
+      toast.error("Only site levels can be uploaded from Play.");
+      return;
     }
+    setPlayHistoryUpload(entry.id, { kind: "site", status: "pending" });
+    refreshHistory();
+    void autoSubmitRun("site", {
+      levelId: siteId,
+      username: name,
+      arrowName: entry.arrowName,
+      timeMs: entry.timeMs,
+      inputs: entry.inputs,
+      inputCount: entry.inputCount,
+    }).then((outcome) => {
+      setPlayHistoryUpload(entry.id, outcome);
+      refreshHistory();
+    });
+  };
+
+  /**
+   * Race a logged run as the ghost. The ghost is the stored PB, so a slower entry
+   * must never overwrite a faster one — that would throw away the PB, the very
+   * thing the log exists to protect.
+   */
+  const replayHistoryRun = (entry: PlayHistoryEntry) => {
+    const prev = loadBest(entry.levelId, entry.arrowName);
+    if (prev && prev.timeMs <= entry.timeMs) {
+      setGhostChoice("pb");
+      toast.message(`Ghost is your PB ${fmtTime(prev.timeMs / 1000)} — this run is slower.`);
+      return;
+    }
+    const stored: StoredBest = {
+      inputs: entry.inputs,
+      inputCount: entry.inputCount,
+      timeMs: entry.timeMs,
+    };
+    try {
+      window.localStorage.setItem(bestKey(entry.levelId, entry.arrowName), JSON.stringify(stored));
+    } catch {
+      /* storage blocked — the run just isn't made the ghost */
+    }
+    setBest(stored);
+    setGhostChoice("pb");
+    toast.message(`Racing your ${fmtTime(entry.timeMs / 1000)} run as the ghost`);
   };
 
   const start = () => {
@@ -626,6 +822,27 @@ export function PlayView({
     const game = gameRef.current;
     game?.setSpeed(next);
     setSpeed(game?.speed ?? next);
+  };
+
+  const changePlayerName = (next: string) => {
+    setPlayerName(next);
+    playerNameRef.current = next;
+    savePlayerName(next.trim());
+  };
+
+  const changeAutoUpload = (on: boolean) => {
+    setAutoUpload(on);
+    autoUploadRef.current = on;
+    saveAutoUpload(on);
+    if (on && !playerNameRef.current.trim()) {
+      toast.message("Add your name above so runs can upload.");
+    }
+  };
+
+  const clearHistory = () => {
+    clearPlayHistory();
+    refreshHistory();
+    toast.success("Run history cleared");
   };
 
   const dropCheckpoint = () => {
@@ -903,6 +1120,34 @@ export function PlayView({
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-3 py-2">
+        <Label
+          htmlFor="play-username"
+          className="text-[10px] uppercase tracking-widest text-slate-500 font-bold"
+        >
+          Player
+        </Label>
+        <Input
+          id="play-username"
+          value={playerName}
+          onChange={(e) => changePlayerName(e.target.value)}
+          placeholder="Your name for the leaderboard"
+          maxLength={32}
+          className="h-8 w-full max-w-[220px] bg-white/5 border-white/10 text-sm"
+        />
+        <label className="flex items-center gap-2 text-xs text-slate-400 select-none">
+          <Switch checked={autoUpload} onCheckedChange={changeAutoUpload} />
+          Auto-upload runs
+        </label>
+        <span className="text-[11px] text-slate-500">
+          {playerName.trim()
+            ? autoUpload
+              ? "Finished 1× runs post themselves."
+              : "Uploads are off — use the submit button."
+            : "Set a name to upload runs automatically."}
+        </span>
+      </div>
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold flex items-center gap-2">
@@ -1137,6 +1382,84 @@ export function PlayView({
                   <li key={s.index} className="flex items-center justify-between">
                     <span className="text-slate-400">CP{i + 1}</span>
                     <span className="tabular-nums">{fmtTime(s.timeSec)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Run history (this level + arrow) */}
+          <div className="rounded-lg border border-border bg-card p-3">
+            <div className="text-xs font-semibold text-slate-300 mb-2 flex items-center gap-1">
+              <History className="w-3.5 h-3.5" /> History
+              {history.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-6 px-2 text-[11px] text-slate-500 hover:text-red-400"
+                  onClick={clearHistory}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+            {history.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                Finished runs are logged here, so a good run survives a restart even if the upload
+                fails.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {history.map((h) => (
+                  <li key={h.id} className="flex items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 justify-start gap-1.5 h-8 text-xs font-mono"
+                      onClick={() => replayHistoryRun(h)}
+                      title="Race this run as the ghost"
+                    >
+                      <Ghost className="w-3.5 h-3.5" />
+                      {fmtTime(h.timeMs / 1000)}
+                      {h.isPb && (
+                        <span className="rounded bg-[var(--app-accent)]/20 px-1 text-[10px] text-[var(--app-accent)]">
+                          PB
+                        </span>
+                      )}
+                      {!h.realTime && (
+                        <span className="rounded bg-amber-500/20 px-1 text-[10px] text-amber-300">
+                          {h.speed}×
+                        </span>
+                      )}
+                    </Button>
+                    <span className="w-[68px] shrink-0 text-right text-[10px]">
+                      {h.upload?.status === "pending" ? (
+                        <span className="text-slate-400">uploading…</span>
+                      ) : h.upload?.status === "ok" ? (
+                        <span className="text-emerald-400">
+                          {h.upload.isRecord ? "record" : `#${h.upload.rank}`}
+                        </span>
+                      ) : h.upload?.status === "duplicate" ? (
+                        <span className="text-slate-500">on board</span>
+                      ) : h.upload?.status === "error" ? (
+                        <span className="text-red-400">failed</span>
+                      ) : (
+                        <span className="text-slate-500">
+                          {h.realTime ? "not sent" : "local only"}
+                        </span>
+                      )}
+                    </span>
+                    {h.realTime && siteIdOf(h.levelId) && h.upload?.status !== "ok" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 shrink-0 px-2 text-[11px]"
+                        onClick={() => retryUpload(h)}
+                        title="Upload this run to the level board"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -1379,6 +1702,9 @@ export function PlayView({
           inputs={encodeInputSymbols(finishedResult.symbols)}
           inputCount={finishedResult.symbols.length}
           kind={submitKind}
+          defaultName={playerName}
+          onNameUsed={changePlayerName}
+          onSubmitted={refreshHistory}
         />
       )}
     </div>
