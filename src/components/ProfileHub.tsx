@@ -11,23 +11,85 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useAdminAuth } from "@/hooks/useAdminAuth";
+import { useAccountAuth, useIsAdmin } from "@/hooks/useAccountAuth";
 import { useLinkRequests, usePlayerProfiles } from "@/hooks/usePlayerProfiles";
+import { SelectionSearch } from "@/components/SelectionSearch";
+import { accountUsernameError, accountPasswordError, AccountError } from "@/lib/accounts";
+import { resetAccountPassword } from "@/lib/account-admin.functions";
 import { ACCENTS } from "@/hooks/useAppSettings";
 
 interface ProfileHubProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onProfilesChanged?: () => void;
+  /** Every in-game name on the boards, for the link-request picker. */
+  usernames?: string[];
 }
 
-export function ProfileHub({ open, onOpenChange, onProfilesChanged }: ProfileHubProps) {
-  const { user, isAdmin, login, loginWithEmail, signUpWithEmail, logout, error } = useAdminAuth();
-  const { myProfile, saveMyProfile, reload } = usePlayerProfiles(user?.id);
+export function ProfileHub({
+  open,
+  onOpenChange,
+  onProfilesChanged,
+  usernames = [],
+}: ProfileHubProps) {
+  const { user, signIn, signUp, signOut } = useAccountAuth();
+  const isAdmin = useIsAdmin(user?.id);
+  const { myProfile, byUsername, saveMyProfile, reload } = usePlayerProfiles(user?.id);
   const { requests, submit, review, remove } = useLinkRequests(user?.id, isAdmin);
 
-  const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
+  const [authMode, setAuthMode] = React.useState<"signin" | "signup">("signin");
+  const [accountName, setAccountName] = React.useState("");
+  const [accountPassword, setAccountPassword] = React.useState("");
+  const [accountBusy, setAccountBusy] = React.useState(false);
+  const [authError, setAuthError] = React.useState<string | null>(null);
+  const [resetName, setResetName] = React.useState("");
+  const [resetPassword, setResetPassword] = React.useState("");
+  const [resetBusy, setResetBusy] = React.useState(false);
+
+  const submitAccount = async () => {
+    setAuthError(null);
+    const nameError = accountUsernameError(accountName);
+    if (nameError) return setAuthError(nameError);
+    const passwordError = accountPasswordError(accountPassword);
+    if (passwordError) return setAuthError(passwordError);
+
+    setAccountBusy(true);
+    try {
+      if (authMode === "signup") {
+        await signUp(accountName, accountPassword);
+        toast.success("Account created");
+      } else {
+        await signIn(accountName, accountPassword);
+        toast.success("Signed in");
+      }
+      setAccountPassword("");
+      onProfilesChanged?.();
+    } catch (err) {
+      setAuthError(err instanceof AccountError ? err.message : "Something went wrong. Try again.");
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
+  /** Names nobody has linked yet, so the picker cannot offer a taken one. */
+  const linkOptions = React.useMemo(
+    () =>
+      usernames
+        .filter((name) => name.trim() && !byUsername[name.toLowerCase()])
+        .map((name) => ({ id: name, name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [usernames, byUsername],
+  );
+
+  /** Names already linked to an account — the set an admin can reset a password for. */
+  const linkedOptions = React.useMemo(
+    () =>
+      Object.values(byUsername)
+        .filter((profile) => profile.username)
+        .map((profile) => ({ id: profile.username as string, name: profile.username as string }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [byUsername],
+  );
   const [form, setForm] = React.useState({
     display_name: "",
     avatar_url: "",
@@ -97,42 +159,63 @@ export function ProfileHub({ open, onOpenChange, onProfilesChanged }: ProfileHub
             <UserRound className="w-4 h-4 text-[var(--app-accent)]" /> Your profile
           </DialogTitle>
           <DialogDescription className="text-slate-500 text-xs font-mono uppercase tracking-wider">
-            {user ? user.email : "Sign in to customise your player card"}
+            {user
+              ? (myProfile?.username ?? "Signed in — not linked to a name yet")
+              : "Sign in to customise your player card"}
           </DialogDescription>
         </DialogHeader>
 
         {!user ? (
           <div className="space-y-3 pt-2">
-            <Button onClick={() => void login()} className="w-full bg-white text-slate-900 hover:bg-slate-200">
-              Continue with Google
-            </Button>
-            <div className="text-center text-[10px] uppercase tracking-widest text-slate-600">or email</div>
+            <div className="flex gap-2">
+              <Button
+                variant={authMode === "signin" ? "default" : "outline"}
+                className={authMode === "signin" ? "flex-1" : "flex-1 border-white/10 bg-white/5"}
+                onClick={() => {
+                  setAuthMode("signin");
+                  setAuthError(null);
+                }}
+              >
+                Sign in
+              </Button>
+              <Button
+                variant={authMode === "signup" ? "default" : "outline"}
+                className={authMode === "signup" ? "flex-1" : "flex-1 border-white/10 bg-white/5"}
+                onClick={() => {
+                  setAuthMode("signup");
+                  setAuthError(null);
+                }}
+              >
+                Create account
+              </Button>
+            </div>
             <Input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@email.com"
+              value={accountName}
+              onChange={(e) => setAccountName(e.target.value)}
+              placeholder="Username"
+              autoComplete="username"
               className="bg-black/30 border-white/10"
             />
             <Input
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              value={accountPassword}
+              onChange={(e) => setAccountPassword(e.target.value)}
               placeholder="Password"
+              autoComplete={authMode === "signup" ? "new-password" : "current-password"}
               className="bg-black/30 border-white/10"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void submitAccount();
+              }}
             />
-            <div className="flex gap-2">
-              <Button className="flex-1" onClick={() => void loginWithEmail(email, password)}>
-                Sign in
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1 border-white/10 bg-white/5"
-                onClick={() => void signUpWithEmail(email, password)}
-              >
-                Sign up
-              </Button>
-            </div>
-            {error && <p className="text-xs text-rose-400 font-mono">{error}</p>}
+            <Button className="w-full" disabled={accountBusy} onClick={() => void submitAccount()}>
+              {accountBusy ? "Working…" : authMode === "signup" ? "Create account" : "Sign in"}
+            </Button>
+            <p className="text-[11px] text-slate-500">
+              {authMode === "signup"
+                ? "No email needed — pick a username and password. Your account starts unlinked; you can request your in-game name after."
+                : "Use the username and password you signed up with."}
+            </p>
+            {authError && <p className="text-xs text-rose-400 font-mono">{authError}</p>}
           </div>
         ) : (
           <div className="space-y-6 pt-2">
@@ -148,12 +231,16 @@ export function ProfileHub({ open, onOpenChange, onProfilesChanged }: ProfileHub
                 </p>
               ) : (
                 <div className="space-y-2">
-                  <Input
-                    value={linkName}
-                    onChange={(e) => setLinkName(e.target.value)}
-                    placeholder="In-game name"
-                    className="bg-black/30 border-white/10"
+                  <SelectionSearch
+                    label="Search your in-game name"
+                    options={linkOptions}
+                    onSelect={setLinkName}
                   />
+                  {linkName && (
+                    <p className="text-[11px] font-mono text-slate-400">
+                      Selected: <span className="text-white font-bold">{linkName}</span>
+                    </p>
+                  )}
                   <Input
                     value={proof}
                     onChange={(e) => setProof(e.target.value)}
@@ -163,6 +250,9 @@ export function ProfileHub({ open, onOpenChange, onProfilesChanged }: ProfileHub
                   <Button onClick={() => void requestLink()} className="w-full">
                     Request link
                   </Button>
+                  <p className="text-[11px] text-slate-500">
+                    An admin reviews the request before your name is linked.
+                  </p>
                   {myRequests.map((r) => (
                     <p key={r.id} className="text-[11px] font-mono text-slate-500">
                       {r.requested_username} — {r.status}
@@ -173,7 +263,9 @@ export function ProfileHub({ open, onOpenChange, onProfilesChanged }: ProfileHub
             </section>
 
             <section className="space-y-2">
-              <h4 className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Appearance</h4>
+              <h4 className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                Appearance
+              </h4>
               <Input
                 value={form.display_name}
                 onChange={(e) => setForm({ ...form, display_name: e.target.value })}
@@ -272,6 +364,16 @@ export function ProfileHub({ open, onOpenChange, onProfilesChanged }: ProfileHub
                       className="text-emerald-400 hover:bg-emerald-500/10"
                       onClick={async () => {
                         try {
+                          // Two accounts must never be approved for the same
+                          // in-game name — the link is what makes a profile mean
+                          // anything, so a double-approval is refused here.
+                          const taken = byUsername[request.requested_username.toLowerCase()];
+                          if (taken && taken.user_id !== request.user_id) {
+                            toast.error(
+                              `${request.requested_username} is already linked to another account`,
+                            );
+                            return;
+                          }
                           await review(request, true);
                           await reload();
                           onProfilesChanged?.();
@@ -314,12 +416,56 @@ export function ProfileHub({ open, onOpenChange, onProfilesChanged }: ProfileHub
                     Clear reviewed requests
                   </Button>
                 )}
+
+                <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <h4 className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                    Reset a player's password
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Accounts have no email, so a forgotten password is reset here. Enter the
+                    player's linked in-game name.
+                  </p>
+                  <SelectionSearch
+                    label="Search linked player"
+                    options={linkedOptions}
+                    onSelect={setResetName}
+                  />
+                  <Input
+                    type="password"
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    placeholder="New password"
+                    autoComplete="new-password"
+                    className="bg-black/30 border-white/10"
+                  />
+                  <Button
+                    variant="outline"
+                    className="w-full border-white/10 bg-white/5"
+                    disabled={resetBusy}
+                    onClick={async () => {
+                      setResetBusy(true);
+                      try {
+                        await resetAccountPassword({
+                          data: { username: resetName, newPassword: resetPassword },
+                        });
+                        toast.success("Password reset");
+                        setResetPassword("");
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Reset failed");
+                      } finally {
+                        setResetBusy(false);
+                      }
+                    }}
+                  >
+                    {resetBusy ? "Resetting…" : "Reset password"}
+                  </Button>
+                </div>
               </section>
             )}
 
             <Button
               variant="outline"
-              onClick={() => void logout()}
+              onClick={() => void signOut()}
               className="w-full border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
             >
               <LogOut className="w-4 h-4 mr-2" /> Sign out

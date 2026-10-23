@@ -1579,6 +1579,7 @@ export default function App() {
         open={showProfileHub}
         onOpenChange={setShowProfileHub}
         onProfilesChanged={reloadProfiles}
+        usernames={allUsernames}
       />
       {settings.starfield && (
         <div
