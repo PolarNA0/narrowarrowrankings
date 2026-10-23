@@ -31,6 +31,7 @@ import {
   Maximize2,
   Minimize2,
   SlidersHorizontal,
+  Gauge,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -52,7 +53,7 @@ import { DEFAULT_GAME_CAMERA, type CameraSettings } from "@/lib/replay-render";
 import { LevelPicker, siteIdOf } from "@/components/LevelPicker";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { nalvlToRawLevelData, type NalvlLevel } from "@/lib/nalvl";
-import { PlayGame, type PlayResult, type Split } from "@/lib/play-game";
+import { PlayGame, PLAY_SPEEDS, type PlayResult, type Split } from "@/lib/play-game";
 import {
   actionForKey,
   DEFAULT_INPUT_SETTINGS,
@@ -173,6 +174,8 @@ export function PlayView({
 
   const [phase, setPhase] = React.useState<string>("idle");
   const [tick, setTick] = React.useState(0);
+  const [countdown, setCountdown] = React.useState(0);
+  const [speed, setSpeed] = React.useState(1);
   const [splits, setSplits] = React.useState<Split[]>([]);
   const [checkpoints, setCheckpoints] = React.useState<number[]>([]);
   const [result, setResult] = React.useState<PlayResult | null>(null);
@@ -206,6 +209,9 @@ export function PlayView({
 
   const gameRef = React.useRef<PlayGame | null>(null);
   const canvasRef = React.useRef<PlayCanvasHandle | null>(null);
+  // The countdown digit last pushed into state, so the loop only re-renders when
+  // it actually ticks over (the loop closure otherwise compares against state).
+  const countdownRef = React.useRef(0);
   // Bumped on every load so a stale (superseded) load can't clobber the engine
   // when the level/arrow changes again before its fetch resolves.
   const loadSeqRef = React.useRef(0);
@@ -339,7 +345,9 @@ export function PlayView({
           // A handoff (e.g. "Open in Play") asked to run straight away.
           autoStartRef.current = false;
           game.restart();
-          setPhase("running");
+          setCountdown(game.countdown);
+          countdownRef.current = game.countdown;
+          setPhase(game.phase);
         }
         canvasRef.current?.redraw();
       } catch (e) {
@@ -480,8 +488,11 @@ export function PlayView({
 
       const ran = game.advance(dt);
       if (ran > 0) canvasRef.current?.redraw();
-      if (ts - lastUi > 50 || game.phase !== phase) {
+      const cd = game.countdown;
+      if (ts - lastUi > 50 || game.phase !== phase || cd !== countdownRef.current) {
         lastUi = ts;
+        countdownRef.current = cd;
+        setCountdown(cd);
         setTick(game.tick);
         setPhase(game.phase);
         // Return the previous array when nothing changed so React bails out of
@@ -549,6 +560,14 @@ export function PlayView({
 
   const handleFinish = (r: PlayResult, id: string, arrowForRun: string) => {
     const timeMs = r.tick * SIM_TICK_MS;
+    // A run made at a rate other than 1× is a testing aid, not a speedrun, so it
+    // never sets a personal best (the local PB is compared against real runs).
+    if (!r.realTime) {
+      toast.message(`Finished in ${fmtTime(timeMs / 1000)} at ${r.speed}×`, {
+        description: "Only 1× runs count towards your personal best.",
+      });
+      return;
+    }
     const prev = loadBest(id, arrowForRun);
     if (!prev || timeMs < prev.timeMs) {
       const stored: StoredBest = {
@@ -578,22 +597,35 @@ export function PlayView({
     setResult(null);
     setTick(0);
     setSplits([]);
-    setPhase("running");
+    // `restart` arms the countdown, so the run itself has not begun yet.
+    setCountdown(game.countdown);
+    countdownRef.current = game.countdown;
+    setPhase(game.phase);
   };
 
   const pauseResume = () => {
     const game = gameRef.current;
     if (!game) return;
-    if (game.phase === "running") game.pause();
+    if (game.phase === "running" || game.phase === "countdown") game.pause();
     else if (game.phase === "paused") game.resume();
     else start();
     setPhase(game.phase);
   };
 
   const restartCheckpoint = () => {
-    gameRef.current?.restartFromCheckpoint();
+    const game = gameRef.current;
+    if (!game) return;
+    game.restartFromCheckpoint();
     setResult(null);
-    setPhase("running");
+    setCountdown(game.countdown);
+    countdownRef.current = game.countdown;
+    setPhase(game.phase);
+  };
+
+  const changeSpeed = (next: number) => {
+    const game = gameRef.current;
+    game?.setSpeed(next);
+    setSpeed(game?.speed ?? next);
   };
 
   const dropCheckpoint = () => {
@@ -750,6 +782,9 @@ export function PlayView({
   const runTimeMs = tick * SIM_TICK_MS;
   const deltaMs = ghost ? runTimeMs - ghost.timeMs : null;
   const finishedResult = result?.finished ? result : null;
+  // A custom/site board records real speedruns, so a run made at any other rate
+  // is routed to the community TAS board instead (which accepts any rate).
+  const submitKind: "tas" | "site" = siteIdOf(levelId) && finishedResult?.realTime ? "site" : "tas";
 
   // Escape leaves fullscreen; locking body scroll keeps the overlay fixed while
   // the page behind it stays put. Escape is ignored while a dialog is open or a
@@ -823,6 +858,18 @@ export function PlayView({
       {loading && (
         <div className="absolute inset-0 grid place-items-center rounded-lg bg-black/60">
           <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
+        </div>
+      )}
+      {/* Pre-run countdown: the clock is frozen, so the digit is the only thing
+          that moves. `key` restarts the pop animation on each digit. */}
+      {countdown > 0 && !loading && !error && (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center">
+          <span
+            key={countdown}
+            className="na-countdown-pop font-mono text-7xl font-bold text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.8)]"
+          >
+            {countdown}
+          </span>
         </div>
       )}
       {error && (
@@ -940,6 +987,27 @@ export function PlayView({
             >
               <Bookmark className="w-4 h-4" /> Save
             </Button>
+            <div className="flex items-center gap-1.5" title="Playback speed for testing">
+              <Gauge className="w-3.5 h-3.5 text-slate-400" />
+              <Select value={String(speed)} onValueChange={(v) => changeSpeed(Number(v))}>
+                <SelectTrigger
+                  className={cn(
+                    "h-8 w-[74px] bg-black/30 text-xs font-mono",
+                    speed !== 1 ? "border-amber-500/60 text-amber-300" : "border-white/10",
+                  )}
+                  aria-label="Playback speed"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0d0d10] border-white/10 text-slate-200">
+                  {PLAY_SPEEDS.map((s) => (
+                    <SelectItem key={s} value={String(s)} className="text-xs font-mono">
+                      {s}×
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="ml-auto font-mono text-2xl tabular-nums">
               {fmtTime(runTimeMs / 1000)}
             </div>
@@ -969,16 +1037,30 @@ export function PlayView({
             <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
               <span className="text-sm text-emerald-300 font-mono">
                 Finished in {fmtTime((finishedResult.tick * SIM_TICK_MS) / 1000)}
+                {!finishedResult.realTime && (
+                  <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-[11px] text-amber-300">
+                    {finishedResult.speed}× — not a verified time
+                  </span>
+                )}
               </span>
               {levelId === SITE_LEVEL_ID ? (
                 <span className="text-[11px] text-emerald-300/70">
                   Editor levels aren&apos;t on the leaderboard
                 </span>
               ) : (
-                <Button size="sm" className="gap-1.5" onClick={() => setSubmitOpen(true)}>
-                  <Send className="w-3.5 h-3.5" />
-                  {siteIdOf(levelId) ? "Submit to leaderboard" : "Submit to TAS board"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  {siteIdOf(levelId) && !finishedResult.realTime && (
+                    // The site board only records real speedruns; the TAS board
+                    // takes a run made at any rate, so the run is not lost.
+                    <span className="text-[11px] text-amber-300/80">
+                      Not 1× — posting to the TAS board
+                    </span>
+                  )}
+                  <Button size="sm" className="gap-1.5" onClick={() => setSubmitOpen(true)}>
+                    <Send className="w-3.5 h-3.5" />
+                    {submitKind === "site" ? "Submit to leaderboard" : "Submit to TAS board"}
+                  </Button>
+                </div>
               )}
             </div>
           )}
@@ -1170,13 +1252,38 @@ export function PlayView({
 
           {/* Clock, top centre. */}
           <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
-            <div className="rounded-full border border-white/15 bg-black/60 px-4 py-1 font-mono text-2xl tabular-nums text-white backdrop-blur">
-              {fmtTime(runTimeMs / 1000)}
+            <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/60 px-4 py-1 backdrop-blur">
+              <span className="font-mono text-2xl tabular-nums text-white">
+                {fmtTime(runTimeMs / 1000)}
+              </span>
+              {speed !== 1 && (
+                <span className="rounded bg-amber-500/25 px-1.5 py-0.5 font-mono text-xs text-amber-300">
+                  {speed}×
+                </span>
+              )}
             </div>
           </div>
 
           {/* Top-right: pause (with camera settings) and exit. */}
           <div className="absolute right-3 top-3 flex items-center gap-2">
+            <Select value={String(speed)} onValueChange={(v) => changeSpeed(Number(v))}>
+              <SelectTrigger
+                className={cn(
+                  "h-9 w-[76px] gap-1 border-white/20 bg-black/60 font-mono text-xs text-slate-100 backdrop-blur hover:bg-black/80",
+                  speed !== 1 && "border-amber-500/60 text-amber-300",
+                )}
+                aria-label="Playback speed"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0d0d10] border-white/10 text-slate-200">
+                {PLAY_SPEEDS.map((s) => (
+                  <SelectItem key={s} value={String(s)} className="text-xs font-mono">
+                    {s}×
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               variant="outline"
               size="sm"
@@ -1265,13 +1372,13 @@ export function PlayView({
         <TasSubmitDialog
           open={submitOpen}
           onOpenChange={setSubmitOpen}
-          levelId={siteIdOf(levelId) ?? levelId}
+          levelId={submitKind === "site" ? (siteIdOf(levelId) ?? levelId) : levelId}
           levelName={levelName}
           arrowName={arrowName}
           timeMs={finishedResult.tick * SIM_TICK_MS}
           inputs={encodeInputSymbols(finishedResult.symbols)}
           inputCount={finishedResult.symbols.length}
-          kind={siteIdOf(levelId) ? "site" : "tas"}
+          kind={submitKind}
         />
       )}
     </div>

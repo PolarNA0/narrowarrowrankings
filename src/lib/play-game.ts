@@ -25,7 +25,23 @@ import {
   type SiteTimeline,
 } from "./replay-sim";
 
-export type PlayPhase = "idle" | "running" | "paused" | "finished" | "dead";
+export type PlayPhase = "idle" | "countdown" | "running" | "paused" | "finished" | "dead";
+
+/** How long the pre-run countdown lasts, in wall-clock milliseconds. */
+export const COUNTDOWN_MS = 3000;
+
+/** The playback rates offered for manual testing, slowest first. */
+export const PLAY_SPEEDS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 10] as const;
+export const MIN_PLAY_SPEED = 0.1;
+export const MAX_PLAY_SPEED = 10;
+
+/**
+ * The countdown digit to show for `remainingMs` (3, 2, 1), or 0 once the run
+ * has started. Split out so the display rule is testable without a running game.
+ */
+export function countdownDigit(remainingMs: number): number {
+  return Math.max(0, Math.ceil(remainingMs / 1000));
+}
 
 export interface Split {
   /** Checkpoint index within the run (0-based, in the order they were set). */
@@ -45,6 +61,10 @@ export interface PlayResult {
   /** Input symbols, one per engine tick, ready to encode. */
   symbols: number[];
   splits: Split[];
+  /** The playback rate the run was recorded at (1 = real time). */
+  speed: number;
+  /** True only if the run was at 1× throughout, so it is board-eligible. */
+  realTime: boolean;
 }
 
 export interface PlayGameOptions {
@@ -58,21 +78,43 @@ export interface PlayGameOptions {
   onEnd?: (result: PlayResult) => void;
 }
 
-/** One tick of progress: how many ticks to run and the leftover accumulator. */
+/**
+ * One tick of progress: how many ticks to run and the leftover accumulator.
+ *
+ * `speed` scales the elapsed wall-clock time into simulation time, so 0.5 runs
+ * half as many ticks and 2 runs twice as many; the remainder is kept against the
+ * *scaled* total so a fractional rate does not drift. The burst cap is left in
+ * wall-clock terms (a stall may not fast-forward), which is why it is scaled too.
+ */
 export function stepTicks(
   elapsedMs: number,
   accumulatorMs: number,
+  speed = 1,
 ): { ticks: number; remainder: number } {
-  const total = accumulatorMs + elapsedMs;
+  const total = accumulatorMs + elapsedMs * speed;
   const ticks = Math.floor(total / SIM_TICK_MS);
-  // Keep the sub-tick remainder; cap the burst so a stall can't fast-forward.
-  return { ticks: Math.min(ticks, 40), remainder: total - ticks * SIM_TICK_MS };
+  const cap = Math.max(1, Math.round(40 * speed));
+  return { ticks: Math.min(ticks, cap), remainder: total - ticks * SIM_TICK_MS };
 }
 
 export class PlayGame {
   geometry: SimGeometry;
   phase: PlayPhase = "idle";
   tick = 0;
+  /**
+   * The current playback rate (1 = real time). A rate other than 1 is a manual
+   * testing aid: the run it produces is not a valid speedrun, so the view refuses
+   * to post it to a board unless it is back at 1×.
+   */
+  speed = 1;
+  /**
+   * True once the current run has run at a rate other than 1×, at any point.
+   * Latched rather than derived from `speed`, so slowing down to land a tricky
+   * input and switching back to 1× before finishing cannot launder the run.
+   */
+  private nonRealTime = false;
+  /** Wall-clock milliseconds left in the pre-run countdown (0 once started). */
+  countdownMs = 0;
   splits: Split[] = [];
   /** The live path, `path[0]` being the spawn pose and `path[i]` after i ticks. */
   path: SimPoint[] = [];
@@ -134,25 +176,44 @@ export class PlayGame {
     // not been crossed yet (just set, or seeded by `playFrom`) is still valid.
     const tick = [...this.checkpoints].sort((a, b) => b - a)[0] ?? 0;
     this.rewindTo(tick);
-    this.phase = "running";
+    this.beginCountdown();
   }
 
   /** Rewind to the spawn and resume a fresh run. */
   restart() {
     if (!this.engine) return;
     this.rewindTo(0);
-    this.phase = "running";
+    this.beginCountdown();
   }
 
   pause() {
-    if (this.phase === "running") this.phase = "paused";
+    if (this.phase === "running" || this.phase === "countdown") this.phase = "paused";
   }
 
   resume() {
-    if (this.phase === "paused") {
-      this.phase = "running";
-      this.accumulator = 0;
-    }
+    if (this.phase !== "paused") return;
+    // A pause during the countdown resumes the countdown, not the run.
+    this.phase = this.countdownMs > 0 ? "countdown" : "running";
+    this.accumulator = 0;
+  }
+
+  /** Set the playback rate; the view gates board submissions on it being 1. */
+  setSpeed(speed: number) {
+    this.speed = Math.min(MAX_PLAY_SPEED, Math.max(MIN_PLAY_SPEED, speed));
+  }
+
+  /** Arm the 3-2-1 countdown; the clock starts when it drains. */
+  beginCountdown() {
+    this.accumulator = 0;
+    this.countdownMs = COUNTDOWN_MS;
+    this.phase = "countdown";
+  }
+
+  /** Skip the countdown and start running immediately. */
+  private startRunning() {
+    this.countdownMs = 0;
+    this.phase = "running";
+    this.accumulator = 0;
   }
 
   /** Drop a checkpoint at the current tick; the arrow can be rewound to it. */
@@ -229,9 +290,19 @@ export class PlayGame {
    * behind real time on slower devices.
    */
   advance(elapsedMs: number): number {
-    if (!this.engine || this.phase !== "running") return 0;
-    const { ticks, remainder } = stepTicks(elapsedMs, this.accumulator);
+    if (!this.engine) return 0;
+    // The countdown runs on wall-clock time and ignores the playback speed: it
+    // is a "get ready" beat, not part of the run.
+    if (this.phase === "countdown") {
+      this.countdownMs -= elapsedMs;
+      if (this.countdownMs > 0) return 0;
+      this.startRunning();
+      return 0;
+    }
+    if (this.phase !== "running") return 0;
+    const { ticks, remainder } = stepTicks(elapsedMs, this.accumulator, this.speed);
     this.accumulator = remainder;
+    if (ticks > 0 && this.speed !== 1) this.nonRealTime = true;
     let ran = 0;
     for (let i = 0; i < ticks; i++) {
       const symbol = this.sampleInput();
@@ -265,6 +336,18 @@ export class PlayGame {
   /** The physics tick the latest sampled pose is at (0 at spawn). */
   get currentTick(): number {
     return this.tick;
+  }
+
+  /** The countdown digit to display (3, 2, 1), or 0 when not counting down. */
+  get countdown(): number {
+    return this.phase === "countdown" || (this.phase === "paused" && this.countdownMs > 0)
+      ? countdownDigit(this.countdownMs)
+      : 0;
+  }
+
+  /** Whether the run was recorded at real time (a 1× rate throughout). */
+  get isRealTime(): boolean {
+    return this.speed === 1 && !this.nonRealTime;
   }
 
   /**
@@ -313,6 +396,8 @@ export class PlayGame {
       this.path = this.spawnPoint ? [this.spawnPoint] : [];
       this.pathTicks = this.spawnPoint ? [0] : [];
       this.latest = this.spawnPoint;
+      // A full rewind discards every recorded input, so this is a fresh run.
+      this.resetRealTimeLatch();
     } else {
       const snap = this.snapshots.get(tick);
       if (!snap) return;
@@ -339,8 +424,15 @@ export class PlayGame {
       timeSec: (this.tick * SIM_TICK_MS) / 1000,
       symbols: this.symbols.slice(),
       splits: this.splits.map((s) => ({ ...s })),
+      speed: this.speed,
+      realTime: this.isRealTime,
     };
     this.onEnd?.(result);
+  }
+
+  /** Reset the "was this run at real time?" latch for a fresh run. */
+  private resetRealTimeLatch() {
+    this.nonRealTime = false;
   }
 
   private resetRun() {
@@ -351,6 +443,8 @@ export class PlayGame {
     this.latest = this.spawnPoint;
     this.splits = [];
     this.accumulator = 0;
+    this.countdownMs = 0;
+    this.resetRealTimeLatch();
     this.checkpointTicks.clear();
     this.checkpoints.clear();
     this.snapshots.clear();

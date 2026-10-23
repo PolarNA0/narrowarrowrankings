@@ -251,4 +251,12 @@ body { font-feature-settings: "ss01", "cv11"; }
 [data-slot="card"]:hover { box-shadow: 0 1px 0 rgb(255 255 255 / 0.06) inset, 0 16px 40px -20px color-mix(in oklab, var(--app-accent, #000) 45%, transparent); }
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--app-accent, currentColor); outline-offset: 2px; }
 tbody tr { transition: background-color .15s ease; }
+
+/* Play's pre-run countdown digit: a quick pop-and-fade on each new number. */
+@keyframes na-countdown-pop {
+  0% { transform: scale(1.6); opacity: 0; }
+  25% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.85; }
+}
+.na-countdown-pop { animation: na-countdown-pop .6s ease-out; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
