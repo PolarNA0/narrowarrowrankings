@@ -13,7 +13,6 @@ export const NAV_GROUPS = [
     id: "levels",
     label: "Levels",
     items: [
-      { id: "daily", label: "Daily" },
       { id: "leaderboard", label: "Leaderboards" },
       { id: "site-levels", label: "Site levels" },
       { id: "site-records", label: "Site level records" },
