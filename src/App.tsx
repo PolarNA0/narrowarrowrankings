@@ -1570,6 +1570,7 @@ export default function App() {
       <CommandPalette
         levels={dynamicLevels}
         players={allUsernames}
+        profiles={playerProfiles}
         onSelectLevel={handleLevelClick}
         onSelectPlayer={handlePlayerClick}
         onNavigate={async (next) => {

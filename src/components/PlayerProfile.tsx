@@ -27,6 +27,7 @@ import { motion } from "motion/react";
 import { PlayerStats, LevelInfo, RankInfo, LevelRankConfig, LevelPack, ArrowScope } from "../types";
 import { RANK_ORDER, DEFAULT_RANKS } from "../constants";
 import { getLevelDefaultRanks } from "../lib/rankDefaults";
+import { computeNarrowScores } from "../lib/narrowscore";
 import { assignRank } from "../lib/ranking";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,7 @@ import { ArrowIcon } from "./ArrowIcon";
 import { cn, capitalizeName } from "@/lib/utils";
 import { LevelHistoryDetail } from "./LevelHistoryDetail";
 import { ProfileIdentityCard } from "./ProfileIdentityCard";
+import { AchievementsView } from "./AchievementsView";
 import { PlayerBadges } from "./PlayerBadges";
 import { useOfficialCreators } from "@/hooks/useProfileSummaries";
 import type { LeaderboardEntry, LegacyRun } from "../types";
@@ -102,7 +104,7 @@ export function PlayerProfile({
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
   const [extraData, setExtraData] = useState<any>(null);
   const [loadingExtra, setLoadingExtra] = useState(false);
-  const [profileTab, setProfileTab] = useState<'stats' | 'performance' | 'cwr' | 'creator'>('stats');
+  const [profileTab, setProfileTab] = useState<'stats' | 'performance' | 'cwr' | 'creator' | 'achievements'>('stats');
   const [creatorLevels, setCreatorLevels] = useState<any[]>([]);
   const [loadingCreatorLevels, setLoadingCreatorLevels] = useState(false);
   const [creatorLevelsFilter, setCreatorLevelsFilter] = useState<'popular' | 'new'>('popular');
@@ -471,6 +473,29 @@ export function PlayerProfile({
       });
   }, [levels, stats, packs, rankConfigs, globalRankConfig, rawLevelData, levelStandings, legacyRuns, arrowAchievements]);
 
+  // This player's NarrowScore, recomputed from the same merged boards the
+  // NarrowScore tab uses so the achievement can never disagree with that tab.
+  const narrowScore = useMemo(() => {
+    if (!stats.username || !levelStandings) return null;
+    const target = stats.username.toLowerCase();
+    const board = levels.filter((l) => levelStandings[l.id]?.length);
+    return computeNarrowScores(board, levelStandings).find((s) => s.username.toLowerCase() === target) ?? null;
+  }, [stats.username, levels, levelStandings]);
+
+  // Achievement inputs. Everything here already exists for other parts of the
+  // profile; the sub-10 count is derived inside the view from the merged boards.
+  const achievementInput = useMemo(
+    () => ({
+      medals: computedMedals,
+      levelsCompleted: Object.keys(stats.levels).length,
+      totalLevels: levels.length,
+      score: narrowScore,
+      packsFullyCompleted: packBreakdowns.filter((p) => p.completed === p.levels.length && p.levels.length > 0).length,
+      totalPacks: packBreakdowns.length,
+    }),
+    [computedMedals, stats.levels, levels.length, narrowScore, packBreakdowns],
+  );
+
   // Show sub-tabs once there is something to switch between.
   const hasSubtabs = !!extraData || !!aggregateStats || cwrRows.some((r) => r.levelStats);
 
@@ -581,6 +606,7 @@ export function PlayerProfile({
             { id: 'stats', label: 'Stats' },
             { id: 'performance', label: 'PBs' },
             { id: 'cwr', label: 'CWRs' },
+            { id: 'achievements', label: 'Achievements' },
             ...(extraData?.creator && extraData.creator.levels_published > 0
               ? [{ id: 'creator', label: `Published Levels (${extraData.creator.levels_published})` }]
               : []),
@@ -890,7 +916,13 @@ export function PlayerProfile({
         </>
       )}
 
-      {profileTab === 'cwr' ? (
+      {profileTab === 'achievements' ? (
+        <AchievementsView
+          input={achievementInput}
+          data={levelStandings ?? {}}
+          username={stats.username}
+        />
+      ) : profileTab === 'cwr' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
           {cwrRows.map((row) => (
             <div

@@ -3,3 +3,5 @@
 - [x] Group overlapping navigation tabs while preserving each view.
 - [x] Remove the unused dark shape beside the profile name.
 - [x] Verify searches, Polar’s profile, totals, and navigation in the preview.
+- [x] Surface the achievements engine as an Achievements tab on the player profile.
+- [x] Let the command palette find a player by their display name.
