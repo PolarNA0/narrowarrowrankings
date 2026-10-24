@@ -399,7 +399,9 @@ export function PlayView({
           countdownRef.current = game.countdown;
           setPhase(game.phase);
         }
-        canvasRef.current?.redraw();
+        // Every branch above has just placed the arrow at a fresh pose (spawn or
+        // a handed-over checkpoint), so land the camera there instead of easing.
+        canvasRef.current?.redrawSnapped();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         gameRef.current = null;
@@ -528,7 +530,8 @@ export function PlayView({
         setSplits([]);
         setCheckpoints(game.checkpointList);
         setPhase(game.phase);
-        canvasRef.current?.redraw();
+        // The handoff drops the arrow at the checkpoint, so land the camera there.
+        canvasRef.current?.redrawSnapped();
         toast.message(
           `Ready at checkpoint ${fmtTime((cp.tick * SIM_TICK_MS) / 1000)} — press Resume`,
         );
@@ -567,7 +570,10 @@ export function PlayView({
       const pad = firstConnectedGamepad();
       const gp = resolveGamepad(settingsRef.current, pad);
       if (gp.checkpoint && !padButtonsRef.current.checkpoint) game.setCheckpoint();
-      if (gp.restart && !padButtonsRef.current.restart) game.restartFromCheckpoint();
+      if (gp.restart && !padButtonsRef.current.restart) {
+        game.restartFromCheckpoint();
+        canvasRef.current?.redrawSnapped();
+      }
       padButtonsRef.current = { checkpoint: gp.checkpoint, restart: gp.restart };
 
       const ran = game.advance(dt);
@@ -620,6 +626,7 @@ export function PlayView({
       }
       if (action === "restart") {
         gameRef.current?.restartFromCheckpoint();
+        canvasRef.current?.redrawSnapped();
         return;
       }
       heldRef.current.add(e.code);
@@ -861,7 +868,10 @@ export function PlayView({
     setResult(null);
     setTick(0);
     setSplits([]);
-    // `restart` arms the countdown, so the run itself has not begun yet.
+    // `restart` rewinds to the spawn and arms the countdown. Repaint now, with
+    // the camera snapped, so the arrow is visibly back at the start before the
+    // 3-2-1 runs rather than teleporting when it ends.
+    canvasRef.current?.redrawSnapped();
     setCountdown(game.countdown);
     countdownRef.current = game.countdown;
     setPhase(game.phase);
@@ -881,6 +891,7 @@ export function PlayView({
     if (!game) return;
     game.restartFromCheckpoint();
     setResult(null);
+    canvasRef.current?.redrawSnapped();
     setCountdown(game.countdown);
     countdownRef.current = game.countdown;
     setPhase(game.phase);
@@ -942,7 +953,8 @@ export function PlayView({
       setSplits([]);
       setCheckpoints(game.checkpointList);
       setPhase(game.phase);
-      canvasRef.current?.redraw();
+      // The handoff drops the arrow at the checkpoint, so land the camera there.
+      canvasRef.current?.redrawSnapped();
       toast.message(
         `Ready at checkpoint ${fmtTime((cp.tick * SIM_TICK_MS) / 1000)} — press Resume`,
       );

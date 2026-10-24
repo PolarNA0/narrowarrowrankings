@@ -133,13 +133,15 @@ export class FollowCamera {
   }
 
   /** Update the follow target from the arrow's position, heading and speed. */
-  follow(x: number, y: number, vx: number, vy: number, dt: number) {
+  follow(x: number, y: number, vx: number, vy: number, dt: number, snap = false) {
     const s = this.settings;
     this.tx = x + vx * s.moveAhead;
     this.ty = y + vy * s.moveAhead;
     const speed = Math.hypot(vx, vy);
     this.tz = s.zoom / (1 + speed * 0.0025 * s.dynamicZoom);
-    if (s.preset === "locked") {
+    // A snap lands the camera on the pose at once; used after a rewind so the
+    // view does not pan across the level from wherever the last run ended.
+    if (s.preset === "locked" || snap) {
       this.x = this.tx;
       this.y = this.ty;
       this.zoom = this.tz;

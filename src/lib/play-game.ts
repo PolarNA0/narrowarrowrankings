@@ -27,8 +27,11 @@ import {
 
 export type PlayPhase = "idle" | "countdown" | "running" | "paused" | "finished" | "dead";
 
-/** How long the pre-run countdown lasts, in wall-clock milliseconds. */
-export const COUNTDOWN_MS = 3000;
+/** How long the whole pre-run countdown lasts, in wall-clock milliseconds. */
+export const COUNTDOWN_MS = 1000;
+
+/** The digits the countdown shows, highest first (3, 2, 1). */
+export const COUNTDOWN_STEPS = 3;
 
 /** The playback rates offered for manual testing, slowest first. */
 export const PLAY_SPEEDS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 10] as const;
@@ -37,10 +40,12 @@ export const MAX_PLAY_SPEED = 10;
 
 /**
  * The countdown digit to show for `remainingMs` (3, 2, 1), or 0 once the run
- * has started. Split out so the display rule is testable without a running game.
+ * has started. The digits share the countdown evenly, so the whole 3-2-1 lasts
+ * `COUNTDOWN_MS` however many steps there are. Split out so the display rule is
+ * testable without a running game.
  */
 export function countdownDigit(remainingMs: number): number {
-  return Math.max(0, Math.ceil(remainingMs / 1000));
+  return Math.max(0, Math.ceil(remainingMs / (COUNTDOWN_MS / COUNTDOWN_STEPS)));
 }
 
 export interface Split {

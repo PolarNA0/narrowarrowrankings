@@ -69,6 +69,11 @@ export interface PlayFrame {
 export interface PlayCanvasHandle {
   /** Repaint from the current `getFrame()` result. */
   redraw(): void;
+  /**
+   * Repaint with the follow camera snapped to the current pose, so a rewind to
+   * the spawn (or a checkpoint) lands there at once instead of panning to it.
+   */
+  redrawSnapped(): void;
   /** Multiply the live zoom by `factor`, clamped to a sane range. */
   zoomBy(factor: number): void;
   /** Zoom so the whole level fits the viewport, centred on its bounds. */
@@ -180,6 +185,8 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
   };
 
   const drawRef = React.useRef<() => void>(() => {});
+  /** Set for one draw so the follow camera lands on the pose instead of easing. */
+  const snapRef = React.useRef(false);
   // User zoom on top of the follow camera's speed-based zoom (1 = the camera's
   // own zoom). The follow camera owns `zoom`; this is a separate multiplier so
   // zooming in does not fight the dynamic-zoom easing.
@@ -189,6 +196,10 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
     ref,
     () => ({
       redraw: () => drawRef.current(),
+      redrawSnapped: () => {
+        snapRef.current = true;
+        drawRef.current();
+      },
       zoomBy: (factor: number) => {
         zoomFactorRef.current = Math.max(0.1, Math.min(20, zoomFactorRef.current * factor));
         drawRef.current();
@@ -269,7 +280,11 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
       cameraRef.current.settings = settingsRef.current;
       const prev = path[Math.max(0, path.length - 2)] ?? p;
       const dt = SIM_TICK_MS / 1000;
-      cameraRef.current.follow(p.x, p.y, (p.x - prev.x) / dt, (p.y - prev.y) / dt, dt);
+      // A rewind asks for a snapped draw, so the camera jumps to the new pose
+      // rather than panning there over the countdown.
+      const snap = snapRef.current;
+      snapRef.current = false;
+      cameraRef.current.follow(p.x, p.y, (p.x - prev.x) / dt, (p.y - prev.y) / dt, dt, snap);
       const cam = cameraRef.current;
       // The user's zoom multiplier scales the follow camera's own zoom, so a
       // manual zoom-in stays put while the camera eases with speed.

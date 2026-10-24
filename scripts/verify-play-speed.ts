@@ -77,7 +77,20 @@ const lastResults: PlayResult[] = [];
 
 // ---- the pure helpers ------------------------------------------------------
 
-check("countdownDigit counts 3,2,1,0", [3000, 2999, 2001, 2000, 1001, 1000, 1, 0].map(countdownDigit).join(",") === "3,3,3,2,2,1,1,0");
+check(
+  "countdownDigit counts 3,2,1,0",
+  // Each digit is COUNTDOWN_MS/3 ≈ 333.33ms, so 667ms is still "3".
+  [1000, 999, 700, 667, 666, 334, 333, 1, 0].map(countdownDigit).join(",") === "3,3,3,3,2,2,1,1,0",
+);
+check(
+  "the whole 3-2-1 lasts COUNTDOWN_MS",
+  // Each digit is COUNTDOWN_MS/3, so the last one ends exactly at 0.
+  countdownDigit(COUNTDOWN_MS) === 3 &&
+    countdownDigit(COUNTDOWN_MS / 3 + 1) === 2 &&
+    countdownDigit(1) === 1 &&
+    countdownDigit(0) === 0,
+  `${COUNTDOWN_MS}ms total`,
+);
 check(
   "stepTicks at 1x is unchanged",
   (() => {
@@ -99,19 +112,61 @@ check("PLAY_SPEEDS spans 0.1x-10x", PLAY_SPEEDS[0] === 0.1 && PLAY_SPEEDS[PLAY_S
   game.restart();
   check("restart arms the countdown", game.phase === "countdown" && game.countdownMs === COUNTDOWN_MS);
 
-  // Feed ~2s of frames; the run must not have advanced at all.
+  // Feed ~half the countdown of frames; the run must not have advanced at all.
   let wall = 0;
-  while (wall < COUNTDOWN_MS - 200) {
+  while (wall < COUNTDOWN_MS / 2) {
     game.advance(1000 / 60);
     wall += 1000 / 60;
   }
   check("countdown freezes the tick", game.tick === 0, `tick=${game.tick} after ${Math.round(wall)}ms`);
-  check("countdown reports a digit", game.countdown === 1 || game.countdown === 2, `digit=${game.countdown}`);
+  check(
+    "countdown reports a digit",
+    game.countdown === 1 || game.countdown === 2 || game.countdown === 3,
+    `digit=${game.countdown}`,
+  );
 
-  // Cross the boundary.
-  game.advance(400);
+  // Cross the boundary (more than the remaining half of the countdown).
+  game.advance(COUNTDOWN_MS);
   check("countdown releases into running", game.phase === "running" && game.countdown === 0);
   check("run advances once released", game.advance(100) > 0);
+  game.free();
+}
+
+// ---- a restart rewinds to the spawn *before* the countdown -----------------
+// The engine must place the arrow back at the spawn the instant `restart` is
+// called, so the view can show it there while 3-2-1 runs; teleporting only when
+// the countdown ends is the bug this pins.
+
+{
+  const game = makeGame(1);
+  if (!(await game.load())) throw new Error("no engine");
+  const spawn = { x: game.current!.x, y: game.current!.y };
+
+  // Get the arrow well clear of the spawn first.
+  game.restart();
+  game.advance(COUNTDOWN_MS + 50);
+  for (let i = 0; i < 720; i++) game.advance(1000 / 240);
+  const moved = Math.hypot(game.current!.x - spawn.x, game.current!.y - spawn.y);
+  check("arrow is away from spawn before restart", moved > 100, `moved ${moved.toFixed(1)}`);
+
+  game.restart();
+  const offset = Math.hypot(game.current!.x - spawn.x, game.current!.y - spawn.y);
+  check(
+    "restart returns the pose to spawn immediately",
+    offset < 0.001,
+    `offset ${offset.toFixed(4)}`,
+  );
+  check("restart zeroes the tick", game.tick === 0);
+  check("restart arms the countdown", game.phase === "countdown");
+
+  // The countdown must not move the arrow: it stays on the start line.
+  game.advance(COUNTDOWN_MS / 2);
+  const midOffset = Math.hypot(game.current!.x - spawn.x, game.current!.y - spawn.y);
+  check(
+    "arrow holds at spawn while the countdown runs",
+    midOffset < 0.001,
+    `offset ${midOffset.toFixed(4)}`,
+  );
   game.free();
 }
 
