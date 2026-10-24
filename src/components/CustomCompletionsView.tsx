@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { useProfileSummaries } from "@/hooks/useProfileSummaries";
+import { displayNameFor, matchesPlayerSearch, type ProfileDirectory } from "@/lib/display-name";
 
 interface CompletionRow {
   username: string;
@@ -22,6 +23,7 @@ type SortKey = "first" | "second" | "third" | "top10" | "completed" | "points";
 
 interface Props {
   usernames: string[];
+  profiles?: ProfileDirectory;
   onSelectPlayer?: (username: string) => void;
 }
 
@@ -29,13 +31,19 @@ interface Props {
  * Custom-level medal table. Counts come straight from each player's in-game
  * profile, so no per-level scanning is needed and every known player appears.
  */
-export function CustomCompletionsView({ usernames, onSelectPlayer }: Props) {
+export function CustomCompletionsView({ usernames, profiles, onSelectPlayer }: Props) {
   const [query, setQuery] = React.useState("");
   const [sortKey, setSortKey] = React.useState<SortKey>("first");
-  const { profiles, loaded, total, running, refresh } = useProfileSummaries(usernames, true);
+  const {
+    profiles: summaries,
+    loaded,
+    total,
+    running,
+    refresh,
+  } = useProfileSummaries(usernames, true);
 
   const rows = React.useMemo(() => {
-    const list: CompletionRow[] = Object.values(profiles)
+    const list: CompletionRow[] = Object.values(summaries)
       .filter((p) => p.found)
       .map((p) => {
         const first = p.dailyMedals?.first ?? 0;
@@ -56,8 +64,8 @@ export function CustomCompletionsView({ usernames, onSelectPlayer }: Props) {
 
     list.sort((a, b) => b[sortKey] - a[sortKey] || b.first - a.first || b.completed - a.completed);
     const q = query.trim().toLowerCase();
-    return q ? list.filter((r) => r.username.toLowerCase().includes(q)) : list;
-  }, [profiles, query, sortKey]);
+    return q ? list.filter((r) => matchesPlayerSearch(profiles, r.username, q)) : list;
+  }, [summaries, query, sortKey]);
 
   const exportCsv = () => {
     const header = "rank,player,1st,2nd,3rd,top10,completed,points\n";
@@ -191,7 +199,7 @@ export function CustomCompletionsView({ usernames, onSelectPlayer }: Props) {
                   >
                     <TableCell className="text-center font-mono text-slate-500">{index + 1}</TableCell>
                     <TableCell className="font-bold text-white whitespace-nowrap">
-                      {row.username}
+                      {displayNameFor(profiles, row.username)}
                       {index === 0 && (
                         <Badge className="ml-2 bg-amber-500/10 text-amber-400 border-amber-500/20 text-[9px] uppercase">
                           Top

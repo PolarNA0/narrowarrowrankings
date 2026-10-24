@@ -162,6 +162,7 @@ import { readUrlState, writeUrlState, shareUrl, type UrlState } from "@/lib/url-
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 import { useInGameMedals } from "@/hooks/useInGameMedals";
 import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
+import { avatarFor, displayNameFor, matchesPlayerSearch } from "@/lib/display-name";
 
 /** Every top-level view the shell can show. Most are nav items; `profile` and
  * `compare` are reached from a player instead. */
@@ -1379,7 +1380,7 @@ export default function App() {
 
     const result = source
       .map((entry, idx) => ({ ...entry, originalRank: idx + 1 }))
-      .filter((entry) => entry.username.toLowerCase().includes(deferredSearchQuery.toLowerCase()));
+      .filter((entry) => matchesPlayerSearch(playerProfiles, entry.username, deferredSearchQuery));
 
     result.sort((a, b) => {
       let aValue: any;
@@ -1413,6 +1414,7 @@ export default function App() {
     sortConfig,
     activeRankConfig,
     hasLevelRanks,
+    playerProfiles,
   ]);
 
   // The board's fastest time, hoisted out of the row render — computing
@@ -1742,6 +1744,7 @@ export default function App() {
             <ComparePlayers
               initialPlayer={getPlayerStats(selectedPlayer)!}
               allUsernames={allUsernames}
+              profiles={playerProfiles}
               levels={sortedLevels}
               packs={dynamicPacks}
               onBack={() => setView("leaderboard")}
@@ -1939,7 +1942,7 @@ export default function App() {
                       const filtered = averageLeaderboard
                         .map((p, idx) => ({ ...p, originalRank: idx + 1 }))
                         .filter((p) =>
-                          p.username.toLowerCase().includes(averageSearchQuery.toLowerCase()),
+                          matchesPlayerSearch(playerProfiles, p.username, averageSearchQuery),
                         );
 
                       if (filtered.length === 0) {
@@ -1970,7 +1973,7 @@ export default function App() {
                               {p.originalRank}
                             </TableCell>
                             <TableCell className="font-bold text-white whitespace-nowrap">
-                              {p.username}
+                              {displayNameFor(playerProfiles, p.username)}
                             </TableCell>
                             <TableCell className="text-center font-mono text-white">
                               <span className="text-[var(--app-accent)]">#</span>
@@ -2094,6 +2097,7 @@ export default function App() {
               <ArrowRecordsView
                 levels={sortedLevels.filter((l) => l.packId !== "custom")}
                 data={processedAllLevelsData}
+                profiles={playerProfiles}
                 onLevelClick={(levelId) => {
                   setSelectedLevel(levelId);
                   setView("leaderboard");
@@ -2181,7 +2185,9 @@ export default function App() {
                                       className="text-white hover:text-[var(--app-accent)] cursor-pointer transition-colors whitespace-nowrap"
                                       onClick={() => wr?.wr && handlePlayerClick(wr.wr.username)}
                                     >
-                                      {wr?.wr?.username || "---"}
+                                      {wr?.wr
+                                        ? displayNameFor(playerProfiles, wr.wr.username)
+                                        : "---"}
                                     </TableCell>
                                     <TableCell className="text-center">
                                       {wr?.wr && (
@@ -2274,7 +2280,7 @@ export default function App() {
                                   className="text-white whitespace-nowrap cursor-pointer hover:text-[var(--app-accent)]"
                                   onClick={() => handlePlayerClick(record.latest.username)}
                                 >
-                                  {record.latest.username}
+                                  {displayNameFor(playerProfiles, record.latest.username)}
                                 </TableCell>
                                 <TableCell className="text-right font-mono font-bold text-yellow-400 whitespace-nowrap">
                                   {formatTime(record.latest.completion_time)}
@@ -2346,7 +2352,7 @@ export default function App() {
                                           className="py-2 text-xs font-bold text-white cursor-pointer hover:text-[var(--app-accent)]"
                                           onClick={() => handlePlayerClick(entry.username)}
                                         >
-                                          {entry.username}
+                                          {displayNameFor(playerProfiles, entry.username)}
                                         </TableCell>
                                         <TableCell className="py-2 text-right font-mono text-xs text-yellow-400 whitespace-nowrap">
                                           {formatTime(entry.completion_time)}
@@ -2470,7 +2476,9 @@ export default function App() {
                                                 entry && handlePlayerClick(entry.username)
                                               }
                                             >
-                                              {entry ? entry.username : "---"}
+                                              {entry
+                                                ? displayNameFor(playerProfiles, entry.username)
+                                                : "---"}
                                             </span>
                                           </TableCell>
                                           <TableCell className="text-right py-2 font-mono text-[10px] text-[#2DD4BF]">
@@ -2496,6 +2504,7 @@ export default function App() {
           </div>
         ) : view === "customs" ? (
           <CustomsView
+            profiles={playerProfiles}
             selectedLevelId={selectedCustomLevelId}
             onSelectLevelId={setSelectedCustomLevelId}
             onSelectPlayer={handlePlayerClick}
@@ -2506,6 +2515,7 @@ export default function App() {
           />
         ) : view === "random" ? (
           <RandomLevelSelector
+            profiles={playerProfiles}
             packs={dynamicPacks}
             levels={sortedLevels}
             onSelectLevel={(levelId) => {
@@ -2521,6 +2531,7 @@ export default function App() {
         ) : view === "voting" ? (
           <PlayerVotingView
             usernames={allUsernames}
+            profiles={playerProfiles}
             signedIn={Boolean(adminUser?.id)}
             userId={adminUser?.id ?? null}
             onSelectPlayer={handlePlayerClick}
@@ -2566,12 +2577,14 @@ export default function App() {
             levels={dynamicLevels}
             data={processedAllLevelsData}
             usernames={allUsernames}
+            profiles={playerProfiles}
             onPlayerClick={handlePlayerClick}
           />
         ) : view === "fame" ? (
           <HallOfFameView
             levels={dynamicLevels}
             data={processedAllLevelsData}
+            profiles={playerProfiles}
             onPlayerClick={handlePlayerClick}
           />
         ) : view === "targets" ? (
@@ -2579,6 +2592,7 @@ export default function App() {
             levels={dynamicLevels}
             data={processedAllLevelsData}
             usernames={allUsernames}
+            profiles={playerProfiles}
             onLevelClick={(levelId) => {
               setSelectedLevel(levelId);
               setView("leaderboard");
@@ -2588,6 +2602,7 @@ export default function App() {
           <MilestoneClubsView
             levels={dynamicLevels}
             data={processedAllLevelsData}
+            profiles={playerProfiles}
             onPlayerClick={handlePlayerClick}
           />
         ) : view === "position" ? (
@@ -2602,6 +2617,7 @@ export default function App() {
             <PositionPointsView
               levels={dynamicLevels}
               data={processedAllLevelsData}
+              profiles={playerProfiles}
               onPlayerClick={handlePlayerClick}
               onLevelClick={(levelId) => {
                 setSelectedLevel(levelId);
@@ -2622,6 +2638,7 @@ export default function App() {
               levels={dynamicLevels}
               data={processedAllLevelsData}
               rankConfigs={allRankConfigs}
+              profiles={playerProfiles}
               onPlayerClick={handlePlayerClick}
               onLevelClick={(levelId) => {
                 setSelectedLevel(levelId);
@@ -2631,7 +2648,11 @@ export default function App() {
             />
           )
         ) : view === "completions" ? (
-          <CustomCompletionsView usernames={allUsernames} onSelectPlayer={handlePlayerClick} />
+          <CustomCompletionsView
+            usernames={allUsernames}
+            profiles={playerProfiles}
+            onSelectPlayer={handlePlayerClick}
+          />
         ) : view === "tracker" ? (
           <div className="space-y-6">
             <div>
@@ -2643,6 +2664,7 @@ export default function App() {
             <RecordTracker
               levels={dynamicLevels}
               data={processedAllLevelsData}
+              profiles={playerProfiles}
               onSelectPlayer={handlePlayerClick}
               onSelectLevel={handleLevelClick}
               formatTime={(t) => formatTime(t, "seconds")}
@@ -2713,7 +2735,7 @@ export default function App() {
         ) : view === "brute" ? (
           <BruteView />
         ) : view === "endless" ? (
-          <EndlessView />
+          <EndlessView profiles={playerProfiles} />
         ) : view === "race" ? (
           <RaceView
             onPlayRace={(target) => {
@@ -2722,7 +2744,7 @@ export default function App() {
             }}
           />
         ) : view === "race-matches" ? (
-          <RecentMatchesView />
+          <RecentMatchesView profiles={playerProfiles} />
         ) : view === "editor" ? (
           <LevelEditorView
             initialLevel={editorLevel}
@@ -3300,16 +3322,25 @@ export default function App() {
                                         )}
                                       />
                                       <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                                        <img
-                                          src="https://play.narrowarrow.xyz/assets/assets/images/account.svg"
-                                          alt=""
-                                          className="w-3 h-3 sm:w-3.5 sm:h-3.5 object-contain opacity-50 group-hover:opacity-100 transition-opacity shrink-0"
-                                          onError={(e) => {
-                                            e.currentTarget.style.display = "none";
-                                          }}
-                                        />
+                                        {settings.showAvatars &&
+                                        avatarFor(playerProfiles, entry.username) ? (
+                                          <img
+                                            src={avatarFor(playerProfiles, entry.username)}
+                                            alt=""
+                                            className="w-5 h-5 sm:w-6 sm:h-6 rounded-md object-cover shrink-0 ring-1 ring-white/10"
+                                          />
+                                        ) : (
+                                          <img
+                                            src="https://play.narrowarrow.xyz/assets/assets/images/account.svg"
+                                            alt=""
+                                            className="w-3 h-3 sm:w-3.5 sm:h-3.5 object-contain opacity-50 group-hover:opacity-100 transition-opacity shrink-0"
+                                            onError={(e) => {
+                                              e.currentTarget.style.display = "none";
+                                            }}
+                                          />
+                                        )}
                                         <span className="font-bold text-slate-200 group-hover:text-[var(--app-accent)] transition-colors text-xs sm:text-sm truncate">
-                                          {entry.username}
+                                          {displayNameFor(playerProfiles, entry.username)}
                                         </span>
                                         {entry.isLegacy && (
                                           <Badge

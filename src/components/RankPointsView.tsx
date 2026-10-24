@@ -7,18 +7,23 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import type { LeaderboardEntry, LevelInfo, LevelRankConfig } from "@/types";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
 import {
   computeRankPoints,
   RANK_POINTS,
+  RANK_POINTS_MODE_LABEL,
   RANK_TEXT_COLOR,
   WR_POINTS,
   POINT_RANK_ORDER,
+  ARROW_KIND_LABEL,
+  type RankPointsMode,
 } from "@/lib/rankPoints";
 
 interface Props {
   levels: LevelInfo[];
   data: Record<string, LeaderboardEntry[]>;
   rankConfigs?: Record<string, LevelRankConfig>;
+  profiles?: ProfileDirectory;
   onPlayerClick?: (username: string) => void;
   onLevelClick?: (levelId: string) => void;
   formatTime: (seconds: number) => string;
@@ -29,12 +34,14 @@ export function RankPointsView({
   levels,
   data,
   rankConfigs,
+  profiles,
   onPlayerClick,
   onLevelClick,
   formatTime,
 }: Props) {
   const [query, setQuery] = React.useState("");
   const [expanded, setExpanded] = React.useState<string | null>(null);
+  const [mode, setMode] = React.useState<RankPointsMode>("best-arrow");
 
   const levelIds = React.useMemo(() => levels.map((l) => l.id), [levels]);
   const levelName = React.useMemo(() => {
@@ -43,19 +50,22 @@ export function RankPointsView({
     return map;
   }, [levels]);
 
-  const { players, levelTimes } = React.useMemo(() => {
+  const { players, slotsScored } = React.useMemo(() => {
     const authoredMap = Object.fromEntries(
       Object.entries(rankConfigs ?? {}).map(([id, cfg]) => [id, cfg?.ranks]),
     );
-    return computeRankPoints(levelIds, data, authoredMap);
-  }, [levelIds, data, rankConfigs]);
+    const arrowRanksMap = Object.fromEntries(
+      Object.entries(rankConfigs ?? {}).map(([id, cfg]) => [id, cfg?.arrowRanks]),
+    );
+    return computeRankPoints(levelIds, data, authoredMap, mode, arrowRanksMap);
+  }, [levelIds, data, rankConfigs, mode]);
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? players.filter((p) => p.username.toLowerCase().includes(q)) : players;
   }, [players, query]);
 
-  const maxPossible = Object.keys(levelTimes).length * WR_POINTS;
+  const maxPossible = slotsScored * WR_POINTS;
 
   const exportCsv = () => {
     const header = "rank,player,points,maps,wrs,champions\n";
@@ -65,7 +75,7 @@ export function RankPointsView({
     const url = URL.createObjectURL(new Blob([header + body], { type: "text/csv" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = "rank-points.csv";
+    link.download = `rank-points-${mode}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -78,7 +88,10 @@ export function RankPointsView({
             <Sigma className="w-5 h-5 text-[var(--app-accent)]" /> Rank Points
           </h2>
           <p className="text-slate-500 text-sm">
-            Every map awards points for the rank your PB reaches. World records get a +2 bonus.
+            {mode === "best-arrow"
+              ? "Every map awards points for the rank your PB reaches, whichever arrow it was set on."
+              : "Every map awards points for each arrow separately, so a map can score three times."}{" "}
+            World records get a +2 bonus.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -95,6 +108,30 @@ export function RankPointsView({
             <Download className="w-4 h-4" />
           </Button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {(["best-arrow", "all-arrows"] as RankPointsMode[]).map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => {
+              setMode(option);
+              setExpanded(null);
+            }}
+            className={cn(
+              "h-9 px-4 rounded-xl border text-xs font-mono uppercase tracking-wider transition-colors",
+              mode === option
+                ? "border-[var(--app-accent)]/50 bg-[var(--app-accent)]/15 text-[var(--app-accent)]"
+                : "border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10",
+            )}
+          >
+            {RANK_POINTS_MODE_LABEL[option]}
+          </button>
+        ))}
+        <span className="h-9 px-3 rounded-xl border border-white/10 bg-white/[0.03] text-[10px] uppercase tracking-widest text-slate-500 flex items-center">
+          {mode === "best-arrow" ? "72 maps · 1 arrow each" : "72 maps · up to 3 arrows each"}
+        </span>
       </div>
 
       <Card className="bg-white/5 border-white/10">
@@ -117,7 +154,11 @@ export function RankPointsView({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: "Players ranked", value: players.length, icon: Trophy },
-          { label: "Maps scored", value: Object.keys(levelTimes).length, icon: Medal },
+          {
+            label: mode === "best-arrow" ? "Maps scored" : "Map-arrows scored",
+            value: slotsScored,
+            icon: Medal,
+          },
           { label: "Max possible", value: maxPossible, icon: Sigma },
           { label: "Top score", value: players[0]?.total ?? 0, icon: Crown },
         ].map((stat) => (
@@ -175,7 +216,7 @@ export function RankPointsView({
                             onPlayerClick?.(player.username);
                           }}
                         >
-                          {player.username}
+                          {displayNameFor(profiles, player.username)}
                         </TableCell>
                         <TableCell className="text-center font-mono font-bold text-[var(--app-accent)]">
                           {player.total}
@@ -195,7 +236,7 @@ export function RankPointsView({
                                 .sort((a, b) => b.points - a.points || a.time - b.time)
                                 .map((entry) => (
                                   <button
-                                    key={entry.levelId}
+                                    key={`${entry.levelId}|${entry.arrow}`}
                                     type="button"
                                     onClick={() => onLevelClick?.(entry.levelId)}
                                     className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left hover:border-[var(--app-accent)]/40"
@@ -203,6 +244,11 @@ export function RankPointsView({
                                     <div className="min-w-0">
                                       <div className="text-xs font-medium text-white truncate">
                                         {levelName[entry.levelId] ?? entry.levelId}
+                                        {entry.arrow && (
+                                          <span className="ml-1.5 text-[10px] font-mono uppercase text-slate-500">
+                                            {ARROW_KIND_LABEL[entry.arrow]}
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="text-[10px] font-mono text-slate-500">
                                         #{entry.position} · {formatTime(entry.time)}

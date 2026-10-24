@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchRecentMatches, type RaceMatch } from "@/lib/race-matches";
 import { cn } from "@/lib/utils";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
 
 function fmtTime(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -29,7 +30,7 @@ function timeLine(timesMs: Array<number | null>): string {
   return timesMs.map((t) => (t === null ? "—" : fmtTime(t / 1000))).join(" · ");
 }
 
-function MatchRow({ match }: { match: RaceMatch }) {
+function MatchRow({ match, profiles }: { match: RaceMatch; profiles?: ProfileDirectory }) {
   const [open, setOpen] = React.useState(false);
   const decided = match.winner !== null;
   // Only endurance is decided on the combined time, so the running total is
@@ -66,7 +67,7 @@ function MatchRow({ match }: { match: RaceMatch }) {
                   <td className="p-3">
                     <div className="flex items-center gap-2">
                       <span className={cn("font-bold", won ? "text-amber-300" : "text-white")}>
-                        {player.username}
+                        {displayNameFor(profiles, player.username)}
                       </span>
                       {won && (
                         <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[9px] uppercase">
@@ -116,7 +117,7 @@ function MatchRow({ match }: { match: RaceMatch }) {
                 <span className="w-16 text-xs font-semibold text-slate-400">Round {round + 1}</span>
                 {match.perPlayer.map((player) => (
                   <span key={player.username} className="font-mono text-xs text-slate-300">
-                    {player.username}:{" "}
+                    {displayNameFor(profiles, player.username)}:{" "}
                     {player.timesMs[round] === null ? "—" : fmtTime(player.timesMs[round]! / 1000)}
                   </span>
                 ))}
@@ -129,7 +130,7 @@ function MatchRow({ match }: { match: RaceMatch }) {
   );
 }
 
-export function RecentMatchesView() {
+export function RecentMatchesView({ profiles }: { profiles?: ProfileDirectory }) {
   const [matches, setMatches] = React.useState<RaceMatch[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -198,7 +199,7 @@ export function RecentMatchesView() {
 
       <div className="space-y-3">
         {matches?.map((match) => (
-          <MatchRow key={match.code} match={match} />
+          <MatchRow key={match.code} match={match} profiles={profiles} />
         ))}
       </div>
     </div>

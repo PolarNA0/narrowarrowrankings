@@ -1,9 +1,13 @@
 import * as React from "react";
-import { BadgeCheck, Camera, Check, Globe2, Pencil, X, Youtube } from "lucide-react";
+import { BadgeCheck, Camera, Check, Globe2, Loader2, Pencil, X, Youtube } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { AvatarPicker } from "@/components/AvatarPicker";
+import { fileToAvatarDataUrl, AvatarError } from "@/lib/avatar";
+import { uploadAvatar } from "@/lib/avatar.functions";
 import { ACCENTS } from "@/hooks/useAppSettings";
 import type { PlayerProfileRow } from "@/hooks/usePlayerProfiles";
 import { cn } from "@/lib/utils";
@@ -18,7 +22,6 @@ interface Props {
   children?: React.ReactNode;
 }
 
-
 const EMPTY_FORM = {
   display_name: "",
   avatar_url: "",
@@ -31,9 +34,19 @@ const EMPTY_FORM = {
 };
 
 /** Banner + avatar identity card with click-to-edit for the signed-in owner. */
-export function ProfileIdentityCard({ username, profile, canEdit, onSave, onRequestSignIn, badges, children }: Props) {
+export function ProfileIdentityCard({
+  username,
+  profile,
+  canEdit,
+  onSave,
+  onRequestSignIn,
+  badges,
+  children,
+}: Props) {
   const [editing, setEditing] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = React.useState(false);
+  const avatarInputRef = React.useRef<HTMLInputElement>(null);
   const [form, setForm] = React.useState(EMPTY_FORM);
 
   React.useEffect(() => {
@@ -72,6 +85,32 @@ export function ProfileIdentityCard({ username, profile, canEdit, onSave, onRequ
   const accent = profile?.accent_color || "var(--app-accent)";
   const displayName = profile?.display_name || username;
 
+  /**
+   * Upload a picked photo and save it straight away. The avatar is its own
+   * one-tap action rather than part of the edit form, because the whole point
+   * is that changing it is not a chore — a player should not have to open the
+   * editor, pick, then remember to save.
+   */
+  const changeAvatar = async (file: File | undefined) => {
+    if (!file || !onSave) return;
+    setUploadingAvatar(true);
+    try {
+      const dataUrl = await fileToAvatarDataUrl(file);
+      const { url } = await uploadAvatar({ data: { dataUrl } });
+      await onSave({ avatar_url: url });
+      toast.success("Avatar updated");
+    } catch (err) {
+      toast.error(
+        err instanceof AvatarError || err instanceof Error
+          ? err.message
+          : "Could not use that image.",
+      );
+    } finally {
+      setUploadingAvatar(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-white/10 overflow-hidden bg-white/[0.03]">
       <div
@@ -98,28 +137,50 @@ export function ProfileIdentityCard({ username, profile, canEdit, onSave, onRequ
       <div className="p-4 md:p-5 -mt-12 flex flex-col md:flex-row md:items-end gap-4">
         <button
           type="button"
-          onClick={() => (canEdit ? setEditing(true) : onRequestSignIn?.())}
+          onClick={() => (canEdit ? avatarInputRef.current?.click() : onRequestSignIn?.())}
           className="group relative h-24 w-24 rounded-2xl border-2 overflow-hidden bg-black shrink-0"
           style={{ borderColor: accent }}
           title={canEdit ? "Change avatar" : "Sign in to claim this profile"}
         >
           {profile?.avatar_url ? (
-            <img src={profile.avatar_url} alt={`${displayName} avatar`} className="h-full w-full object-cover" />
+            <img
+              src={profile.avatar_url}
+              alt={`${displayName} avatar`}
+              className="h-full w-full object-cover"
+            />
           ) : (
             <div className="h-full w-full grid place-items-center text-3xl font-black text-white/70">
               {username.slice(0, 1).toUpperCase()}
             </div>
           )}
           <span className="absolute inset-0 hidden group-hover:flex items-center justify-center gap-1 bg-black/70 text-[10px] font-bold uppercase tracking-widest text-white">
-            <Camera className="w-3.5 h-3.5" /> {canEdit ? "Change" : "Claim"}
+            {uploadingAvatar ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Camera className="w-3.5 h-3.5" />
+            )}{" "}
+            {canEdit ? "Change" : "Claim"}
           </span>
         </button>
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => void changeAvatar(e.target.files?.[0])}
+        />
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight truncate">{displayName}</h2>
+            <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight truncate">
+              {displayName}
+            </h2>
             {profile?.verified && (
-              <BadgeCheck className="w-5 h-5" style={{ color: accent }} aria-label="Verified profile" />
+              <BadgeCheck
+                className="w-5 h-5"
+                style={{ color: accent }}
+                aria-label="Verified profile"
+              />
             )}
             {profile?.display_name && (
               <span className="text-xs font-mono text-slate-500">@{username}</span>
@@ -127,9 +188,11 @@ export function ProfileIdentityCard({ username, profile, canEdit, onSave, onRequ
           </div>
           {badges && <div className="mt-2">{badges}</div>}
           <div className="flex flex-wrap items-center gap-2 mt-1">
-
             {profile?.country && (
-              <Badge variant="outline" className="border-white/10 bg-white/5 text-[10px] text-slate-300">
+              <Badge
+                variant="outline"
+                className="border-white/10 bg-white/5 text-[10px] text-slate-300"
+              >
                 <Globe2 className="w-3 h-3 mr-1" /> {profile.country}
               </Badge>
             )}
@@ -157,24 +220,38 @@ export function ProfileIdentityCard({ username, profile, canEdit, onSave, onRequ
       {editing && (
         <div className="border-t border-white/10 bg-black/30 p-4 md:p-5 space-y-3">
           <div className="grid md:grid-cols-2 gap-2">
-            <Input
-              value={form.display_name}
-              onChange={(e) => setForm({ ...form, display_name: e.target.value })}
-              placeholder="Display name"
-              className="bg-black/40 border-white/10"
-            />
+            <label className="space-y-1">
+              <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                Display name
+              </span>
+              <Input
+                value={form.display_name}
+                onChange={(e) => setForm({ ...form, display_name: e.target.value })}
+                placeholder={username}
+                className="bg-black/40 border-white/10"
+              />
+              <span className="block text-[10px] text-slate-500">
+                Shown on rankings. Your in-game name{" "}
+                <span className="text-slate-400">@{username}</span> stays on your profile.
+              </span>
+            </label>
             <Input
               value={form.country}
               onChange={(e) => setForm({ ...form, country: e.target.value })}
               placeholder="Country"
               className="bg-black/40 border-white/10"
             />
-            <Input
-              value={form.avatar_url}
-              onChange={(e) => setForm({ ...form, avatar_url: e.target.value })}
-              placeholder="Avatar image URL"
-              className="bg-black/40 border-white/10"
-            />
+            <div className="md:col-span-2 flex items-center gap-3 rounded-xl border border-white/10 bg-black/30 p-3">
+              <AvatarPicker
+                value={form.avatar_url}
+                onChange={(url) => setForm({ ...form, avatar_url: url })}
+                username={username}
+                size={72}
+              />
+              <span className="text-[11px] text-slate-500">
+                You can also click your avatar to change it right away.
+              </span>
+            </div>
             <Input
               value={form.banner_url}
               onChange={(e) => setForm({ ...form, banner_url: e.target.value })}

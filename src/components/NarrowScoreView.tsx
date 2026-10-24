@@ -22,6 +22,7 @@ import {
   type PlayerScore,
 } from "@/lib/narrowscore";
 import type { PlayerProfileRow } from "@/hooks/usePlayerProfiles";
+import { matchesPlayerSearch } from "@/lib/display-name";
 
 interface NarrowScoreViewProps {
   levels: LevelInfo[];
@@ -60,10 +61,7 @@ export function NarrowScoreView({
     [levels, packFilter],
   );
 
-  const scores = React.useMemo(
-    () => computeNarrowScores(scopedLevels, data),
-    [scopedLevels, data],
-  );
+  const scores = React.useMemo(() => computeNarrowScores(scopedLevels, data), [scopedLevels, data]);
 
   const ranked = React.useMemo(() => {
     const sorted = [...scores].sort((a, b) => {
@@ -76,8 +74,8 @@ export function NarrowScoreView({
 
   const visible = React.useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? ranked.filter((r) => r.player.username.toLowerCase().includes(q)) : ranked;
-  }, [ranked, query]);
+    return q ? ranked.filter((r) => matchesPlayerSearch(profiles, r.player.username, q)) : ranked;
+  }, [ranked, query, profiles]);
 
   const exportCsv = () => {
     const rows = [
@@ -293,7 +291,10 @@ function ScoreRow({
               </span>
             )}
           </span>
-          <span className="block text-[10px] font-mono uppercase tracking-wider" style={{ color: tier.color }}>
+          <span
+            className="block text-[10px] font-mono uppercase tracking-wider"
+            style={{ color: tier.color }}
+          >
             {tier.name} · {player.levelsPlayed} levels
           </span>
         </span>

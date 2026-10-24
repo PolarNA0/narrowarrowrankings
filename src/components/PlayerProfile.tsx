@@ -488,8 +488,10 @@ export function PlayerProfile({
           </Button>
           <div className="flex items-center gap-4">
             <div>
+              {/* The name lives in the identity card below, which shows the
+                  display name alongside the in-game name — showing it here too
+                  printed it twice. */}
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-3xl font-bold text-white tracking-tight">{stats.username}</h2>
                 {extraData?.league && (
                   <div className="flex items-center gap-2 bg-amber-500/5 border border-amber-500/10 rounded-lg px-2.5 py-1">
                     <img 

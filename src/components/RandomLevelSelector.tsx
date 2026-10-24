@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { LevelPack, LevelInfo } from "../types";
 import { capitalizeName } from "@/lib/utils";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
 import { ClickToCopy } from "./ClickToCopy";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -20,9 +21,17 @@ interface RandomLevelSelectorProps {
   onSelectLevel: (levelId: string) => void;
   onSelectCustomLevel?: (levelId: string) => void;
   onBack: () => void;
+  profiles?: ProfileDirectory;
 }
 
-export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCustomLevel, onBack }: RandomLevelSelectorProps) {
+export function RandomLevelSelector({
+  packs,
+  levels,
+  onSelectLevel,
+  onSelectCustomLevel,
+  onBack,
+  profiles,
+}: RandomLevelSelectorProps) {
   // Mode selection: 'campaign' (official levels wheel) or 'custom' (random custom level)
   const [randomizerMode, setRandomizerMode] = useState<'campaign' | 'custom'>('campaign');
 
@@ -958,7 +967,9 @@ export function RandomLevelSelector({ packs, levels, onSelectLevel, onSelectCust
                                 {customLbEntries.slice(0, 50).map((entry, index) => (
                                   <TableRow key={entry.run_id || index} className="border-white/5 hover:bg-white/[0.02]">
                                     <TableCell className="text-center font-mono text-xs text-slate-500 py-2">{index + 1}</TableCell>
-                                    <TableCell className="font-semibold text-xs text-slate-300 py-2 truncate max-w-[120px]">{entry.username}</TableCell>
+                                    <TableCell className="font-semibold text-xs text-slate-300 py-2 truncate max-w-[120px]">
+                                      {displayNameFor(profiles, entry.username)}
+                                    </TableCell>
                                     <TableCell className="font-mono text-xs text-teal-400 text-right font-bold py-2">{entry.completion_time.toFixed(3)}s</TableCell>
                                   </TableRow>
                                 ))}

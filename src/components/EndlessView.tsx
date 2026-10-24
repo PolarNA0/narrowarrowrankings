@@ -47,6 +47,7 @@ import { DEFAULT_GAME_CAMERA } from "@/lib/replay-render";
 import { PlayGame, type PlayResult } from "@/lib/play-game";
 import { buildEndlessCourse, type EndlessCourse } from "@/lib/endless";
 import { fetchEndlessBoard, submitEndlessRun, type EndlessEntry } from "@/lib/endless-leaderboard";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
 import { encodeInputSymbols } from "@/lib/replay";
 import {
   DEFAULT_INPUT_SETTINGS,
@@ -69,7 +70,7 @@ function fmtTime(sec: number): string {
   return m > 0 ? `${m}:${s}` : `${s}s`;
 }
 
-export function EndlessView() {
+export function EndlessView({ profiles }: { profiles?: ProfileDirectory } = {}) {
   const [seedText, setSeedText] = React.useState("1");
   const [arrowName, setArrowName] = React.useState<string>(ARROWS[0]);
   const [loading, setLoading] = React.useState(false);
@@ -548,7 +549,9 @@ export function EndlessView() {
                     <td className="px-4 py-2 font-mono text-slate-400">
                       {i === 0 ? <Crown className="w-3.5 h-3.5 text-amber-400" /> : i + 1}
                     </td>
-                    <td className="px-4 py-2 truncate max-w-[12rem]">{entry.username}</td>
+                    <td className="px-4 py-2 truncate max-w-[12rem]">
+                      {displayNameFor(profiles, entry.username)}
+                    </td>
                     <td className="px-4 py-2 text-right font-mono font-semibold text-[var(--app-accent)]">
                       {entry.score}
                     </td>

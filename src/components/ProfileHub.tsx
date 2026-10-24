@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAccountAuth, useIsAdmin } from "@/hooks/useAccountAuth";
 import { useLinkRequests, usePlayerProfiles } from "@/hooks/usePlayerProfiles";
 import { SelectionSearch } from "@/components/SelectionSearch";
+import { AvatarPicker } from "@/components/AvatarPicker";
 import { accountUsernameError, accountPasswordError, AccountError } from "@/lib/accounts";
 import { resetAccountPassword } from "@/lib/account-admin.functions";
 import { ACCENTS } from "@/hooks/useAppSettings";
@@ -269,14 +270,18 @@ export function ProfileHub({
               <Input
                 value={form.display_name}
                 onChange={(e) => setForm({ ...form, display_name: e.target.value })}
-                placeholder="Display name"
+                placeholder={myProfile?.username ?? "Display name"}
                 className="bg-black/30 border-white/10"
               />
-              <Input
+              <p className="text-[11px] text-slate-500">
+                Shown on rankings instead of your in-game name. Your in-game name stays on your
+                profile.
+              </p>
+              <AvatarPicker
                 value={form.avatar_url}
-                onChange={(e) => setForm({ ...form, avatar_url: e.target.value })}
-                placeholder="Avatar image URL"
-                className="bg-black/30 border-white/10"
+                onChange={(url) => setForm({ ...form, avatar_url: url })}
+                username={myProfile?.username ?? "?"}
+                size={80}
               />
               <Input
                 value={form.banner_url}

@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Activity, Crown, Filter, Search, Timer } from "lucide-react";
 import type { LeaderboardEntry, LevelInfo } from "../types";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
 import { toStandings } from "@/lib/medals";
 import { fetchAllTasBoards } from "@/lib/tas-leaderboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +27,7 @@ interface RecordEvent {
 interface Props {
   levels: LevelInfo[];
   data: Record<string, LeaderboardEntry[]>;
+  profiles?: ProfileDirectory;
   onSelectPlayer?: (username: string) => void;
   onSelectLevel?: (levelId: string) => void;
   formatTime: (seconds: number) => string;
@@ -43,7 +45,14 @@ function timeAgo(ts: number) {
   return new Date(ts).toLocaleDateString();
 }
 
-export function RecordTracker({ levels, data, onSelectPlayer, onSelectLevel, formatTime }: Props) {
+export function RecordTracker({
+  levels,
+  data,
+  profiles,
+  onSelectPlayer,
+  onSelectLevel,
+  formatTime,
+}: Props) {
   const [filter, setFilter] = React.useState<"all" | "wr" | "podium" | "top10">("all");
   const [query, setQuery] = React.useState("");
   const [tasBoards, setTasBoards] = React.useState<
@@ -231,7 +240,7 @@ export function RecordTracker({ levels, data, onSelectPlayer, onSelectLevel, for
                     className="font-bold text-white text-sm hover:text-[var(--app-accent)] transition-colors"
                     onClick={() => onSelectPlayer?.(event.username)}
                   >
-                    {event.username}
+                    {displayNameFor(profiles, event.username)}
                   </button>
                   {event.isWr && (
                     <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[9px] uppercase">

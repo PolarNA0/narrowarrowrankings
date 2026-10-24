@@ -3,17 +3,19 @@ import { Target } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { LeaderboardEntry, LevelInfo } from "@/types";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
 import { toStandings } from "@/lib/medals";
 
 interface Props {
   levels: LevelInfo[];
   data: Record<string, LeaderboardEntry[]>;
   usernames: string[];
+  profiles?: ProfileDirectory;
   onLevelClick?: (levelId: string) => void;
 }
 
 /** Shows, per level, exactly how much time a player must shave to gain the next position. */
-export function ImprovementTargetsView({ levels, data, usernames, onLevelClick }: Props) {
+export function ImprovementTargetsView({ levels, data, usernames, profiles, onLevelClick }: Props) {
   const [query, setQuery] = React.useState("");
   const canonical = React.useMemo(
     () => new Map(usernames.map((name) => [name.toLowerCase(), name])),
@@ -96,7 +98,10 @@ export function ImprovementTargetsView({ levels, data, usernames, onLevelClick }
                 <span className="flex-1 truncate">
                   <span className="font-medium text-white">{row.levelName}</span>
                   <span className="block text-[10px] uppercase tracking-wider text-slate-500">
-                    {row.rival ? `Next up: ${row.rival}` : "World record — nothing above"} · {row.wrGap.toFixed(3)}s off WR
+                    {row.rival
+                      ? `Next up: ${displayNameFor(profiles, row.rival)}`
+                      : "World record — nothing above"}{" "}
+                    · {row.wrGap.toFixed(3)}s off WR
                   </span>
                 </span>
                 <span className="font-mono text-sm font-bold text-[var(--app-accent)]">

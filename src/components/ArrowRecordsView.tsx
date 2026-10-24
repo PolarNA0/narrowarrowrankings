@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowIcon } from "@/components/ArrowIcon";
 import { cn } from "@/lib/utils";
 import type { LeaderboardEntry, LevelInfo } from "@/types";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
 
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"] as const;
 
@@ -18,12 +19,13 @@ const ARROW_TONE: Record<string, string> = {
 interface Props {
   levels: LevelInfo[];
   data: Record<string, LeaderboardEntry[]>;
+  profiles?: ProfileDirectory;
   onLevelClick?: (levelId: string) => void;
   onPlayerClick?: (username: string) => void;
 }
 
 /** Category world records: who holds the fastest run per arrow on every level. */
-export function ArrowRecordsView({ levels, data, onLevelClick, onPlayerClick }: Props) {
+export function ArrowRecordsView({ levels, data, profiles, onLevelClick, onPlayerClick }: Props) {
   const [query, setQuery] = React.useState("");
 
   const rows = React.useMemo(() => {
@@ -86,7 +88,8 @@ export function ArrowRecordsView({ levels, data, onLevelClick, onPlayerClick }: 
               onClick={() => onPlayerClick?.(username)}
               className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-mono text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
             >
-              {username} <span className="text-[var(--app-accent)] font-bold">{count}</span>
+              {displayNameFor(profiles, username)}{" "}
+              <span className="text-[var(--app-accent)] font-bold">{count}</span>
             </button>
           ))}
         </div>
@@ -138,7 +141,7 @@ export function ArrowRecordsView({ levels, data, onLevelClick, onPlayerClick }: 
                           onClick={() => onPlayerClick?.(best.username)}
                           className="text-xs font-bold text-slate-200 hover:text-[var(--app-accent)] truncate"
                         >
-                          {best.username}
+                          {displayNameFor(profiles, best.username)}
                         </button>
                         {best.isLegacy && (
                           <Badge

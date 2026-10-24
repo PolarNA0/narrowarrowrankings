@@ -23,10 +23,12 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { cn, capitalizeName } from "@/lib/utils";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
 
 interface ComparePlayersProps {
   initialPlayer: PlayerStats;
   allUsernames: string[];
+  profiles?: ProfileDirectory;
   levels: LevelInfo[];
   packs: LevelPack[];
   onBack: () => void;
@@ -34,7 +36,7 @@ interface ComparePlayersProps {
   onLevelClick: (levelId: string) => void;
 }
 
-export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onBack, getPlayerStats, onLevelClick }: ComparePlayersProps) {
+export function ComparePlayers({ initialPlayer, allUsernames, profiles, levels, packs, onBack, getPlayerStats, onLevelClick }: ComparePlayersProps) {
   const formatTime = (seconds: number, forceMode?: 'seconds' | 'minutes') => {
     const mode = forceMode || 'seconds';
     if (mode === 'seconds') {
@@ -245,7 +247,9 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                     idx === 1 ? "text-[#6366F1]" :
                     idx === 2 ? "text-[#2DD4BF]" : "text-[#F59E0B]"
                   )}>Player {idx + 1}</p>
-                  <h3 className="text-lg font-bold text-white truncate max-w-[120px]">{player.username}</h3>
+                  <h3 className="text-lg font-bold text-white truncate max-w-[120px]">
+                    {displayNameFor(profiles, player.username)}
+                  </h3>
                 </div>
                 {selectedUsernames.length > 1 && (
                   <Button 
@@ -378,7 +382,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                                         <div className="flex items-center gap-1.5 min-w-0">
                                           <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
                                           <span className={cn("truncate text-slate-300 font-medium", isFirst && "text-white font-semibold")}>
-                                            {item.username} {isFirst && "👑"}
+                                            {displayNameFor(profiles, item.username)} {isFirst && "👑"}
                                           </span>
                                         </div>
                                         <span className={cn("font-bold shrink-0", isFirst ? "text-[var(--app-accent)]" : "text-slate-200")}>
@@ -404,7 +408,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                         return (
                           <Line 
                             key={player.username}
-                            name={player.username} 
+                            name={displayNameFor(profiles, player.username)} 
                             type="monotone" 
                             dataKey={player.username} 
                             stroke={color} 
@@ -458,7 +462,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                   <TableHead className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Map Pack</TableHead>
                   {players.map((p, idx) => (
                     <TableHead key={p.username} className="font-mono text-[10px] uppercase tracking-widest text-slate-500 text-center">
-                      {p.username}
+                      {displayNameFor(profiles, p.username)}
                     </TableHead>
                   ))}
                 </TableRow>
@@ -524,7 +528,7 @@ export function ComparePlayers({ initialPlayer, allUsernames, levels, packs, onB
                   <TableHead className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Level</TableHead>
                   {players.map((p, idx) => (
                     <TableHead key={p.username} className="font-mono text-[10px] uppercase tracking-widest text-slate-500 text-center">
-                      {p.username}
+                      {displayNameFor(profiles, p.username)}
                     </TableHead>
                   ))}
                 </TableRow>

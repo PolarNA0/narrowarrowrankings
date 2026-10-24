@@ -3,16 +3,19 @@ import { Medal } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { LeaderboardEntry, LevelInfo } from "@/types";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
+
 import { toStandings } from "@/lib/medals";
 
 interface Props {
   levels: LevelInfo[];
   data: Record<string, LeaderboardEntry[]>;
+  profiles?: ProfileDirectory;
   onPlayerClick?: (username: string) => void;
 }
 
 /** Per-level "sub-X second" clubs, so players can chase a concrete milestone. */
-export function MilestoneClubsView({ levels, data, onPlayerClick }: Props) {
+export function MilestoneClubsView({ levels, data, profiles, onPlayerClick }: Props) {
   const [levelId, setLevelId] = React.useState<string>(levels[0]?.id ?? "");
   const active = levels.find((level) => level.id === levelId) ?? levels[0];
 
@@ -79,7 +82,7 @@ export function MilestoneClubsView({ levels, data, onPlayerClick }: Props) {
                       onClick={() => onPlayerClick?.(run.username)}
                       className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[10px] text-slate-300 hover:text-white hover:border-[var(--app-accent)]"
                     >
-                      {run.username}
+                      {displayNameFor(profiles, run.username)}
                     </button>
                   ))}
                   {club.members.length > 24 && (

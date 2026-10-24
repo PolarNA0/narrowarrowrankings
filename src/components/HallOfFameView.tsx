@@ -2,11 +2,14 @@ import * as React from "react";
 import { Crown } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import type { LeaderboardEntry, LevelInfo } from "@/types";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
+
 import { toStandings } from "@/lib/medals";
 
 interface Props {
   levels: LevelInfo[];
   data: Record<string, LeaderboardEntry[]>;
+  profiles?: ProfileDirectory;
   onPlayerClick?: (username: string) => void;
 }
 
@@ -20,7 +23,7 @@ interface FameRow {
 }
 
 /** Weighted all-time standing built from world records, podiums and top-10 depth. */
-export function HallOfFameView({ levels, data, onPlayerClick }: Props) {
+export function HallOfFameView({ levels, data, profiles, onPlayerClick }: Props) {
   const rows = React.useMemo<FameRow[]>(() => {
     const table = new Map<string, FameRow>();
     for (const level of levels) {
@@ -67,7 +70,9 @@ export function HallOfFameView({ levels, data, onPlayerClick }: Props) {
                 className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/5 transition-colors"
               >
                 <span className="w-8 font-mono text-xs text-slate-500">#{index + 1}</span>
-                <span className="flex-1 truncate font-medium text-white">{row.username}</span>
+                <span className="flex-1 truncate font-medium text-white">
+                  {displayNameFor(profiles, row.username)}
+                </span>
                 <span className="text-[10px] uppercase tracking-wider text-slate-500 hidden sm:block">
                   {row.wrs} wr · {row.podiums} podium · {row.topTen} top10 · {row.maps} maps
                 </span>

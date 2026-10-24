@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { LeaderboardEntry, LevelInfo } from "@/types";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
 
 interface Props {
   levels: LevelInfo[];
   data: Record<string, LeaderboardEntry[]>;
+  profiles?: ProfileDirectory;
   onPlayerClick?: (username: string) => void;
   onLevelClick?: (levelId: string) => void;
 }
@@ -26,7 +28,7 @@ interface Row {
 const PAGE = 50;
 
 /** Golf-style scoring: your leaderboard position is your point total. Lower wins. */
-export function PositionPointsView({ levels, data, onPlayerClick, onLevelClick }: Props) {
+export function PositionPointsView({ levels, data, profiles, onPlayerClick, onLevelClick }: Props) {
   const [query, setQuery] = React.useState("");
   const [minMaps, setMinMaps] = React.useState(1);
   const [visible, setVisible] = React.useState(PAGE);
@@ -138,7 +140,7 @@ export function PositionPointsView({ levels, data, onPlayerClick, onLevelClick }
                   onKeyDown={(e) => e.key === "Enter" && onPlayerClick?.(row.username)}
                   className="font-bold text-white truncate min-w-0 hover:text-[var(--app-accent)]"
                 >
-                  {row.username}
+                  {displayNameFor(profiles, row.username)}
                 </span>
                 <Badge variant="outline" className="hidden md:inline-flex font-mono text-[10px] border-white/10 text-slate-300 bg-white/5">
                   {row.maps} maps

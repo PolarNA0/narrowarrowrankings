@@ -30,15 +30,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ArrowIcon } from "./ArrowIcon";
 import { ClickToCopy } from "./ClickToCopy";
 import { ReplayViewer } from "./ReplayViewer";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
 
 interface CustomsViewProps {
   onBack: () => void;
   onSelectPlayer?: (username: string) => void;
   selectedLevelId: string | null;
   onSelectLevelId: (id: string | null) => void;
+  profiles?: ProfileDirectory;
 }
 
-export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectLevelId }: CustomsViewProps) {
+export function CustomsView({
+  onBack,
+  onSelectPlayer,
+  selectedLevelId,
+  onSelectLevelId,
+  profiles,
+}: CustomsViewProps) {
   // Ordered as requested: 1: Discover, 2: New, 3: Popular
   const [filter, setFilter] = useState<"discover" | "new" | "popular">("discover");
   const [page, setPage] = useState(0);
@@ -487,7 +495,7 @@ export function CustomsView({ onBack, onSelectPlayer, selectedLevelId, onSelectL
                                   }}
                                   className="font-bold text-slate-200 group-hover:text-[var(--app-accent)] transition-colors cursor-pointer"
                                 >
-                                  {entry.username}
+                                  {displayNameFor(profiles, entry.username)}
                                 </span>
                               </div>
                             </div>
