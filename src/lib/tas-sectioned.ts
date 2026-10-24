@@ -206,6 +206,8 @@ class SectionSim {
   private wpRadius: number;
   private wpReach: number;
   private wpBonus: number;
+  private entryTick: number;
+  private baseSyms: number[];
   /** Cursor of waypoints passed, and the closest approach to the next pending one. */
   private wp = 0;
   private dmin = Infinity;
@@ -230,6 +232,8 @@ class SectionSim {
     this.wpRadius = job.wpRadius;
     this.wpReach = job.wpReach;
     this.wpBonus = job.wpBonus;
+    this.entryTick = job.entryTick;
+    this.baseSyms = job.baseSyms;
     this.rebuild();
   }
 
@@ -361,15 +365,42 @@ class SectionSim {
             const v = Math.max(0.05, p.vx * g.dx + p.vy * g.dy);
             const bonus = this.wpCredit();
             const micro = this.microReward(syms, t + 1);
-            const score =
-              t +
-              1 -
-              bonus -
-              divBonus -
-              micro +
-              Math.min(this.D / v, this.D / 0.05) * this.mw +
-              (1 - this.mw) * (this.D / this.baseSpeed);
-            return { score, cross: t + 1, speed: v, divBonus };
+            const snap = this.engine.snapshot();
+            // Score the cut by the finish time it yields when the baseline
+            // carries the run on from here — the run's real objective. This also
+            // keeps the cut self-consistent: the next section is seeded with the
+            // baseline tail from this crossing, which is exactly the tail this
+            // measurement just replayed, so the stitch can never desync.
+            let total = MISS;
+            const g0 = this.entryTick + t + 1;
+            let rem = 0;
+            for (let q = g0; q < this.baseSyms.length; q++) {
+              const rc = this.engine.stepCode(this.baseSyms[q]);
+              rem++;
+              if (rc === 1) {
+                total = t + 1 + rem;
+                break;
+              }
+              if (rc === 2) break;
+            }
+            this.engine.restoreQuiet(snap);
+            if (total >= MISS) {
+              // The cut strands the run; rank it by how far the baseline got.
+              return {
+                score: MISS + 1e4 - rem * 0.5 - bonus,
+                cross: t + 1,
+                speed: v,
+                divBonus,
+                snap,
+              };
+            }
+            return {
+              score: total - bonus - micro + Math.min(this.D / v, this.D / 0.05) * this.mw * 0.01,
+              cross: t + 1,
+              speed: v,
+              divBonus,
+              snap,
+            };
           }
           next = t + 1 + Math.max(1, Math.min(64, Math.min(this.gateSkip(p), this.wpSkip(p))));
         } else {
@@ -461,7 +492,7 @@ class SectionSim {
     this.begin();
     const r = this.run(flat, 0);
     if (r.cross < 0) return null;
-    return { ...r, snap: r.finished ? null : this.engine.snapshot() };
+    return { ...r, snap: r.finished ? null : (r.snap ?? this.engine.snapshot()) };
   }
 }
 
@@ -482,6 +513,10 @@ interface SectionJob {
   wpReach: number;
   wpBonus: number;
   bold: number;
+  /** Global tick this section's entry state sits at. */
+  entryTick: number;
+  /** The baseline's inputs, replayed from a crossing to score the cut. */
+  baseSyms: number[];
 }
 
 interface SectionEval {
@@ -490,6 +525,8 @@ interface SectionEval {
   speed?: number;
   finished?: boolean;
   divBonus?: number;
+  /** State at the crossing: the exit the next section starts from. */
+  snap?: string | null;
 }
 
 /** One candidate line a section search produced, ranked for the orchestrator. */
@@ -728,6 +765,7 @@ export async function optimizeSectioned(
       const isLast = si === sections.length - 1;
       const startTick = sec.startTick;
       const gateTick = sec.gateTick ?? bestFinish;
+      const entryTick = stitched.length;
       const nextBoundary = tickStarts[si + 2] ?? bestFinish;
       const wp = gates[si] ?? null;
       const nextWp = gates[si + 1] ?? null;
@@ -737,19 +775,19 @@ export async function optimizeSectioned(
           Math.hypot(basePts[t * 4 + 2] ?? 0, basePts[t * 4 + 3] ?? 0),
         ),
       );
-      const D = distanceBetween(basePts, startTick, gateTick);
+      const D = distanceBetween(basePts, entryTick, gateTick);
       const baseSpeed = Math.max(
         0.05,
-        Math.hypot(basePts[startTick * 4 + 2] ?? 0, basePts[startTick * 4 + 3] ?? 0),
+        Math.hypot(basePts[entryTick * 4 + 2] ?? 0, basePts[entryTick * 4 + 3] ?? 0),
       );
       const div = tuning.divergence > 0 && si % 2 === 1 ? tuning.divergence : 0;
       const bpath = div > 0 ? basePts.slice(0, Math.min(bestFinish, gateTick + 400) * 4 + 4) : null;
       const job: SectionJob = {
-        maxTicks: Math.max(600, Math.round((gateTick - startTick) * 1.6 + 400)),
+        maxTicks: Math.max(600, Math.round((gateTick - entryTick) * 1.6 + 400)),
         gate,
         slab: Math.max(4, vmax * 2.5),
         vmax: vmax * 1.3 + 0.1,
-        minTicks: Math.round((gateTick - startTick) * 0.4),
+        minTicks: Math.round((gateTick - entryTick) * 0.4),
         D,
         baseSpeed,
         mw: momentum,
@@ -761,15 +799,17 @@ export async function optimizeSectioned(
         wpReach,
         wpBonus,
         bold: tuning.bold,
+        entryTick,
+        baseSyms,
       };
-      const seedSlice = baseSyms.slice(startTick, isLast ? undefined : gateTick + 400);
+      const seedSlice = baseSyms.slice(entryTick, isLast ? undefined : gateTick + 400);
       // Pad the section seed so a section that ran short can still finish.
       const padded = seedSlice.slice();
-      while (padded.length < Math.min(job.maxTicks, gateTick - startTick + 240)) padded.push(0);
+      while (padded.length < Math.min(job.maxTicks, gateTick - entryTick + 240)) padded.push(0);
 
       const sectionBudget = Math.max(
         600,
-        Math.round((roundBudget * (gateTick - startTick)) / Math.max(1, bestFinish)),
+        Math.round((roundBudget * (gateTick - entryTick)) / Math.max(1, bestFinish)),
       );
       const hooks: SearchHooks = {
         shouldStop: () => shouldStop(),
