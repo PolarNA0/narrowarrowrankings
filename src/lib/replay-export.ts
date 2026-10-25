@@ -34,7 +34,7 @@ import {
   type RenderMode,
 } from "@/lib/replay-paint";
 import { SIM_TICK_MS, hasSiteMechanics, type SimGeometry, type SimResult } from "@/lib/replay-sim";
-import { lighten, withAlpha } from "@/lib/replay-visuals";
+import { darken, withAlpha } from "@/lib/replay-visuals";
 import {
   DEFAULT_BACKGROUND,
   backgroundBase,
@@ -1127,9 +1127,11 @@ export function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-/** Derive a matching trail/thrust pair from a single chosen arrow colour. */
+/** Derive a matching trail/tail pair from a single chosen arrow colour. The
+ * tail is a darker body so the arrow reads as one object; the trail matches the
+ * body so the streak still reads as the run's own colour. */
 export function deriveArrowColors(body: string) {
-  return { trail: body, thrust: lighten(body, 0.45) };
+  return { trail: body, thrust: darken(body, 0.25) };
 }
 
 export { withAlpha, cameraPreset };

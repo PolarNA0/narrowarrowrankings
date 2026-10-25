@@ -60,7 +60,7 @@ import {
 } from "@/lib/play-input";
 import { SIM_TICK_MS, arrowConstants } from "@/lib/replay-sim";
 import { arrowKind, type ArrowKind } from "@/lib/arrow-sprites";
-import { themeColor, trailColor } from "@/lib/replay-visuals";
+import { themeColor, trailColor, thrustColor } from "@/lib/replay-visuals";
 
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"] as const;
 
@@ -106,7 +106,10 @@ export function EndlessView({ profiles }: { profiles?: ProfileDirectory } = {}) 
 
   const arrow: ArrowKind = arrowKind(arrowName);
   const arrowRadius = arrowConstants(arrowName).radius ?? 16;
-  const skinColors = React.useMemo(() => ({ body: themeColor(null), trail: trailColor(null) }), []);
+  const skinColors = React.useMemo(
+    () => ({ body: themeColor(null), trail: trailColor(null), tail: thrustColor(null) }),
+    [],
+  );
 
   const sampleInput = React.useCallback((): number => {
     const s = settingsRef.current;
@@ -434,7 +437,7 @@ export function EndlessView({ profiles }: { profiles?: ProfileDirectory } = {}) 
           arrow={arrow}
           arrowRadius={arrowRadius}
           bodyColor={skinColors.body}
-          tailColor={skinColors.trail}
+          tailColor={skinColors.tail}
           trailColor={skinColors.trail}
           cameraSettings={DEFAULT_GAME_CAMERA}
           height={520}

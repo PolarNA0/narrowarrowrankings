@@ -71,7 +71,7 @@ import {
   symbolFromHeld,
 } from "@/lib/play-input";
 import { arrowConstants, levelGeometry, SIM_TICK_MS, type RawLevelData } from "@/lib/replay-sim";
-import { themeColor, trailColor } from "@/lib/replay-visuals";
+import { themeColor, trailColor, thrustColor } from "@/lib/replay-visuals";
 import {
   NALVL_WALL_TYPES,
   NALVL_ZONE_TYPES,
@@ -420,7 +420,7 @@ export function LevelEditorView({
           arrow="narrow"
           arrowRadius={arrowConstants("Narrow Arrow").radius ?? 16}
           bodyColor={themeColor(null)}
-          tailColor={themeColor(null)}
+          tailColor={thrustColor(null)}
           trailColor={trailColor(null)}
           mode="game"
           height={stageHeight}

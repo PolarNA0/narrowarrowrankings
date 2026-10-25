@@ -59,9 +59,13 @@ import { TUNING_ARMS } from "@/lib/tas-sectioned";
 import { encodeInputSymbols } from "@/lib/replay";
 import { SIM_TICK_MS } from "@/lib/replay-sim";
 import { waypointsToSymbols, simplifyStroke } from "@/lib/path-seed";
+import { darken } from "@/lib/replay-visuals";
 
 /** The three playable arrows, for drawing a line before any run is chosen. */
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"];
+/** The brute's own arrow tint, used until a run with a skin is chosen. */
+const BRUTE_BODY_COLOR = "#8ab4ff";
+const BRUTE_TAIL_COLOR = darken(BRUTE_BODY_COLOR, 0.25);
 
 /** An empty trajectory for the draw canvas (no run is replayed there). */
 const EMPTY_SIM: SimResult = {
@@ -1212,9 +1216,9 @@ function BruteSearch({
                 frame={0}
                 playing={false}
                 speed={1}
-                bodyColor="#8ab4ff"
-                trail="#8ab4ff"
-                thrust="#ffd166"
+                bodyColor={BRUTE_BODY_COLOR}
+                trail={BRUTE_BODY_COLOR}
+                thrust={BRUTE_TAIL_COLOR}
                 arrow={arrowKind(drawArrow)}
                 arrowRadius={arrowConstants(drawArrow).radius ?? 16}
                 replayTimeMs={0}
@@ -1497,9 +1501,9 @@ function ResultPreview({
         frame={frame}
         playing={playing}
         speed={speed}
-        bodyColor="#8ab4ff"
-        trail="#8ab4ff"
-        thrust="#ffd166"
+        bodyColor={BRUTE_BODY_COLOR}
+        trail={BRUTE_BODY_COLOR}
+        thrust={BRUTE_TAIL_COLOR}
         arrow={arrowKind(arrowName)}
         arrowRadius={arrowConstants(arrowName).radius ?? 16}
         replayTimeMs={frame * SIM_TICK_MS}

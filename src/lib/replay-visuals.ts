@@ -86,9 +86,11 @@ export function trailColor(skin: SkinConfig | null | undefined): string {
   return parseSkinColor(skin?.trailColor?.code, "#808080");
 }
 
-/** The run's thrust/exhaust colour. */
+/** The run's thrust/exhaust colour. The sprite's rear plate is drawn with this;
+ * a skin that names its own colour keeps it, otherwise it follows the body so
+ * the arrow reads as one object rather than two unrelated shapes. */
 export function thrustColor(skin: SkinConfig | null | undefined): string {
-  return parseSkinColor(skin?.thrustColor?.code, "#bfbfbf");
+  return parseSkinColor(skin?.thrustColor?.code, darken(themeColor(skin), 0.25));
 }
 
 /** Mix a hex colour toward white by `amount` (0..1). */
@@ -97,6 +99,18 @@ export function lighten(hex: string, amount: number): string {
   if (!m) return hex;
   const n = parseInt(m[1], 16);
   const mix = (c: number) => Math.round(c + (255 - c) * amount);
+  const r = mix((n >> 16) & 255);
+  const g = mix((n >> 8) & 255);
+  const b = mix(n & 255);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+}
+
+/** Mix a hex colour toward black by `amount` (0..1). */
+export function darken(hex: string, amount: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const mix = (c: number) => Math.round(c * (1 - amount));
   const r = mix((n >> 16) & 255);
   const g = mix((n >> 8) & 255);
   const b = mix(n & 255);

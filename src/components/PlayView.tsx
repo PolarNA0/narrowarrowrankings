@@ -101,7 +101,7 @@ import {
   type SimGeometry,
 } from "@/lib/replay-sim";
 import { arrowKind, type ArrowKind } from "@/lib/arrow-sprites";
-import { themeColor, trailColor } from "@/lib/replay-visuals";
+import { themeColor, trailColor, thrustColor } from "@/lib/replay-visuals";
 
 const ARROWS = ["Narrow Arrow", "Speedy Arrow", "Energy Arrow"] as const;
 const LEVELS_URL = "/api/level-details";
@@ -287,6 +287,7 @@ export function PlayView({
     () => ({
       body: themeColor(null),
       trail: trailColor(null),
+      tail: thrustColor(null),
     }),
     [],
   );
@@ -1145,7 +1146,7 @@ export function PlayView({
         arrow={arrow}
         arrowRadius={arrowRadius}
         bodyColor={skinColors.body}
-        tailColor={skinColors.trail}
+        tailColor={skinColors.tail}
         trailColor={skinColors.trail}
         ghostColor="rgba(148,163,184,0.55)"
         cameraSettings={cameraSettings}
