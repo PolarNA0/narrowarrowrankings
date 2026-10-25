@@ -24,6 +24,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { cn, capitalizeName } from "@/lib/utils";
 import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
+import { formatWithSettings } from "@/hooks/useAppSettings";
 
 interface ComparePlayersProps {
   initialPlayer: PlayerStats;
@@ -37,15 +38,8 @@ interface ComparePlayersProps {
 }
 
 export function ComparePlayers({ initialPlayer, allUsernames, profiles, levels, packs, onBack, getPlayerStats, onLevelClick }: ComparePlayersProps) {
-  const formatTime = (seconds: number, forceMode?: 'seconds' | 'minutes') => {
-    const mode = forceMode || 'seconds';
-    if (mode === 'seconds') {
-      return `${seconds.toFixed(3)}s`;
-    }
-    const mins = Math.floor(seconds / 60);
-    const secs = (seconds % 60).toFixed(3);
-    return `${mins}:${secs.padStart(6, '0')}m`;
-  };
+  const formatTime = (seconds: number, forceMode?: 'seconds' | 'minutes') =>
+    formatWithSettings(seconds, forceMode || 'seconds');
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUsernames, setSelectedUsernames] = useState<string[]>([initialPlayer.username]);

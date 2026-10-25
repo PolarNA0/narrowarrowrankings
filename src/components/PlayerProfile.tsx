@@ -43,6 +43,7 @@ import { PlayerBadges } from "./PlayerBadges";
 import { useOfficialCreators } from "@/hooks/useProfileSummaries";
 import type { LeaderboardEntry, LegacyRun } from "../types";
 import type { PlayerProfileRow } from "@/hooks/usePlayerProfiles";
+import { formatWithSettings } from "@/hooks/useAppSettings";
 
 interface PlayerProfileProps {
   stats: PlayerStats;
@@ -215,15 +216,8 @@ export function PlayerProfile({
     return `${secs}s`;
   };
 
-  const formatTime = (seconds: number, forceMode?: 'seconds' | 'minutes') => {
-    const mode = forceMode || 'seconds';
-    if (mode === 'seconds') {
-      return `${seconds.toFixed(3)}s`;
-    }
-    const mins = Math.floor(seconds / 60);
-    const secs = (seconds % 60).toFixed(3);
-    return `${mins}:${secs.padStart(6, '0')}m`;
-  };
+  const formatTime = (seconds: number, forceMode?: 'seconds' | 'minutes') =>
+    formatWithSettings(seconds, forceMode || 'seconds');
 
   const aggregateStats = useMemo(() => {
     const levelEntries = Object.values(stats.levels);

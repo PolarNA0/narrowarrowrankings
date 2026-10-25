@@ -31,6 +31,7 @@ import { ArrowIcon } from "./ArrowIcon";
 import { ClickToCopy } from "./ClickToCopy";
 import { ReplayViewer } from "./ReplayViewer";
 import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
+import { formatWithSettings } from "@/hooks/useAppSettings";
 
 interface CustomsViewProps {
   onBack: () => void;
@@ -246,15 +247,8 @@ export function CustomsView({
     setPage(0);
   };
 
-  const formatTime = (seconds: number, forceMode?: 'seconds' | 'minutes') => {
-    const mode = forceMode || 'seconds';
-    if (mode === 'seconds') {
-      return `${seconds.toFixed(3)}s`;
-    }
-    const mins = Math.floor(seconds / 60);
-    const secs = (seconds % 60).toFixed(3);
-    return `${mins}:${secs.padStart(6, '0')}m`;
-  };
+  const formatTime = (seconds: number, forceMode?: 'seconds' | 'minutes') =>
+    formatWithSettings(seconds, forceMode || 'seconds');
 
   // Process leaderboard entries
   const processedLeaderboard = useMemo(() => {

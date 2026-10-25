@@ -1,11 +1,16 @@
+import * as React from "react";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDown, Home, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const NAV_GROUPS = [
@@ -94,12 +99,23 @@ export function GroupedNavigation({
   onNavigate,
 }: {
   view: string;
-  onNavigate: (view: NavigableView) => void;
+  onNavigate: (view: NavigableView | "home") => void;
 }) {
   const active = navigationGroup(view);
   return (
     <>
       <nav aria-label="Main sections" className="hidden lg:flex items-center gap-1">
+        {/* An explicit Home entry: the wordmark also links home, but a bare
+            logo is not a recognisable "back to start" affordance on its own. */}
+        <Button
+          variant={view === "home" ? "secondary" : "ghost"}
+          size="sm"
+          onClick={() => onNavigate("home")}
+          className="text-xs gap-1.5"
+        >
+          <Home className="w-3.5 h-3.5" />
+          Home
+        </Button>
         {NAV_GROUPS.map((group) => (
           <Button
             key={group.id}
@@ -112,30 +128,80 @@ export function GroupedNavigation({
           </Button>
         ))}
       </nav>
-      <div className="lg:hidden w-28 shrink-0">
-        <Select
-          value={active?.id ?? "levels"}
-          onValueChange={(id) => {
-            const group = NAV_GROUPS.find((item) => item.id === id);
-            if (group) onNavigate(group.items[0].id);
-          }}
-        >
-          <SelectTrigger
-            aria-label="Main section"
-            className="h-9 text-xs border-border bg-card text-card-foreground"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {NAV_GROUPS.map((group) => (
-              <SelectItem key={group.id} value={group.id}>
-                {group.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <MobileNavigation view={view} onNavigate={onNavigate} />
     </>
+  );
+}
+
+/**
+ * The narrow-viewport nav: one menu button instead of the desktop bar's eight.
+ *
+ * Each section opens as a submenu of its own views, so the label of what you
+ * are about to open is always visible — the previous `Select` showed only the
+ * current section and gave no hint that it was a menu at all.
+ */
+export function MobileNavigation({
+  view,
+  onNavigate,
+}: {
+  view: string;
+  onNavigate: (view: NavigableView | "home") => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const active = navigationGroup(view);
+  const go = (next: NavigableView | "home") => {
+    setOpen(false);
+    onNavigate(next);
+  };
+  return (
+    <div className="lg:hidden">
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Open navigation menu"
+            className="text-slate-300 hover:text-white hover:bg-white/5 gap-1.5 px-2"
+          >
+            <Menu className="w-5 h-5" />
+            <span className="text-xs font-medium hidden sm:inline">
+              {view === "home" ? "Home" : (active?.label ?? "Menu")}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56 max-h-[70vh] overflow-y-auto">
+          <DropdownMenuItem
+            onSelect={() => go("home")}
+            className={cn("gap-2 cursor-pointer", view === "home" && "font-bold")}
+          >
+            <Home className="w-4 h-4" />
+            Home
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {NAV_GROUPS.map((group) => (
+            <DropdownMenuSub key={group.id}>
+              <DropdownMenuSubTrigger
+                className={cn("gap-2 cursor-pointer", active?.id === group.id && "font-bold")}
+              >
+                {group.label}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-56 max-h-[70vh] overflow-y-auto">
+                {group.items.map((item) => (
+                  <DropdownMenuItem
+                    key={item.id}
+                    onSelect={() => go(item.id)}
+                    className={cn("cursor-pointer", view === item.id && "font-bold")}
+                  >
+                    {item.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 

@@ -362,10 +362,23 @@ export function useAppSettings() {
   return { settings, update, reset };
 }
 
-/** Formats a completion time using the user's preferred display format. */
+/**
+ * Formats a completion time using the user's preferred display format.
+ *
+ * `mm:ss.mmm` (and `h:mm:ss.mmm` past an hour) is the canonical shape — a bare
+ * `s`-suffixed second count stops reading normally once it passes ~60, so the
+ * totals on the home page showed "1077.755s" where "17:57.755" is what a
+ * viewer expects. The `m` suffix is deliberately absent: the format is already
+ * self-evidently minutes and seconds, and a trailing unit letter only made it
+ * look like a different unit from the seconds form.
+ */
 export function formatWithSettings(seconds: number, format: AppSettings["timeFormat"]) {
   if (format === "seconds") return `${seconds.toFixed(3)}s`;
-  const mins = Math.floor(seconds / 60);
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
   const secs = (seconds % 60).toFixed(3);
+  if (hours > 0) {
+    return `${hours}:${String(mins).padStart(2, "0")}:${secs.padStart(6, "0")}`;
+  }
   return `${mins}:${secs.padStart(6, "0")}`;
 }

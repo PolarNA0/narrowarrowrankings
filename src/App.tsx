@@ -40,6 +40,7 @@ import {
   UserRound,
   Sparkles,
   Link as LinkIcon,
+  MoreVertical,
 } from "lucide-react";
 import {
   doc,
@@ -89,6 +90,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import {
   LeaderboardEntry,
@@ -130,7 +137,7 @@ import { useAdminAuth } from "./hooks/useAdminAuth";
 import { useRemovedRuns, removeRun } from "./hooks/useRemovedRuns";
 import { removedRunKey } from "./lib/removedRuns";
 import { computeMedals } from "./lib/medals";
-import { useAppSettings } from "./hooks/useAppSettings";
+import { useAppSettings, formatWithSettings } from "./hooks/useAppSettings";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { toast } from "sonner";
 import { ArrowRecordsView } from "@/components/ArrowRecordsView";
@@ -559,15 +566,8 @@ export default function App() {
     direction: "asc",
   });
 
-  const formatTime = (seconds: number, forceMode?: "seconds" | "minutes") => {
-    const mode = forceMode || settings.timeFormat;
-    if (mode === "seconds") {
-      return `${seconds.toFixed(3)}s`;
-    }
-    const mins = Math.floor(seconds / 60);
-    const secs = (seconds % 60).toFixed(3);
-    return `${mins}:${secs.padStart(6, "0")}m`;
-  };
+  const formatTime = (seconds: number, forceMode?: "seconds" | "minutes") =>
+    formatWithSettings(seconds, forceMode || settings.timeFormat);
 
   const fetchData = async (levelId: string, forceRefresh = false) => {
     const requestId = ++singleLeaderboardFetchId.current;
@@ -1638,68 +1638,141 @@ export default function App() {
           <div className="flex items-center gap-1.5 md:gap-4 shrink-0">
             <GroupedNavigation view={view} onNavigate={navigateView} />
 
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Copy a link to this view"
-              onClick={() => void copyShareLink()}
-              className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
-            >
-              <LinkIcon className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Your profile"
-              onClick={() => setShowProfileHub(true)}
-              className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
-            >
-              <UserRound className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Appearance settings"
-              onClick={() => setShowSettings(true)}
-              className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
-            >
-              <Palette className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowAdmin(!showAdmin)}
-              className={cn(
-                "text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10",
-                showAdmin && "text-[#6366F1]",
-              )}
-            >
-              {showAdmin ? (
-                <LayoutDashboard className="w-4 h-4" />
-              ) : (
-                <Settings className="w-4 h-4" />
-              )}
-            </Button>
-            {view === "leaderboard" && (
+            {/* Desktop: the utility actions stay as inline icons. */}
+            <div className="hidden lg:flex items-center gap-4">
               <Button
                 variant="ghost"
                 size="icon"
-                title="Export current leaderboard as CSV"
-                onClick={exportLeaderboardCsv}
-                className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
+                title="Copy a link to this view"
+                onClick={() => void copyShareLink()}
+                className="text-slate-400 hover:text-white hover:bg-white/5 h-10 w-10"
               >
-                <Download className="w-4 h-4" />
+                <LinkIcon className="w-4 h-4" />
               </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              title={refreshing ? "Refreshing in background…" : "Refresh leaderboard"}
-              onClick={() => fetchData(selectedLevel, true)}
-              className="text-slate-400 hover:text-white hover:bg-white/5 h-8 w-8 md:h-10 md:w-10"
-            >
-              <RefreshCw className={cn("w-4 h-4", (loading || refreshing) && "animate-spin")} />
-            </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Your profile"
+                onClick={() => setShowProfileHub(true)}
+                className="text-slate-400 hover:text-white hover:bg-white/5 h-10 w-10"
+              >
+                <UserRound className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Appearance settings"
+                onClick={() => setShowSettings(true)}
+                className="text-slate-400 hover:text-white hover:bg-white/5 h-10 w-10"
+              >
+                <Palette className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                title={showAdmin ? "Exit admin" : "Admin panel"}
+                onClick={() => setShowAdmin(!showAdmin)}
+                className={cn(
+                  "text-slate-400 hover:text-white hover:bg-white/5 h-10 w-10",
+                  showAdmin && "text-[#6366F1]",
+                )}
+              >
+                {showAdmin ? (
+                  <LayoutDashboard className="w-4 h-4" />
+                ) : (
+                  <Settings className="w-4 h-4" />
+                )}
+              </Button>
+              {view === "leaderboard" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Export current leaderboard as CSV"
+                  onClick={exportLeaderboardCsv}
+                  className="text-slate-400 hover:text-white hover:bg-white/5 h-10 w-10"
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                title={refreshing ? "Refreshing in background…" : "Refresh leaderboard"}
+                onClick={() => fetchData(selectedLevel, true)}
+                className="text-slate-400 hover:text-white hover:bg-white/5 h-10 w-10"
+              >
+                <RefreshCw className={cn("w-4 h-4", (loading || refreshing) && "animate-spin")} />
+              </Button>
+            </div>
+
+            {/* Mobile: the same actions behind one labelled menu, so the
+                wordmark is not squeezed by six unlabelled icons. */}
+            <div className="lg:hidden">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Open actions menu"
+                    className="text-slate-400 hover:text-white hover:bg-white/5 h-9 w-9"
+                  >
+                    <MoreVertical className="w-5 h-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem
+                    onSelect={() => void copyShareLink()}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <LinkIcon className="w-4 h-4" />
+                    Copy link to this view
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => setShowProfileHub(true)}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <UserRound className="w-4 h-4" />
+                    Your profile
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => setShowSettings(true)}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <Palette className="w-4 h-4" />
+                    Appearance
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => setShowAdmin(!showAdmin)}
+                    className={cn("gap-2 cursor-pointer", showAdmin && "text-[#6366F1]")}
+                  >
+                    {showAdmin ? (
+                      <LayoutDashboard className="w-4 h-4" />
+                    ) : (
+                      <Settings className="w-4 h-4" />
+                    )}
+                    {showAdmin ? "Exit admin" : "Admin panel"}
+                  </DropdownMenuItem>
+                  {view === "leaderboard" && (
+                    <DropdownMenuItem
+                      onSelect={exportLeaderboardCsv}
+                      className="gap-2 cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      Export leaderboard CSV
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    onSelect={() => fetchData(selectedLevel, true)}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <RefreshCw
+                      className={cn("w-4 h-4", (loading || refreshing) && "animate-spin")}
+                    />
+                    Refresh leaderboard
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
       </header>
@@ -1721,7 +1794,7 @@ export default function App() {
             tasLoading={tasBoardsLoading}
             boardsLoaded={leaderboardLoadStatus.loaded}
             profiles={playerProfiles}
-            formatTime={(seconds) => formatTime(seconds)}
+            formatTime={(seconds, forceMode) => formatTime(seconds, forceMode)}
             onNavigate={navigateView}
             onLevelClick={handleLevelClick}
             onPlayerClick={handlePlayerClick}

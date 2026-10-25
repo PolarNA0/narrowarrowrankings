@@ -242,9 +242,9 @@ export interface FieldParticle {
 }
 
 /** Target spacing between particles, in canvas px (so density is zoom-independent). */
-const FIELD_PARTICLE_SPACING = 26;
+const FIELD_PARTICLE_SPACING = 52;
 /** Cap per field so a huge zone cannot spawn thousands of particles. */
-const FIELD_PARTICLES_MAX = 220;
+const FIELD_PARTICLES_MAX = 90;
 
 /** The polygon's bounding box. */
 function fieldBounds(pts: Array<{ x: number; y: number }>) {
@@ -261,12 +261,28 @@ function fieldBounds(pts: Array<{ x: number; y: number }>) {
   return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
 }
 
+/** True when (x, y) is inside the polygon (even-odd ray cast). */
+function pointInPolygon(pts: Array<{ x: number; y: number }>, x: number, y: number) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x;
+    const yi = pts[i].y;
+    const xj = pts[j].x;
+    const yj = pts[j].y;
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 /**
  * Wind/suction fields: a faint white area with tiny arrow particles flowing
- * through it. Wind particles march along `direction`; suction particles march
- * inward toward the centroid. `time` is in seconds so the drift is smooth and
- * independent of frame rate; `particles` is a stable pool so the field does not
- * jitter between frames.
+ * through it. Wind particles drift back and forth along `direction`; suction
+ * particles march inward toward the centroid. `time` is in seconds so the drift
+ * is smooth and independent of frame rate; `particles` is a stable pool so the
+ * field does not jitter between frames. Every particle is kept inside the
+ * author's polygon, so a non-rectangular zone does not leak arrows outside it.
  *
  * This is a site-only mechanic (the engine has no force fields), so the render
  * is purely a preview of the simulation layer's per-tick velocity delta.
@@ -325,12 +341,30 @@ export function paintForceFields(
     const stepPx = FIELD_PARTICLE_SPACING;
     const cols = Math.max(1, Math.round((b.w * pc.scale) / stepPx) + 1);
     const rows = Math.max(1, Math.round((b.h * pc.scale) / stepPx) + 1);
-    const span = Math.max(1, Math.hypot(b.w, b.h));
-    // Wind marches the particle fully across the field and wraps; suction runs
-    // from the edge to the centre and resets, so the pull always reads inward.
-    const speed = Math.min(1, Math.abs(f.strength) * 20 + 0.25);
+    // Suction pulls the particle from the box edge to the centre and resets, so
+    // the pull always reads inward. Deliberately slow: a field is background
+    // dressing, so the drift should read as a current, not a stream of arrows.
+    const speed = Math.min(0.35, Math.abs(f.strength) * 7 + 0.1);
+
+    // Wind drifts each particle along the flow by a bounded amount (roughly one
+    // grid step, so it slides to the neighbouring cell and back). A full march
+    // across the field would push particles past the edge on every cycle, which
+    // both leaked them outside the zone and left the field visibly thinning out.
+    const travelSpan = (stepPx * 1.5) / Math.max(1e-6, pc.scale);
 
     ctx.save();
+    // Particles are seeded on the bounding box, so on a non-rectangular zone the
+    // corner cells would sit outside the shape. Clip to the polygon so the drift
+    // stays inside the zone the author drew.
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const X = tx(p.x);
+      const Y = ty(p.y);
+      if (i === 0) ctx.moveTo(X, Y);
+      else ctx.lineTo(X, Y);
+    });
+    ctx.closePath();
+    ctx.clip();
     ctx.strokeStyle = "rgba(255,255,255,0.5)";
     ctx.fillStyle = "rgba(255,255,255,0.5)";
     ctx.lineWidth = 1.4;
@@ -344,17 +378,30 @@ export function paintForceFields(
         // start point is a stable hash of the grid cell, so the field shimmers
         // instead of jumping between frames.
         const t = (p.seed + time * speed * (0.5 + 0.5 * p.phase)) % 1;
-        let sx = b.minX + ((gx + 0.5) / cols) * b.w;
-        let sy = b.minY + ((gy + 0.5) / rows) * b.h;
+        // The grid covers the bounding box, so on a non-rectangular zone some
+        // cells sit outside the shape entirely; skip those.
+        const baseX = b.minX + ((gx + 0.5) / cols) * b.w;
+        const baseY = b.minY + ((gy + 0.5) / rows) * b.h;
+        if (!pointInPolygon(pts, baseX, baseY)) continue;
+        let sx = baseX;
+        let sy = baseY;
         if (f.kind === "suction") {
           // Start on the box edge and travel to the centre.
-          sx = sx * (1 - t) + cx * t;
-          sy = sy * (1 - t) + cy * t;
+          sx = baseX * (1 - t) + cx * t;
+          sy = baseY * (1 - t) + cy * t;
         } else {
-          const flow = flowAt(sx, sy);
-          const travel = (t - 0.5) * span;
-          sx += flow.x * travel;
-          sy += flow.y * travel;
+          // Oscillate along the flow by a bounded amount, so the particle
+          // always stays near its grid cell and inside the zone.
+          const flow = flowAt(baseX, baseY);
+          const offset = (t - 0.5) * travelSpan;
+          sx = baseX + flow.x * offset;
+          sy = baseY + flow.y * offset;
+        }
+        // Drifting can nudge a boundary particle out of a concave zone; pin it
+        // back to its cell rather than dropping it, so density stays even.
+        if (!pointInPolygon(pts, sx, sy)) {
+          sx = baseX;
+          sy = baseY;
         }
         const X = tx(sx);
         const Y = ty(sy);

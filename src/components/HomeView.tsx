@@ -30,7 +30,7 @@ interface Props {
    * batches, so totals are partial until this reaches `levels.length`. */
   boardsLoaded: number;
   profiles?: ProfileDirectory;
-  formatTime: (seconds: number) => string;
+  formatTime: (seconds: number, forceMode?: "seconds" | "minutes") => string;
   onNavigate: (view: NavigableView) => void;
   onLevelClick: (levelId: string) => void;
   onPlayerClick: (username: string) => void;
@@ -237,7 +237,7 @@ export function HomeView({
           scores.find((s) => s.username.toLowerCase() === row.key)?.username ?? row.key;
         return {
           username,
-          primary: formatTime(row.total),
+          primary: formatTime(row.total, "minutes"),
           secondary: `${row.levels} levels`,
         };
       });
@@ -291,13 +291,13 @@ export function HomeView({
           <StatCard
             icon={<Timer className="w-3.5 h-3.5" />}
             label="Total human WR time"
-            value={formatTime(totals.humanAll)}
+            value={formatTime(totals.humanAll, "minutes")}
             sub={`sum of the fastest run on ${totals.humanAllLevels} levels`}
           />
           <StatCard
             icon={<Target className="w-3.5 h-3.5" />}
             label="Total TAS time"
-            value={formatTime(totals.tasTotal)}
+            value={formatTime(totals.tasTotal, "minutes")}
             sub={
               tasLoading
                 ? "loading TAS boards…"

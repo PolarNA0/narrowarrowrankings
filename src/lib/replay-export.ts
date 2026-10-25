@@ -461,7 +461,7 @@ const EXPORT_FIELD_PARTICLES: FieldParticle[] = (() => {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  for (let i = 0; i < 64; i++) out.push({ seed: rand(), phase: rand() });
+  for (let i = 0; i < 40; i++) out.push({ seed: rand(), phase: rand() });
   return out;
 })();
 

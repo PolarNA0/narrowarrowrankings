@@ -940,7 +940,7 @@ export function ReplayStage({
 
     // Stable particle pool for the wind/suction field previews (levels that use
     // them are site-authored only; official levels have none).
-    const fieldParticles: FieldParticle[] = Array.from({ length: 64 }, () => ({
+    const fieldParticles: FieldParticle[] = Array.from({ length: 40 }, () => ({
       seed: Math.random(),
       phase: Math.random(),
     }));

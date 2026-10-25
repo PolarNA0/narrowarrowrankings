@@ -239,7 +239,7 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
     let ty = (y: number) => y;
 
     // Stable particle pool for wind/suction fields (site-authored levels only).
-    const fieldParticles: FieldParticle[] = Array.from({ length: 64 }, () => ({
+    const fieldParticles: FieldParticle[] = Array.from({ length: 40 }, () => ({
       seed: Math.random(),
       phase: Math.random(),
     }));
@@ -302,9 +302,9 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
       // has ~1400 walls but only a handful are ever on screen.
       const pad = 40;
       const view = {
-        minX: (-offX) / scale - pad,
+        minX: -offX / scale - pad,
         maxX: (width - offX) / scale + pad,
-        minY: (-offY) / scale - pad,
+        minY: -offY / scale - pad,
         maxY: (viewH - offY) / scale + pad,
       };
       paintZones(ctx, s.geometry, { tx, ty, scale, mode: s.mode, view });
