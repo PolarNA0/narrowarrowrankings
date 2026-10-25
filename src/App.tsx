@@ -912,7 +912,9 @@ export default function App() {
       } catch {
         /* keep retrying — a failed batch should not stop the warm-up */
       }
-      if (cancelled || loaded >= dynamicLevels.length || attempts >= 40) return;
+      // The server advances one batch per ~15s refresh window, so a completely
+      // cold snapshot needs ~180s; allow comfortably more than that.
+      if (cancelled || loaded >= dynamicLevels.length || attempts >= 60) return;
       timer = setTimeout(poll, 4000);
     };
 
