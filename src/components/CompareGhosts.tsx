@@ -1,6 +1,7 @@
 import * as React from "react";
 import { GitCompareArrows } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import { ghostColor } from "@/lib/compare-ghosts";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 
@@ -20,10 +21,16 @@ interface GhostPickerProps {
  */
 const MAX_ROWS = 40;
 
+/** Which board the list is showing. */
+type GhostSource = "all" | "human" | "tas";
+
 /**
- * The tick-list that turns other runs on this level into ghost overlays.
- * Memoised: the replay dialog re-renders every animation frame, and this list
- * is far too expensive to rebuild that often.
+ * The tick-list that turns other runs on this level into ghost overlays. The
+ * human leaderboard and the TAS board are offered as separate sources: a busy
+ * level's human board alone can fill the row cap, which used to push every TAS
+ * entry out of view before it could be ticked. Memoised — the replay dialog
+ * re-renders every animation frame, and this list is far too expensive to
+ * rebuild that often.
  */
 export const GhostPicker = React.memo(function GhostPicker({
   candidates,
@@ -31,8 +38,32 @@ export const GhostPicker = React.memo(function GhostPicker({
   onToggle,
   onClear,
 }: GhostPickerProps) {
+  const [source, setSource] = React.useState<GhostSource>("all");
+
+  const humanCount = candidates.filter((c) => c.kind === "human").length;
+  const tasCount = candidates.filter((c) => c.kind === "tas").length;
+
+  // A ghost's colour is its position in the full candidate list, so filtering
+  // must not renumber the swatches — a TAS entry has to keep the colour it is
+  // drawn with on the stage.
+  const colorIndex = React.useMemo(() => {
+    const map = new Map<string, number>();
+    candidates.forEach((c, i) => map.set(c.id, i));
+    return map;
+  }, [candidates]);
+
+  const filtered = React.useMemo(
+    () =>
+      source === "all" ? candidates : candidates.filter((c) => (c.kind ?? "human") === source),
+    [candidates, source],
+  );
+  const rows = filtered.length > MAX_ROWS ? filtered.slice(0, MAX_ROWS) : filtered;
+
   if (candidates.length === 0) return null;
-  const rows = candidates.length > MAX_ROWS ? candidates.slice(0, MAX_ROWS) : candidates;
+
+  // Only offer the toggle when there is a choice to make.
+  const showToggle = humanCount > 0 && tasCount > 0;
+
   return (
     <div className="rounded-lg border border-white/5 bg-black/20 p-3 space-y-2">
       <div className="flex items-center gap-2">
@@ -50,8 +81,32 @@ export const GhostPicker = React.memo(function GhostPicker({
           </button>
         )}
       </div>
+      {showToggle && (
+        <div className="flex items-center gap-1">
+          {[
+            { key: "all" as const, label: "All", count: candidates.length },
+            { key: "human" as const, label: "Leaderboard", count: humanCount },
+            { key: "tas" as const, label: "TAS", count: tasCount },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setSource(tab.key)}
+              className={cn(
+                "rounded px-2 py-0.5 text-[10px] font-medium transition-colors",
+                source === tab.key
+                  ? "bg-[var(--app-accent)]/15 text-[var(--app-accent)]"
+                  : "text-slate-500 hover:text-slate-300",
+              )}
+            >
+              {tab.label}
+              <span className="ml-1 text-slate-600">{tab.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="space-y-1">
-        {rows.map((entry, index) => (
+        {rows.map((entry) => (
           <label
             key={entry.id}
             className="flex items-center gap-2 cursor-pointer rounded px-1 py-0.5 hover:bg-white/[0.03]"
@@ -63,10 +118,10 @@ export const GhostPicker = React.memo(function GhostPicker({
             />
             <span
               className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: ghostColor(index) }}
+              style={{ backgroundColor: ghostColor(colorIndex.get(entry.id) ?? 0) }}
             />
             <span className="text-xs text-slate-200 truncate">{entry.username}</span>
-            {entry.kind !== "human" && (
+            {entry.kind === "tas" && (
               <span className="text-[9px] uppercase tracking-wider text-[var(--app-accent)]/80 shrink-0">
                 TAS
               </span>
@@ -79,6 +134,14 @@ export const GhostPicker = React.memo(function GhostPicker({
             </span>
           </label>
         ))}
+        {rows.length === 0 && (
+          <p className="text-[11px] text-slate-600 italic px-1">No runs on this board.</p>
+        )}
+        {filtered.length > MAX_ROWS && (
+          <p className="text-[10px] text-slate-600 px-1">
+            Showing the fastest {MAX_ROWS} of {filtered.length}.
+          </p>
+        )}
       </div>
       {selectedIds.length > 0 && (
         <p className="text-[10px] text-slate-600">
