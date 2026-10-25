@@ -2,8 +2,10 @@ import * as React from "react";
 import {
   Check,
   Cpu,
+  History,
   Loader2,
   Pencil,
+  Play,
   Plus,
   Send,
   Sparkles,
@@ -70,6 +72,25 @@ const EMPTY_SIM: SimResult = {
 
 /** Quick-pick budgets (seconds). A typed amount is authoritative; `0` = no cap. */
 const BUDGET_PRESETS = [15, 30, 60, 120, 300, 600];
+
+/**
+ * One improvement recorded during a search: the best run found up to that point.
+ * Held so a stopped search can be resumed from where it left off, and so the
+ * history list can hand any earlier line back as a fresh seed.
+ */
+interface BruteHistoryEntry {
+  id: string;
+  /** Finish time in ms; `null` when the run does not finish (scored by distance). */
+  timeMs: number | null;
+  finishTick: number | null;
+  arrow: string;
+  symbols: number[];
+  /** Search iteration that produced it, for context in the list. */
+  generations: number;
+}
+
+/** How many improvements to keep per tab. Older entries are dropped. */
+const HISTORY_LIMIT = 40;
 
 /** Search presets: broad strokes at a high temperature vs fine, careful ones. */
 const INTENSITIES = [
@@ -266,6 +287,20 @@ function BruteSearch({
   const [error, setError] = React.useState<string | null>(null);
   const [submitOpen, setSubmitOpen] = React.useState(false);
 
+  /**
+   * Every distinct improvement this tab has found, oldest first, each one
+   * resumable as a new seed. The search reports its best-so-far on a throttle,
+   * so the same time arrives repeatedly; entries are only appended when the
+   * finish actually improves. Capped so a long search cannot grow unbounded —
+   * each entry holds a full input stream.
+   */
+  const [history, setHistory] = React.useState<BruteHistoryEntry[]>([]);
+  /** The line the current/last search actually started from, for the Seed stat. */
+  const [activeSeed, setActiveSeed] = React.useState<{
+    label: string;
+    timeMs: number | null;
+  } | null>(null);
+
   // Draw-a-line mode: a route sketched on the map becomes the seed run.
   const [bruteTab, setBruteTab] = React.useState<"optimize" | "draw">("optimize");
   const [drawOpen, setDrawOpen] = React.useState(false);
@@ -292,6 +327,8 @@ function BruteSearch({
   /** Geometry + arrow of the run in flight, so a Stop can rebuild its trajectory. */
   const levelDataRef = React.useRef<RawLevelData | null>(null);
   const arrowRef = React.useRef<string>("");
+  /** Arrow of the run in flight, for the history entry a Stop records. */
+  const runArrowRef = React.useRef<string>("");
   /** Level geometry of the last run, kept so the preview can draw the map. */
   const [geometry, setGeometry] = React.useState<SimGeometry>({
     walls: [],
@@ -404,6 +441,17 @@ function BruteSearch({
 
   const seedTimeMs = seedEntry?.timeMs ?? siteSeed?.timeMs ?? null;
 
+  /**
+   * The best line found so far, which is what Continue resumes from. The list is
+   * kept in improving order, so the last entry is the current best; a run with no
+   * finish still counts (it is ranked by how close it got).
+   */
+  const bestEntry = history.length > 0 ? history[history.length - 1] : null;
+  // Only offer Continue when there is a line to resume and the picker isn't
+  // mid-search. The seed entry alone is not enough — that would just re-run the
+  // same start.
+  const canContinue = !running && history.length > 1 && !!bestEntry;
+
   const label = `${levelName || levelId}${seedEntry ? ` · ${(seedEntry.timeMs / 1000).toFixed(3)}s` : ""}`;
 
   // Report this search's live status up to the sub-tab bar.
@@ -415,6 +463,32 @@ function BruteSearch({
       bestTick: progress?.bestFinishTick ?? null,
     });
   }, [id, label, running, progress, onStateChange]);
+
+  /**
+   * Append each distinct improvement to the history. Progress arrives on a
+   * throttle with the best-so-far, so compare against the last entry rather than
+   * trusting every message; a run with no finish is ranked by its finish tick,
+   * and only counts once something actually beats the previous entry.
+   */
+  React.useEffect(() => {
+    const p = progress;
+    if (!p?.symbols || p.symbols.length === 0 || p.bestFinishTick === null) return;
+    const tick = p.bestFinishTick;
+    setHistory((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.finishTick !== null && tick >= last.finishTick) return prev;
+      const entry: BruteHistoryEntry = {
+        id: `${Date.now()}-${tick}-${prev.length}`,
+        timeMs: p.bestTimeMs,
+        finishTick: tick,
+        arrow: runArrowRef.current,
+        symbols: p.symbols!,
+        generations: p.generations,
+      };
+      const next = [...prev, entry];
+      return next.length > HISTORY_LIMIT ? next.slice(next.length - HISTORY_LIMIT) : next;
+    });
+  }, [progress]);
 
   // Load the level geometry when the draw panel opens, so the map is visible
   // to trace over even before any run has been chosen.
@@ -523,15 +597,26 @@ function BruteSearch({
     [],
   );
 
-  const start = async () => {
-    // Resolve the seed. A drawn line wins if one exists; otherwise a TAS entry
-    // carries its inputs, or a human run has its replay fetched. Human seeding
-    // is what lets a level whose TAS board is still empty be optimized at all.
+  /**
+   * Run a search. `resume` seeds from an explicit run instead of the picker and
+   * keeps the existing history, which is what lets a stopped search pick up from
+   * its best line rather than the original seed. A fresh Optimize press clears
+   * the history so the list describes one search.
+   */
+  const start = async (resume?: BruteHistoryEntry) => {
+    // Resolve the seed. A resume target wins; then a drawn line; otherwise a TAS
+    // entry carries its inputs, or a human run has its replay fetched. Human
+    // seeding is what lets a level whose TAS board is still empty be optimized.
     let seedInputs = "";
     let seedArrow = "";
     let seedCount = 0;
     let seedMs: number | null = null;
-    if (drawnSeed) {
+    if (resume) {
+      seedInputs = encodeInputSymbols(resume.symbols);
+      seedCount = resume.symbols.length;
+      seedArrow = resume.arrow;
+      seedMs = resume.timeMs;
+    } else if (drawnSeed) {
       seedInputs = encodeInputSymbols(drawnSeed.symbols);
       seedCount = drawnSeed.symbols.length;
       seedArrow = drawnSeed.arrow;
@@ -571,6 +656,21 @@ function BruteSearch({
     setResult(null);
     setProgress(null);
     stopRef.current = false;
+    // A resume continues the same search, so its history and baseline carry over.
+    if (!resume) setHistory([]);
+    runArrowRef.current = seedArrow;
+    // The Seed stat reflects what this search actually started from, which for a
+    // resume is the history line rather than the picker's current selection.
+    setActiveSeed({
+      label: resume
+        ? `${arrowKind(resume.arrow) || "history"} (history)`
+        : seedEntry
+          ? `${seedEntry.arrowName} (TAS)`
+          : humanSeed
+            ? `${humanSeed.arrow_name} (human)`
+            : "—",
+      timeMs: seedMs,
+    });
     try {
       // A site level does not exist upstream, so its geometry comes from the
       // site API; a regular level comes from the level-details route.
@@ -592,6 +692,23 @@ function BruteSearch({
       arrowRef.current = seedArrow;
 
       const seedSymbols = seedFromInputs(seedInputs, seedCount || undefined);
+
+      // Seed the history with the starting line, so the list shows where the
+      // search began and it is itself selectable as a seed. A resume already has
+      // its starting line in the history, so it is not added twice.
+      if (!resume && seedSymbols.length > 0) {
+        const seedTick = seedMs !== null ? Math.round(seedMs / SIM_TICK_MS) : null;
+        setHistory([
+          {
+            id: `seed-${Date.now()}`,
+            timeMs: seedMs,
+            finishTick: seedTick,
+            arrow: seedArrow,
+            symbols: seedSymbols,
+            generations: 0,
+          },
+        ]);
+      }
 
       // Fan the search out over several workers, each with its own RNG seed, and
       // keep the best line any of them finds. Independent restarts beat one long
@@ -976,19 +1093,31 @@ function BruteSearch({
             </Button>
           </Field>
 
-          <div className="flex items-end">
+          <div className="flex items-end gap-2">
             {running ? (
               <Button variant="outline" className="h-9 w-full text-xs" onClick={stop}>
                 <Square className="w-3.5 h-3.5 mr-1" /> Stop
               </Button>
             ) : (
-              <Button
-                className="h-9 w-full text-xs"
-                onClick={() => void start()}
-                disabled={!canSeed}
-              >
-                <Sparkles className="w-3.5 h-3.5 mr-1" /> Optimize
-              </Button>
+              <>
+                {canContinue && (
+                  <Button
+                    variant="outline"
+                    className="h-9 text-xs border-[var(--app-accent)]/40 text-[var(--app-accent)]"
+                    onClick={() => void start(bestEntry!)}
+                    title="Resume from the best line found so far"
+                  >
+                    <Play className="w-3.5 h-3.5 mr-1" /> Continue
+                  </Button>
+                )}
+                <Button
+                  className="h-9 flex-1 text-xs"
+                  onClick={() => void start()}
+                  disabled={!canSeed}
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-1" /> Optimize
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -1107,18 +1236,24 @@ function BruteSearch({
           <Stat
             label="Seed"
             value={
-              seedEntry
-                ? `${seedEntry.inputCount} ticks`
-                : humanSeed
-                  ? `${humanSeed.arrow_name} (human)`
-                  : "—"
+              activeSeed
+                ? activeSeed.label
+                : seedEntry
+                  ? `${seedEntry.inputCount} ticks`
+                  : humanSeed
+                    ? `${humanSeed.arrow_name} (human)`
+                    : "—"
             }
             raw={
-              seedEntry
-                ? `${(seedEntry.timeMs / 1000).toFixed(3)}s`
-                : humanSeed
-                  ? `${humanSeed.completion_time.toFixed(3)}s`
+              activeSeed
+                ? activeSeed.timeMs !== null
+                  ? `${(activeSeed.timeMs / 1000).toFixed(3)}s`
                   : "—"
+                : seedEntry
+                  ? `${(seedEntry.timeMs / 1000).toFixed(3)}s`
+                  : humanSeed
+                    ? `${humanSeed.completion_time.toFixed(3)}s`
+                    : "—"
             }
           />
           <Stat
@@ -1143,6 +1278,83 @@ function BruteSearch({
         )}
         {error && <p className="text-xs text-red-400">{error}</p>}
       </div>
+
+      {history.length > 0 && (
+        <div className="rounded-lg border border-white/5 bg-black/30 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+              <History className="w-3.5 h-3.5" /> History
+            </h3>
+            <span className="text-[11px] text-slate-500">
+              {history.length} {history.length === 1 ? "line" : "lines"} · newest first
+            </span>
+          </div>
+          <ul className="space-y-1">
+            {[...history]
+              .map((entry, i) => ({ entry, index: i }))
+              .reverse()
+              .map(({ entry, index }) => {
+                const prev = index > 0 ? history[index - 1] : null;
+                // Gain over the previous line, in seconds. Negative means the
+                // entry is *slower*, which only happens for the seed row.
+                const gainMs =
+                  prev && prev.timeMs !== null && entry.timeMs !== null
+                    ? prev.timeMs - entry.timeMs
+                    : null;
+                const isBest = index === history.length - 1;
+                return (
+                  <li
+                    key={entry.id}
+                    className={cn(
+                      "flex items-center gap-3 rounded-md px-2 py-1.5 text-xs",
+                      isBest ? "bg-[var(--app-accent)]/10" : "hover:bg-white/5",
+                    )}
+                  >
+                    <span className="font-mono text-slate-200 w-20">
+                      {entry.timeMs !== null
+                        ? `${(entry.timeMs / 1000).toFixed(3)}s`
+                        : fmt(entry.finishTick)}
+                    </span>
+                    <span
+                      className={cn(
+                        "font-mono w-20 text-[11px]",
+                        gainMs === null || gainMs === 0
+                          ? "text-slate-600"
+                          : gainMs > 0
+                            ? "text-emerald-400"
+                            : "text-slate-500",
+                      )}
+                    >
+                      {index === 0
+                        ? "seed"
+                        : gainMs !== null
+                          ? `${gainMs > 0 ? "-" : "+"}${Math.abs(gainMs / 1000).toFixed(3)}s`
+                          : "—"}
+                    </span>
+                    <span className="text-slate-500 flex-1 truncate">
+                      {arrowKind(entry.arrow) || "?"} · gen {entry.generations}
+                    </span>
+                    {isBest && (
+                      <span className="text-[10px] uppercase tracking-widest text-[var(--app-accent)] font-bold">
+                        best
+                      </span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[11px] text-slate-400 hover:text-white"
+                      onClick={() => void start(entry)}
+                      disabled={running}
+                      title="Seed a new search from this line"
+                    >
+                      <Play className="w-3 h-3 mr-1" /> Use as seed
+                    </Button>
+                  </li>
+                );
+              })}
+          </ul>
+        </div>
+      )}
 
       {result && result.sim.path.length > 1 && (
         <ResultPreview
