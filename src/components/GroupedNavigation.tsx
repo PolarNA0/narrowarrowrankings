@@ -4,13 +4,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, Home, Menu } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Home, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const NAV_GROUPS = [
@@ -148,14 +146,28 @@ export function MobileNavigation({
   onNavigate: (view: NavigableView | "home") => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  // Which group is drilled into, if any. The mobile menu used to open each
+  // section as a flyout submenu, but at phone widths the parent panel is already
+  // ~224px wide and a second 224px panel cannot fit beside it — Radix flipped it
+  // to the left and most of it landed off-screen. Drilling down in place keeps
+  // every label inside the viewport.
+  const [openGroup, setOpenGroup] = React.useState<string | null>(null);
   const active = navigationGroup(view);
+  const group = NAV_GROUPS.find((g) => g.id === openGroup) ?? null;
   const go = (next: NavigableView | "home") => {
     setOpen(false);
+    setOpenGroup(null);
     onNavigate(next);
   };
   return (
     <div className="lg:hidden">
-      <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenu
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setOpenGroup(null);
+        }}
+      >
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
@@ -170,35 +182,67 @@ export function MobileNavigation({
             <ChevronDown className="w-3.5 h-3.5 opacity-60" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56 max-h-[70vh] overflow-y-auto">
-          <DropdownMenuItem
-            onSelect={() => go("home")}
-            className={cn("gap-2 cursor-pointer", view === "home" && "font-bold")}
-          >
-            <Home className="w-4 h-4" />
-            Home
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {NAV_GROUPS.map((group) => (
-            <DropdownMenuSub key={group.id}>
-              <DropdownMenuSubTrigger
-                className={cn("gap-2 cursor-pointer", active?.id === group.id && "font-bold")}
+        <DropdownMenuContent
+          align="end"
+          className="w-64 max-h-[70vh] overflow-y-auto"
+          aria-label={group ? `${group.label} views` : "Main sections"}
+        >
+          {group === null ? (
+            <>
+              <DropdownMenuItem
+                onSelect={() => go("home")}
+                className={cn("gap-2 cursor-pointer", view === "home" && "font-bold")}
               >
+                <Home className="w-4 h-4" />
+                Home
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {NAV_GROUPS.map((entry) => (
+                <DropdownMenuItem
+                  key={entry.id}
+                  // preventDefault keeps the panel open so it can swap to this
+                  // group's items instead of dismissing the menu.
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setOpenGroup(entry.id);
+                  }}
+                  className={cn(
+                    "gap-2 cursor-pointer justify-between",
+                    active?.id === entry.id && "font-bold",
+                  )}
+                >
+                  {entry.label}
+                  <ChevronRight className="w-4 h-4 opacity-50" />
+                </DropdownMenuItem>
+              ))}
+            </>
+          ) : (
+            <>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault();
+                  setOpenGroup(null);
+                }}
+                className="gap-2 cursor-pointer text-slate-400"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Back
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-slate-500">
                 {group.label}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-56 max-h-[70vh] overflow-y-auto">
-                {group.items.map((item) => (
-                  <DropdownMenuItem
-                    key={item.id}
-                    onSelect={() => go(item.id)}
-                    className={cn("cursor-pointer", view === item.id && "font-bold")}
-                  >
-                    {item.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          ))}
+              </DropdownMenuLabel>
+              {group.items.map((item) => (
+                <DropdownMenuItem
+                  key={item.id}
+                  onSelect={() => go(item.id)}
+                  className={cn("cursor-pointer", view === item.id && "font-bold")}
+                >
+                  {item.label}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

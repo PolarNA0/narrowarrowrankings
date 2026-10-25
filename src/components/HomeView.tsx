@@ -311,7 +311,7 @@ export function HomeView({
             value={
               totals.tasLevels === 0
                 ? "—"
-                : `${totals.gap >= 0 ? "+" : ""}${totals.gap.toFixed(3)}s`
+                : `${totals.gap >= 0 ? "+" : "-"}${formatTime(Math.abs(totals.gap), "minutes")}`
             }
             sub={
               totals.tasLevels === 0

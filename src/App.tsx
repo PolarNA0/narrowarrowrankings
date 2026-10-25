@@ -881,6 +881,48 @@ export default function App() {
     }
   }, [dynamicLevels]);
 
+  // The bulk snapshot warms server-side in small batches, because the game API
+  // rate-limits. One request therefore returns only a fraction of the boards,
+  // which made the home totals look like they counted just some of the levels
+  // (and left the "warming boards" note up for good, since nothing re-asked).
+  // Poll the endpoint — each call advances the server's warm-up by a batch —
+  // until every level has a board.
+  useEffect(() => {
+    if (dynamicLevels.length === 0) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+
+    const countLoaded = (boards: Record<string, LeaderboardEntry[]>) =>
+      dynamicLevels.filter((level) => (boards[level.id] ?? []).length > 0).length;
+
+    const poll = async () => {
+      attempts += 1;
+      let loaded = 0;
+      try {
+        const boards = await fetchAllLeaderboards(true);
+        if (cancelled) return;
+        acceptLeaderboardUpdates(boards);
+        loaded = countLoaded(boards);
+        setLeaderboardLoadStatus((prev) => ({
+          loaded: Math.max(prev.loaded, loaded),
+          total: dynamicLevels.length,
+          failed: 0,
+        }));
+      } catch {
+        /* keep retrying — a failed batch should not stop the warm-up */
+      }
+      if (cancelled || loaded >= dynamicLevels.length || attempts >= 40) return;
+      timer = setTimeout(poll, 4000);
+    };
+
+    timer = setTimeout(poll, 3000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [dynamicLevels]);
+
   // The TAS boards are a separate collection from the game leaderboards, so the
   // home page's TAS totals are fetched on their own — and only once the home
   // page is actually shown, rather than on every visit to the site.

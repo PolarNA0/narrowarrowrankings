@@ -252,7 +252,7 @@ function BruteSearch({
   // Which arrow's human board feeds the seed picker. "" merges all three; a
   // specific arrow shows its own board, so a WR on a less-played arrow (which
   // the global top-150 can miss) is still selectable as a seed.
-  const [seedArrow, setSeedArrow] = React.useState<string>("");
+  const [seedArrowFilter, setSeedArrowFilter] = React.useState<string>("");
   // The level's real-game runs, so the search can seed from a human run when no
   // TAS submission exists yet.
   const [humanEntries, setHumanEntries] = React.useState<LeaderboardEntry[]>([]);
@@ -332,7 +332,7 @@ function BruteSearch({
         .catch(() => {
           if (!cancelled) setEntries([]);
         });
-      fetchLeaderboard(levelId, false, false, seedArrow || undefined)
+      fetchLeaderboard(levelId, false, false, seedArrowFilter || undefined)
         .then((list) => {
           if (!cancelled) setHumanEntries(list);
         })
@@ -346,37 +346,61 @@ function BruteSearch({
     return () => {
       cancelled = true;
     };
-  }, [levelId, seedArrow, siteId]);
+  }, [levelId, seedArrowFilter, siteId]);
+
+  // The arrow filter scopes *both* seed boards, not just the human one. Without
+  // this, choosing Narrow Arrow still resolved "fastest TAS run" to the fastest
+  // entry on the board — which may be a different arrow — and the search then
+  // optimized that arrow instead of the one requested. Arrow names are spelled
+  // inconsistently across submissions, so match on the sprite kind.
+  const tasSeedEntries = React.useMemo(
+    () =>
+      seedArrowFilter
+        ? entries.filter((e) => arrowKind(e.arrowName) === arrowKind(seedArrowFilter))
+        : entries,
+    [entries, seedArrowFilter],
+  );
+
+  const siteSeedEntries = React.useMemo(
+    () =>
+      seedArrowFilter
+        ? siteEntries.filter((e) => arrowKind(e.arrowName) === arrowKind(seedArrowFilter))
+        : siteEntries,
+    [siteEntries, seedArrowFilter],
+  );
 
   const seedEntry = React.useMemo(() => {
-    if (entries.length === 0) return null;
-    if (seedId === "auto") return entries[0];
+    if (tasSeedEntries.length === 0) return null;
+    if (seedId === "auto") return tasSeedEntries[0];
 
     // Only resolve here when the selection is actually a TAS entry; a human
     // selection must not fall back to the fastest TAS run (that silently seeded
     // from the TAS board and ignored the picked human run).
-    return entries.find((e) => e.id === seedId) ?? null;
-  }, [entries, seedId]);
+    return tasSeedEntries.find((e) => e.id === seedId) ?? null;
+  }, [tasSeedEntries, seedId]);
 
   const humanSeed = React.useMemo(() => {
     // "auto" means "the fastest run available": the fastest TAS entry if the
     // level has one, otherwise the fastest real-game run. Without the fallback
     // a level whose TAS board is still empty had no usable default seed and the
     // run failed with "No run to seed from".
-    if (seedId === "auto") return entries.length === 0 ? (humanEntries[0] ?? null) : null;
+    if (seedId === "auto") return tasSeedEntries.length === 0 ? (humanEntries[0] ?? null) : null;
     return humanEntries.find((h) => `human-${h.run_id}` === seedId) ?? null;
-  }, [humanEntries, seedId, entries.length]);
+  }, [humanEntries, seedId, tasSeedEntries.length]);
 
   // A site level's own board is its seed source; it carries the input string
   // directly, so no replay fetch is needed.
   const siteSeed = React.useMemo(() => {
-    if (!isSiteLevel || siteEntries.length === 0) return null;
-    if (seedId === "auto") return siteEntries[0];
-    return siteEntries.find((e) => e.id === seedId) ?? null;
-  }, [isSiteLevel, siteEntries, seedId]);
+    if (!isSiteLevel || siteSeedEntries.length === 0) return null;
+    if (seedId === "auto") return siteSeedEntries[0];
+    return siteSeedEntries.find((e) => e.id === seedId) ?? null;
+  }, [isSiteLevel, siteSeedEntries, seedId]);
 
   const canSeed =
-    entries.length > 0 || humanEntries.length > 0 || siteEntries.length > 0 || !!drawnSeed;
+    tasSeedEntries.length > 0 ||
+    humanEntries.length > 0 ||
+    siteSeedEntries.length > 0 ||
+    !!drawnSeed;
 
   const seedTimeMs = seedEntry?.timeMs ?? siteSeed?.timeMs ?? null;
 
@@ -769,8 +793,8 @@ function BruteSearch({
           <Field label="Seed run">
             <div className="space-y-1.5">
               <Select
-                value={seedArrow || "all"}
-                onValueChange={(v) => setSeedArrow(v === "all" ? "" : v)}
+                value={seedArrowFilter || "all"}
+                onValueChange={(v) => setSeedArrowFilter(v === "all" ? "" : v)}
               >
                 <SelectTrigger
                   className="h-8 text-[11px] bg-white/5 border-white/10"
@@ -794,7 +818,7 @@ function BruteSearch({
                   <SelectValue placeholder={canSeed ? "Fastest" : "No runs"} />
                 </SelectTrigger>
                 <SelectContent className="bg-[#1a1a1a] border-white/10 text-slate-200 max-h-72">
-                  {siteEntries.length > 0 && (
+                  {siteSeedEntries.length > 0 && (
                     <SelectGroup>
                       <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
                         Site leaderboard
@@ -802,14 +826,14 @@ function BruteSearch({
                       <SelectItem value="auto" className="text-xs">
                         Fastest site run
                       </SelectItem>
-                      {siteEntries.map((e) => (
+                      {siteSeedEntries.map((e) => (
                         <SelectItem key={e.id} value={e.id} className="text-xs">
                           {e.username} — {(e.timeMs / 1000).toFixed(3)}s ({e.arrowName})
                         </SelectItem>
                       ))}
                     </SelectGroup>
                   )}
-                  {entries.length > 0 && (
+                  {tasSeedEntries.length > 0 && (
                     <SelectGroup>
                       <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
                         TAS board
@@ -817,7 +841,7 @@ function BruteSearch({
                       <SelectItem value="auto" className="text-xs">
                         Fastest TAS run
                       </SelectItem>
-                      {entries.map((e) => (
+                      {tasSeedEntries.map((e) => (
                         <SelectItem key={e.id} value={e.id} className="text-xs">
                           {e.username} — {(e.timeMs / 1000).toFixed(3)}s ({e.arrowName})
                         </SelectItem>
@@ -827,9 +851,9 @@ function BruteSearch({
                   {humanEntries.length > 0 && (
                     <SelectGroup>
                       <SelectLabel className="text-[10px] uppercase tracking-widest text-slate-500">
-                        {seedArrow ? `${seedArrow} runs` : "Human runs"}
+                        {seedArrowFilter ? `${seedArrowFilter} runs` : "Human runs"}
                       </SelectLabel>
-                      {entries.length === 0 && (
+                      {tasSeedEntries.length === 0 && (
                         <SelectItem value="auto" className="text-xs">
                           Fastest run
                         </SelectItem>
