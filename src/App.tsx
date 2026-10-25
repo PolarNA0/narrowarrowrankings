@@ -157,16 +157,17 @@ import { RaceView, type RacePlayTarget } from "@/components/RaceView";
 import { RecentMatchesView } from "@/components/RecentMatchesView";
 import { siteIdOf } from "@/components/LevelPicker";
 import { EndlessView } from "@/components/EndlessView";
-import { fetchTasBoardSummary, type TasSummary } from "@/lib/tas-leaderboard";
+import { fetchTasBoardSummary, fetchAllTasBoards, type TasSummary } from "@/lib/tas-leaderboard";
+import { HomeView } from "@/components/HomeView";
 import { readUrlState, writeUrlState, shareUrl, type UrlState } from "@/lib/url-state";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 import { useInGameMedals } from "@/hooks/useInGameMedals";
 import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
 import { avatarFor, displayNameFor, matchesPlayerSearch } from "@/lib/display-name";
 
-/** Every top-level view the shell can show. Most are nav items; `profile` and
- * `compare` are reached from a player instead. */
-type AppView = NavigableView | "profile" | "compare";
+/** Every top-level view the shell can show. Most are nav items; `home` is the
+ * landing page and `profile`/`compare` are reached from a player instead. */
+type AppView = NavigableView | "home" | "profile" | "compare";
 
 export default function App() {
   // Seed the shareable bits of state from the URL once, so a pasted link opens
@@ -438,9 +439,11 @@ export default function App() {
 
   const [view, setView] = useState<AppView>(() => {
     const fromUrl = initialUrlState.view;
-    // A site level link opens Play even if it names no view, so the link always
-    // lands on the level rather than the default leaderboard.
-    if (!fromUrl) return initialUrlState.site ? "play" : "leaderboard";
+    // A bare link (no `view`) is the landing page. A site level link opens Play
+    // even if it names no view, so the link always lands on the level rather
+    // than the home page.
+    if (!fromUrl) return initialUrlState.site ? "play" : "home";
+    if (fromUrl === "home") return "home";
     // `profile` and `compare` are real views but live outside the nav groups
     // (they are reached from a player), so they are listed explicitly. They
     // also need a player to render, which is why a link without one falls back.
@@ -448,7 +451,7 @@ export default function App() {
       NAV_GROUPS.some((g) => g.items.some((i) => i.id === fromUrl)) ||
       fromUrl === "profile" ||
       fromUrl === "compare";
-    if (!known) return "leaderboard";
+    if (!known) return "home";
     if ((fromUrl === "profile" || fromUrl === "compare") && !initialUrlState.player)
       return "leaderboard";
     return fromUrl as AppView;
@@ -539,6 +542,9 @@ export default function App() {
   const [tasBestTime, setTasBestTime] = useState<number | null>(null);
   /** The level's TAS board, used to offer TAS runs as compare ghosts. */
   const [tasEntries, setTasEntries] = useState<TasSummary[]>([]);
+  /** Every level's TAS board, for the home page's community totals and TAS records. */
+  const [allTasBoards, setAllTasBoards] = useState<Record<string, TasSummary[]>>({});
+  const [tasBoardsLoading, setTasBoardsLoading] = useState(false);
   const [overallRankConfig, setOverallRankConfig] =
     useState<Record<string, RankInfo>>(DEFAULT_OVERALL_RANKS);
   const [allPackOverallConfigs, setAllPackOverallConfigs] = useState<
@@ -874,6 +880,20 @@ export default function App() {
       fetchAllLevels();
     }
   }, [dynamicLevels]);
+
+  // The TAS boards are a separate collection from the game leaderboards, so the
+  // home page's TAS totals are fetched on their own — and only once the home
+  // page is actually shown, rather than on every visit to the site.
+  const tasBoardsRequested = React.useRef(false);
+  useEffect(() => {
+    if (view !== "home" || tasBoardsRequested.current) return;
+    tasBoardsRequested.current = true;
+    setTasBoardsLoading(true);
+    fetchAllTasBoards()
+      .then(setAllTasBoards)
+      .catch(() => setAllTasBoards({}))
+      .finally(() => setTasBoardsLoading(false));
+  }, [view]);
 
   const getPlayerStats = (username: string): PlayerStats | null => {
     if (!username) return null;
@@ -1499,7 +1519,7 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const navigateView = (next: NavigableView) => {
+  const navigateView = (next: NavigableView | "home") => {
     setView(next);
     // Leaving Play abandons any race round it was pinned to, so a later visit to
     // Play is a normal free-play session rather than a silent race submission.
@@ -1597,15 +1617,22 @@ export default function App() {
       <header className="border-b border-white/10 bg-[var(--app-accent)]/5 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 md:gap-3 min-w-0">
-            <ArrowIcon name="Narrow" className="w-8 h-8 md:w-10 md:h-10 shrink-0" />
-            <div className="min-w-0">
-              <h1 className="text-sm sm:text-base md:text-xl font-bold tracking-tight text-white truncate">
-                Narrow Arrow
-              </h1>
-              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-mono block">
-                NA Rankings
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={() => navigateView("home")}
+              title="Home"
+              className="flex items-center gap-2 md:gap-3 min-w-0 rounded-md px-1 -mx-1 py-1 hover:bg-white/5 transition-colors"
+            >
+              <ArrowIcon name="Narrow" className="w-8 h-8 md:w-10 md:h-10 shrink-0" />
+              <div className="min-w-0 text-left">
+                <h1 className="text-sm sm:text-base md:text-xl font-bold tracking-tight text-white truncate">
+                  Narrow Arrow
+                </h1>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-mono block">
+                  NA Rankings
+                </p>
+              </div>
+            </button>
           </div>
 
           <div className="flex items-center gap-1.5 md:gap-4 shrink-0">
@@ -1685,6 +1712,19 @@ export default function App() {
             levelPacks={dynamicPacks}
             allUsernames={allUsernames}
             isFetchingAll={isFetchingAll}
+          />
+        ) : view === "home" ? (
+          <HomeView
+            levels={sortedLevels}
+            data={processedAllLevelsData}
+            tasBoards={allTasBoards}
+            tasLoading={tasBoardsLoading}
+            boardsLoaded={leaderboardLoadStatus.loaded}
+            profiles={playerProfiles}
+            formatTime={(seconds) => formatTime(seconds)}
+            onNavigate={navigateView}
+            onLevelClick={handleLevelClick}
+            onPlayerClick={handlePlayerClick}
           />
         ) : view === "profile" && selectedPlayer ? (
           isFetchingAll && !selectedPlayerStats ? (
