@@ -1867,6 +1867,7 @@ export default function App() {
                 setView("compare");
               }}
               onLevelClick={handleLevelClick}
+              onPlayerClick={handlePlayerClick}
               worldRecords={worldRecords}
               computedMedals={selectedPlayerMedals}
               levelStandings={processedAllLevelsData}

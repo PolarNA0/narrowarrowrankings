@@ -1,188 +1,269 @@
 /**
- * Checks the achievement rules over the real computeAchievements engine, and the
- * sub-10 counter that feeds it.
- *
- * The rules are pure, so they run without a Supabase project or a live board.
- * Two properties matter most and are asserted directly:
- *   - an unloaded board must never unlock anything (a zero target is not a win),
- *   - a target is only met by reaching it, so progress and `earned` agree.
+ * Achievement checks, driven against the real merged boards.
  *
  * Run: npx tsx scripts/verify-achievements.ts
+ *
+ * The rules are pure, but the thresholds are only meaningful against real data,
+ * so this loads the live boards and asserts the properties a hand-checked table
+ * misses: no impossible threshold, no badge nobody can earn, earner lists in
+ * chronological order, and a grid that agrees with its own earner boards.
  */
+import { LEVELS, LEVEL_PACKS } from "@/constants";
 import {
-  SUB_TEN_SECONDS,
+  achievementDefs,
+  buildCareers,
   computeAchievements,
-  countSubTenRuns,
-  type AchievementInput,
+  computeEarners,
+  emptyCareer,
 } from "@/lib/achievements";
 import type { LeaderboardEntry } from "@/types";
 
-let passed = 0;
-let failed = 0;
+const BASE = "https://api.narrowarrow.xyz/leaderboard?levelId=";
 
-function check(label: string, condition: boolean, detail = ""): void {
-  if (condition) {
-    passed++;
-    console.log(`  ok  ${label}`);
+let pass = 0;
+let fail = 0;
+function check(name: string, ok: boolean, extra = "") {
+  if (ok) {
+    pass += 1;
+    console.log(`OK   ${name}${extra ? ` — ${extra}` : ""}`);
   } else {
-    failed++;
-    console.log(`FAIL  ${label}${detail ? ` — ${detail}` : ""}`);
+    fail += 1;
+    console.log(`FAIL ${name}${extra ? ` — ${extra}` : ""}`);
   }
 }
 
-let runId = 1;
-function entry(username: string, time: number, arrow = "Narrow Arrow"): LeaderboardEntry {
-  return {
-    run_id: runId++,
-    completion_time: time,
-    username,
-    arrow_name: arrow,
-    created_at: "2026-01-01T00:00:00.000Z",
-  };
+async function main() {
+  const data: Record<string, LeaderboardEntry[]> = {};
+  for (const level of LEVELS) {
+    try {
+      const res = await fetch(BASE + level.id);
+      if (res.ok) data[level.id] = (await res.json()) as LeaderboardEntry[];
+    } catch {
+      /* a level that fails to load is simply absent, as in the app */
+    }
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  const loadedLevels = LEVELS.filter((l) => (data[l.id]?.length ?? 0) > 0);
+  check("boards loaded", loadedLevels.length > 0, `${loadedLevels.length}/${LEVELS.length} levels`);
+
+  // ---- The table itself -------------------------------------------------
+  const defs = achievementDefs(LEVELS.length, LEVEL_PACKS.length, LEVEL_PACKS);
+  check("at least 90 achievements", defs.length >= 90, `${defs.length} defined`);
+  check("ids are unique", new Set(defs.map((d) => d.id)).size === defs.length);
+  check(
+    "every badge has a target",
+    defs.every((d) => d.target > 0),
+  );
+  check(
+    "every badge has a name and description",
+    defs.every((d) => d.name && d.description),
+  );
+
+  // The impossible badge must be gone, and nothing may reintroduce a ten-second
+  // bar: the fastest run on any board is above ten seconds.
+  check(
+    "no '10 runs under 10 seconds' badge",
+    !defs.some((d) => /10 runs under 10/i.test(d.description)),
+  );
+  check("no sub-10 personal-best badge", !defs.some((d) => d.target === 10 && d.unit === "s"));
+  check(
+    "no badge counts runs under 10 seconds",
+    !defs.some((d) => /under 10 seconds/i.test(d.description)),
+  );
+
+  // ---- Careers over the real boards -------------------------------------
+  const careers = buildCareers(LEVELS, LEVEL_PACKS, data);
+  check("careers built", careers.size > 0, `${careers.size} players`);
+
+  const times = [...careers.values()].map((c) => c.fastest).filter((t) => Number.isFinite(t));
+  const fastest = Math.min(...times);
+  check("fastest run is above 10s", fastest > 10, `${fastest.toFixed(2)}s`);
+
+  // Every badge must be earnable by at least one real player, except the
+  // deliberate full sweeps, which no current board satisfies. The exemption is
+  // listed by id so it stays explicit rather than a blanket "some are hard".
+  // Only the badges that genuinely no current board satisfies belong here; if a
+  // listed id turns out to be earned, the assertion below says so.
+  const sweepIds = new Set(["wr-immortal", "immaculate"]);
+  const earnable = new Set<string>();
+  for (const c of careers.values()) {
+    for (const a of computeAchievements(
+      c,
+      LEVELS.length,
+      LEVEL_PACKS.length,
+      LEVEL_PACKS,
+      LEVELS,
+    )) {
+      if (a.earned) earnable.add(a.id);
+    }
+  }
+  const unearned = defs.filter((d) => !earnable.has(d.id) && !sweepIds.has(d.id));
+  check(
+    "every non-sweep achievement is earned by someone",
+    unearned.length === 0,
+    unearned.length ? unearned.map((d) => d.id).join(", ") : "all covered",
+  );
+  const sweepEarned = defs.filter((d) => sweepIds.has(d.id) && earnable.has(d.id));
+  check(
+    "every exempted sweep is genuinely unearned",
+    sweepEarned.length === 0,
+    sweepEarned.length
+      ? `stale exemption: ${sweepEarned.map((d) => d.id).join(", ")}`
+      : "none stale",
+  );
+
+  // ---- Progress and detail sanity ---------------------------------------
+  let progressBad = "";
+  let detailBad = "";
+  for (const c of careers.values()) {
+    const list = computeAchievements(c, LEVELS.length, LEVEL_PACKS.length, LEVEL_PACKS, LEVELS);
+    for (const a of list) {
+      if (!(a.progress >= 0 && a.progress <= 1) && !progressBad) {
+        progressBad = `${c.username}:${a.id}=${a.progress}`;
+      }
+      if (/NaN|Infinity|undefined/.test(a.detail) && !detailBad) {
+        detailBad = `${c.username}:${a.id}="${a.detail}"`;
+      }
+    }
+  }
+  check("progress stays within 0..1 for every player", !progressBad, progressBad);
+  check("no NaN/Infinity leaks into a detail string", !detailBad, detailBad);
+
+  // A full-progress badge must be earned, and a zero-progress one must not be:
+  // otherwise the bar and the award disagree.
+  let mismatch = "";
+  for (const c of careers.values()) {
+    for (const a of computeAchievements(
+      c,
+      LEVELS.length,
+      LEVEL_PACKS.length,
+      LEVEL_PACKS,
+      LEVELS,
+    )) {
+      if (a.earned && a.progress < 1 && !mismatch)
+        mismatch = `${c.username}:${a.id} earned at ${a.progress}`;
+    }
+  }
+  check("every earned badge shows full progress", !mismatch, mismatch);
+
+  // ---- Earner boards -----------------------------------------------------
+  const earners = computeEarners(LEVELS, LEVEL_PACKS, data);
+  let orderBad = "";
+  let totalEarners = 0;
+  let dupBad = "";
+  for (const [id, list] of earners) {
+    totalEarners += list.length;
+    for (let i = 1; i < list.length; i++) {
+      if (Date.parse(list[i].at) < Date.parse(list[i - 1].at) && !orderBad) {
+        orderBad = `${id}: ${list[i - 1].at} then ${list[i].at}`;
+      }
+    }
+    const seen = new Set<string>();
+    for (const e of list) {
+      const k = e.username.toLowerCase();
+      if (seen.has(k) && !dupBad) dupBad = `${id}: ${e.username}`;
+      seen.add(k);
+    }
+  }
+  check(
+    "earner lists are in ascending date order",
+    !orderBad,
+    orderBad || `${totalEarners} entries`,
+  );
+  check("no player appears twice on one achievement", !dupBad, dupBad);
+
+  const empties = defs
+    .filter((d) => earnable.has(d.id) && (earners.get(d.id)?.length ?? 0) === 0)
+    .map((d) => d.id);
+  check(
+    "no badge is earned in the grid but missing from its earner list",
+    empties.length === 0,
+    empties.length ? empties.join(", ") : "consistent",
+  );
+
+  const sample = [...careers.values()].sort((a, b) => b.runs - a.runs)[0];
+  const gridEarned = new Set(
+    computeAchievements(sample, LEVELS.length, LEVEL_PACKS.length, LEVEL_PACKS, LEVELS)
+      .filter((a) => a.earned)
+      .map((a) => a.id),
+  );
+  const listed = new Set(
+    [...earners.entries()]
+      .filter(([, list]) =>
+        list.some((e) => e.username.toLowerCase() === sample.username.toLowerCase()),
+      )
+      .map(([id]) => id),
+  );
+  // A rank-derived badge is dated by the run at which the player's own PBs first
+  // satisfied it under today's ranking, so a tie can date it earlier than the
+  // grid's current standing; the check is that the grid's badges all appear.
+  const missing = [...gridEarned].filter((id) => !listed.has(id));
+  check(
+    `earner boards include every badge the grid shows (${sample.username})`,
+    missing.length === 0,
+    missing.length ? missing.join(", ") : `${gridEarned.size} badges`,
+  );
+
+  // ---- Determinism -------------------------------------------------------
+  const again = computeEarners(LEVELS, LEVEL_PACKS, data);
+  const first = earners.get("first-steps") ?? [];
+  const second = again.get("first-steps") ?? [];
+  check(
+    "earner computation is deterministic",
+    first.length === second.length && first.every((e, i) => e.username === second[i].username),
+  );
+
+  // ---- The first-ever badge ---------------------------------------------
+  check("First Steps has an earner", first.length > 0, `${first.length} players`);
+  if (first.length > 1) {
+    const ok = first.slice(1).every((e) => Date.parse(e.at) >= Date.parse(first[0].at));
+    check("the earliest First Steps earner is first", ok, `${first[0].username} @ ${first[0].at}`);
+  }
+
+  // ---- Empty input -------------------------------------------------------
+  const empty = computeAchievements(
+    emptyCareer("nobody", LEVELS.length, LEVEL_PACKS.length),
+    LEVELS.length,
+    LEVEL_PACKS.length,
+    LEVEL_PACKS,
+    LEVELS,
+  );
+  check(
+    "an empty career earns nothing",
+    empty.every((a) => !a.earned),
+  );
+  check("an empty career still renders every badge", empty.length === defs.length);
+
+  // ---- Coverage summary --------------------------------------------------
+  const byCategory = new Map<string, number>();
+  for (const d of defs) byCategory.set(d.category, (byCategory.get(d.category) ?? 0) + 1);
+  console.log(`\ncategories: ${[...byCategory.entries()].map(([c, n]) => `${c} ${n}`).join(", ")}`);
+  console.log(
+    `players: ${careers.size}, achievements: ${defs.length}, earner rows: ${totalEarners}`,
+  );
+  const mostEarned = [...careers.entries()].sort(
+    (a, b) =>
+      computeAchievements(b[1], LEVELS.length, LEVEL_PACKS.length, LEVEL_PACKS, LEVELS).filter(
+        (x) => x.earned,
+      ).length -
+      computeAchievements(a[1], LEVELS.length, LEVEL_PACKS.length, LEVEL_PACKS, LEVELS).filter(
+        (x) => x.earned,
+      ).length,
+  )[0];
+  const topCount = computeAchievements(
+    mostEarned[1],
+    LEVELS.length,
+    LEVEL_PACKS.length,
+    LEVEL_PACKS,
+    LEVELS,
+  ).filter((x) => x.earned).length;
+  console.log(`most unlocked: ${mostEarned[0]} with ${topCount}/${defs.length}`);
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  if (fail > 0) process.exit(1);
 }
 
-const base: AchievementInput = {
-  medals: { first: 0, second: 0, third: 0, top10: 0, wrLevelIds: [] },
-  levelsCompleted: 0,
-  totalLevels: 64,
-  score: { username: "polar", total: 0, average: 0, levelsPlayed: 0, perfects: 0, levels: [] },
-  packsFullyCompleted: 0,
-  totalPacks: 8,
-  subTenRuns: 0,
-};
-
-function byId(id: string, input: AchievementInput) {
-  const found = computeAchievements(input).find((a) => a.id === id);
-  if (!found) throw new Error(`no achievement ${id}`);
-  return found;
-}
-
-console.log("engine shape");
-check("every achievement is returned", computeAchievements(base).length === 10);
-check("ids are unique", new Set(computeAchievements(base).map((a) => a.id)).size === 10);
-check(
-  "progress is always within 0..1",
-  computeAchievements({
-    ...base,
-    levelsCompleted: 100,
-    medals: { first: 100, second: 0, third: 0, top10: 0, wrLevelIds: [] },
-    subTenRuns: 100,
-  }).every((a) => a.progress >= 0 && a.progress <= 1),
-);
-
-console.log("\nno false unlocks before data arrives");
-// The regression this guards: a zero target made `0 >= 0` true, so every
-// achievement read as earned while the boards were still empty.
-const noData = computeAchievements({
-  medals: { first: 0, second: 0, third: 0, top10: 0, wrLevelIds: [] },
-  levelsCompleted: 0,
-  totalLevels: 0,
-  score: null,
-  packsFullyCompleted: 0,
-  totalPacks: 0,
-  subTenRuns: 0,
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
 });
-check(
-  "nothing is earned with no levels",
-  noData.every((a) => !a.earned),
-);
-check(
-  "Completionist stays locked at 0 levels",
-  !byId("completionist", { ...base, totalLevels: 0 }).earned,
-);
-check(
-  "Pack Master stays locked with 0 packs",
-  !byId("pack-master", { ...base, totalPacks: 0 }).earned,
-);
-check(
-  "an unmeasurable goal reports no progress",
-  byId("completionist", { ...base, totalLevels: 0 }).progress === 0,
-);
-
-console.log("\nthresholds");
-check(
-  "9 WRs does not earn WR Hunter",
-  !byId("wr-hunter", { ...base, medals: { ...base.medals!, first: 9 } }).earned,
-);
-check(
-  "10 WRs earns WR Hunter",
-  byId("wr-hunter", { ...base, medals: { ...base.medals!, first: 10 } }).earned,
-);
-check(
-  "39 WRs does not earn WR Legend",
-  !byId("wr-legend", { ...base, medals: { ...base.medals!, first: 39 } }).earned,
-);
-check(
-  "40 WRs earns WR Legend",
-  byId("wr-legend", { ...base, medals: { ...base.medals!, first: 40 } }).earned,
-);
-
-// Podium Regular counts all three podium places, not just wins.
-check(
-  "podiums add across first, second and third",
-  byId("podium-regular", {
-    ...base,
-    medals: { first: 10, second: 10, third: 5, top10: 0, wrLevelIds: [] },
-  }).earned,
-);
-check(
-  "24 podiums is short of Podium Regular",
-  !byId("podium-regular", {
-    ...base,
-    medals: { first: 8, second: 8, third: 8, top10: 0, wrLevelIds: [] },
-  }).earned,
-);
-
-check(
-  "Elite Average needs a 900 average",
-  !byId("elite-average", {
-    ...base,
-    score: { ...base.score!, average: 899.9 },
-  }).earned,
-);
-// Guards against rounding the average up across the threshold.
-check(
-  "an average of 899.6 does not round up to 900",
-  !byId("elite-average", { ...base, score: { ...base.score!, average: 899.6 } }).earned,
-);
-check(
-  "Elite Average unlocks at 900",
-  byId("elite-average", { ...base, score: { ...base.score!, average: 900 } }).earned,
-);
-
-console.log("\nsub-10 counting");
-const boards: Record<string, LeaderboardEntry[]> = {
-  a: [entry("polar", 9.5), entry("polar", 12.0), entry("other", 8.0)],
-  b: [entry("polar", 10.0), entry("polar", 7.25), entry("POLAR", 6.5)],
-};
-// Exactly 10.000s is not "under ten".
-check("only runs under 10s count", countSubTenRuns("polar", boards) === 3);
-check(
-  "a run of exactly 10.000s is not counted",
-  countSubTenRuns("boundary", { a: [entry("boundary", SUB_TEN_SECONDS)] }) === 0,
-);
-check("counting is case-insensitive", countSubTenRuns("POLAR", boards) === 3);
-check("another player's runs are not counted", countSubTenRuns("other", boards) === 1);
-check("an unknown player counts zero", countSubTenRuns("nobody", boards) === 0);
-check("no boards is safe", countSubTenRuns("polar", {}) === 0);
-check(
-  "a zero or negative time never counts",
-  countSubTenRuns("zero", { a: [entry("zero", 0), entry("zero", -5)] }) === 0,
-);
-
-check(
-  "Sub-10 Club unlocks on the tenth fast run",
-  byId("sub-ten", { ...base, subTenRuns: 10 }).earned,
-);
-check("Sub-10 Club needs ten", !byId("sub-ten", { ...base, subTenRuns: 9 }).earned);
-
-console.log("\nprogress detail");
-const hunter = byId("wr-hunter", { ...base, medals: { ...base.medals!, first: 5 } });
-check("a partial goal reports its fraction", hunter.progress === 0.5, String(hunter.progress));
-check("a partial goal shows the counts", hunter.detail === "5 / 10", hunter.detail);
-const capped = byId("wr-hunter", { ...base, medals: { ...base.medals!, first: 25 } });
-check("progress is capped at 1", capped.progress === 1);
-check("detail does not overshoot the target", capped.detail === "10 / 10", capped.detail);
-
-console.log(`\n${passed} checks passed, ${failed} failed`);
-if (failed > 0) process.exit(1);

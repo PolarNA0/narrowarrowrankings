@@ -27,7 +27,6 @@ import { motion } from "motion/react";
 import { PlayerStats, LevelInfo, RankInfo, LevelRankConfig, LevelPack, ArrowScope } from "../types";
 import { RANK_ORDER, DEFAULT_RANKS } from "../constants";
 import { getLevelDefaultRanks } from "../lib/rankDefaults";
-import { computeNarrowScores } from "../lib/narrowscore";
 import { assignRank } from "../lib/ranking";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +38,7 @@ import { cn, capitalizeName } from "@/lib/utils";
 import { LevelHistoryDetail } from "./LevelHistoryDetail";
 import { ProfileIdentityCard } from "./ProfileIdentityCard";
 import { AchievementsView } from "./AchievementsView";
+import { buildCareers, emptyCareer } from "@/lib/achievements";
 import { PlayerBadges } from "./PlayerBadges";
 import { useOfficialCreators } from "@/hooks/useProfileSummaries";
 import type { LeaderboardEntry, LegacyRun } from "../types";
@@ -56,6 +56,8 @@ interface PlayerProfileProps {
   onBack: () => void;
   onCompare: (username: string) => void;
   onLevelClick: (levelId: string) => void;
+  /** Opens another player's profile (used by the achievement earner lists). */
+  onPlayerClick?: (username: string) => void;
   worldRecords?: { levelId: string; levelName: string; wr: any }[];
   computedMedals?: { first: number; second: number; third: number; top10: number; wrLevelIds: string[] };
   levelStandings?: Record<string, LeaderboardEntry[]>;
@@ -92,6 +94,7 @@ export function PlayerProfile({
   onBack, 
   onCompare, 
   onLevelClick,
+  onPlayerClick,
   worldRecords,
   computedMedals,
   levelStandings,
@@ -467,28 +470,15 @@ export function PlayerProfile({
       });
   }, [levels, stats, packs, rankConfigs, globalRankConfig, rawLevelData, levelStandings, legacyRuns, arrowAchievements]);
 
-  // This player's NarrowScore, recomputed from the same merged boards the
-  // NarrowScore tab uses so the achievement can never disagree with that tab.
-  const narrowScore = useMemo(() => {
-    if (!stats.username || !levelStandings) return null;
-    const target = stats.username.toLowerCase();
-    const board = levels.filter((l) => levelStandings[l.id]?.length);
-    return computeNarrowScores(board, levelStandings).find((s) => s.username.toLowerCase() === target) ?? null;
-  }, [stats.username, levels, levelStandings]);
-
-  // Achievement inputs. Everything here already exists for other parts of the
-  // profile; the sub-10 count is derived inside the view from the merged boards.
-  const achievementInput = useMemo(
-    () => ({
-      medals: computedMedals,
-      levelsCompleted: Object.keys(stats.levels).length,
-      totalLevels: levels.length,
-      score: narrowScore,
-      packsFullyCompleted: packBreakdowns.filter((p) => p.completed === p.levels.length && p.levels.length > 0).length,
-      totalPacks: packBreakdowns.length,
-    }),
-    [computedMedals, stats.levels, levels.length, narrowScore, packBreakdowns],
-  );
+  // The achievement case reads a career summary built from the merged boards,
+  // so it can never disagree with the boards the rest of the profile shows.
+  const career = useMemo(() => {
+    if (!levelStandings) return null;
+    return (
+      buildCareers(levels, packs, levelStandings).get(stats.username.toLowerCase()) ??
+      emptyCareer(stats.username, levels.length, packs.length)
+    );
+  }, [levels, packs, levelStandings, stats.username]);
 
   // Show sub-tabs once there is something to switch between.
   const hasSubtabs = !!extraData || !!aggregateStats || cwrRows.some((r) => r.levelStats);
@@ -911,11 +901,15 @@ export function PlayerProfile({
       )}
 
       {profileTab === 'achievements' ? (
-        <AchievementsView
-          input={achievementInput}
-          data={levelStandings ?? {}}
-          username={stats.username}
-        />
+        career && (
+          <AchievementsView
+            career={career}
+            data={levelStandings ?? {}}
+            levels={levels}
+            packs={packs}
+            onPlayerClick={onPlayerClick}
+          />
+        )
       ) : profileTab === 'cwr' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
           {cwrRows.map((row) => (
