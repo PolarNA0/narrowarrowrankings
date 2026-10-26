@@ -761,6 +761,13 @@ export function strokeTrail(
  * `len`/`halfW` are canvas px *after* the transform, so `pxScale` (the current
  * zoom) must be folded in — otherwise the flame keeps its pixel size while the
  * arrow shrinks and it dwarfs the arrow when zoomed out.
+ *
+ * The plume breathes rather than sitting at a fixed length: a slow flutter
+ * stretches and narrows it, and a faster ripple adds a lateral wag. Both are
+ * pure functions of `tick`, so the offline export reproduces the interactive
+ * view exactly. Frequencies are deliberately low (a few Hz) — a per-tick
+ * oscillation would alias away to a standstill once playback samples it at
+ * 60fps, which is what made the flame read as a static decal.
  */
 export function drawGameThrust(
   ctx: CanvasRenderingContext2D,
@@ -781,15 +788,17 @@ export function drawGameThrust(
   const back = radius * 0.85;
   const ox = x - Math.cos(rot) * back;
   const oy = y - Math.sin(rot) * back;
-  // The flame is not a fixed decal: it grows with the engine's thrust level and
-  // flickers a little every 240Hz tick, so it reads as an engine firing rather
-  // than a shape glued to the arrow. The flicker is a pure function of the tick,
-  // so the offline export reproduces the interactive view exactly.
   const p = Math.max(0, Math.min(1, power));
-  const flicker = 0.9 + 0.1 * (Math.sin(tick * 12.9898) * 0.5 + 0.5);
-  const grow = (0.4 + 0.6 * p) * flicker;
+  // Ticks are 240Hz, so `tick / 240` is seconds. The plume's own pulse is the
+  // dominant motion; the ripple is a lighter, quicker overlay.
+  const secs = tick / 240;
+  const pulse = 0.78 + 0.22 * Math.sin(secs * 17.3);
+  const ripple = 0.9 + 0.1 * Math.sin(secs * 41.1 + 1.3);
+  const grow = (0.4 + 0.6 * p) * pulse * ripple;
   const len = radius * 2.6 * pxScale * grow;
   const halfW = radius * 0.7 * pxScale * grow;
+  // The flame leans and wobbles a little, like a real exhaust plume.
+  const wag = Math.sin(secs * 23.7) * radius * 0.18 * pxScale * grow;
   ctx.save();
   ctx.translate(tx(ox), ty(oy));
   ctx.rotate(rot + Math.PI);
@@ -801,7 +810,8 @@ export function drawGameThrust(
     ctx.globalAlpha = 0.85;
     ctx.beginPath();
     ctx.moveTo(0, -halfW * f);
-    ctx.lineTo(len * f, 0);
+    // The tip drifts across the axis so the plume wags instead of pointing dead straight.
+    ctx.lineTo(len * f, wag * f);
     ctx.lineTo(0, halfW * f);
     ctx.closePath();
     ctx.fill();
