@@ -21,6 +21,7 @@ import {
   drawGameThrust,
   drawInputIndicator,
   paintForceFields,
+  paintGripZones,
   paintSiteMechanics,
   paintTriggers,
   paintWalls,
@@ -316,6 +317,9 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
           fieldParticles,
           performance.now() / 1000,
         );
+      }
+      if (s.geometry.gripZones && s.geometry.gripZones.length > 0) {
+        paintGripZones(ctx, s.geometry.gripZones, { tx, ty, scale, mode: s.mode, view });
       }
       if (s.geometry.triggers && s.geometry.triggers.length > 0) {
         paintTriggers(ctx, s.geometry.triggers, { tx, ty, scale, mode: s.mode, view });

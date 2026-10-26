@@ -173,6 +173,22 @@ export interface ForceField {
 }
 
 /**
+ * A grip zone (site-only): a polygon the arrow flies into where it turns far
+ * tighter and slides less. The engine cannot express this — it has no
+ * friction/grip zone, and an unknown `zone_type` is silently ignored — so the
+ * sim swaps the player's constants while the arrow is inside and rebuilds the
+ * engine (the same continuous-rebuild trick as the force fields).
+ */
+export interface GripZone {
+  /** The zone's polygon, in world units. */
+  points: Array<{ x: number; y: number }>;
+  /** Multiplier on the arrow's `turning_speed` inside the zone. */
+  multiplier: number;
+  /** Multiplier on the arrow's `traction_power` inside the zone. */
+  traction: number;
+}
+
+/**
  * An accelerator wire: a one-shot trigger the arrow crosses (segment
  * intersection against the previous tick's position, so a fast arrow cannot
  * tunnel through it). Crossing it arms a charge that thrusts the arrow along
@@ -329,6 +345,8 @@ export interface SimGeometry {
   portals: SimPortal[];
   /** Site-only wind/suction fields, drawn as faint white areas with particles. */
   forceFields?: ForceField[];
+  /** Site-only grip zones, drawn as hatched high-friction areas. */
+  gripZones?: GripZone[];
   /** Site-only accelerator wires, drawn as thin charged lines. */
   triggers?: SimTrigger[];
   /** Site-only moving blocks, drawn at their current-tick offset. */
@@ -400,6 +418,15 @@ export interface RawLevelData {
     accelerator_speed?: number;
     accelerator_accel?: number;
     /**
+     * Site-only grip zone. While the arrow is inside the polygon the sim scales
+     * the player's `turning_speed` by `grip_multiplier` and `traction_power` by
+     * `grip_traction`, then rebuilds the engine — a high-friction surface. The
+     * engine has no grip zone (an unknown `zone_type` is silently ignored), so
+     * this is applied here and stripped from the game export.
+     */
+    grip_multiplier?: number;
+    grip_traction?: number;
+    /**
      * Site-only switch/door. A `switch` obstacle is a sensor polygon carrying a
      * `switch_group` and a `switch_action` ("toggle" | "on" | "off"); a `door`
      * wall carries the same `switch_group` and a `door_start_open` flag. The sim
@@ -443,6 +470,7 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
   const zones: SimZone[] = [];
   const portals: SimPortal[] = [];
   const forceFields: ForceField[] = [];
+  const gripZones: GripZone[] = [];
   const triggers: SimTrigger[] = [];
   const obstacles = data?.obstacles ?? [];
   const motionByObstacle = new Map<number, number>();
@@ -544,6 +572,20 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
   for (let obstacleIndex = 0; obstacleIndex < obstacles.length; obstacleIndex++) {
     const obstacle = obstacles[obstacleIndex];
     const pts = obstacle.points ?? [];
+
+    // Site-only grip zones are neither walls nor zones: the sim swaps the
+    // player's constants while the arrow is inside, so they must never be
+    // emitted as an engine obstacle.
+    if (isGripZone(obstacle)) {
+      const valid = pts.filter((p): p is { x: number; y: number } => p?.x != null && p?.y != null);
+      if (valid.length < 3) continue;
+      gripZones.push({
+        points: valid.map((p) => ({ x: p.x, y: p.y })),
+        multiplier: isFiniteNum(obstacle.grip_multiplier) ? obstacle.grip_multiplier : 1,
+        traction: isFiniteNum(obstacle.grip_traction) ? obstacle.grip_traction : 1,
+      });
+      continue;
+    }
 
     // Site-only force fields are neither walls nor zones: they push/pull the
     // arrow and are applied by the simulation layer, so they must never be
@@ -682,6 +724,7 @@ export function levelGeometry(data: RawLevelData | null | undefined): SimGeometr
     zones,
     portals,
     forceFields,
+    gripZones: gripZones.length > 0 ? gripZones : undefined,
     triggers,
     movingBlocks: levelMotions(data),
     doors,
@@ -760,6 +803,15 @@ function isFiniteNum(v: unknown): v is number {
 }
 
 /** True for a site-only wind/suction field obstacle (not an engine obstacle). */
+/** True for a site-only grip zone (a high-friction surface the engine cannot express). */
+export function isGripZone(o: {
+  obstacle_type?: string;
+  field_type?: string;
+  zone_type?: string;
+}): boolean {
+  return o.obstacle_type === "grip";
+}
+
 export function isForceField(o: {
   field_type?: string;
   zone_type?: string;
@@ -855,7 +907,7 @@ export function isNonEngineObstacle(o: {
   accelerator_accel?: number;
   switch_action?: string;
 }): boolean {
-  return isForceField(o) || isAcceleratorTrigger(o) || isSwitchObstacle(o);
+  return isForceField(o) || isGripZone(o) || isAcceleratorTrigger(o) || isSwitchObstacle(o);
 }
 
 /**
@@ -1057,6 +1109,8 @@ interface EnginePlayerState {
     thrust_power?: number;
     /** Velocity in world units/tick; force fields add to this per tick. */
     velocity?: { x: number; y: number; r?: number };
+    /** The player's physics constants; a grip zone scales two of them. */
+    constants?: Record<string, number>;
   };
 }
 
@@ -1172,9 +1226,15 @@ export async function createReplayEngine(
     map_name: data.map_name ?? "",
     obstacles: engineObstacles(data),
   };
+  // The arrow's own constants, captured once so a grip zone scales from a fixed
+  // baseline rather than compounding on its own last write.
+  const stockConstants = {
+    ...base.player.constants,
+    ...arrowConstants(arrowName),
+  } as typeof base.player.constants;
   const player = {
     ...base.player,
-    constants: { ...base.player.constants, ...arrowConstants(arrowName) },
+    constants: { ...stockConstants },
   };
   const state = () => ({ player, map: map as unknown as ApiMap, ticks: 0, effects: base.effects });
 
@@ -1231,6 +1291,8 @@ export async function createReplayEngine(
   const geom = levelGeometry(data);
   const fields = geom.forceFields ?? [];
   const hasFields = fields.length > 0;
+  const grips = geom.gripZones ?? [];
+  const hasGrips = grips.length > 0;
   const triggers = geom.triggers ?? [];
   const hasTriggers = triggers.length > 0;
 
@@ -1420,6 +1482,47 @@ export async function createReplayEngine(
     wire = { armed: false, dirX: 0, dirY: 0, targetSpeed: 0, accel: 0 };
   };
 
+  /**
+   * The grip multipliers of every zone the arrow is currently inside. Zones do
+   * not stack additively — the strongest wins on each axis — so an overlap is
+   * predictable rather than compounding into a spin.
+   */
+  const gripAt = (x: number, y: number): { multiplier: number; traction: number } => {
+    let multiplier = 1;
+    let traction = 1;
+    for (const g of grips) {
+      if (!pointInPolygon(x, y, g.points)) continue;
+      if (g.multiplier > multiplier) multiplier = g.multiplier;
+      if (g.traction > traction) traction = g.traction;
+    }
+    return { multiplier, traction };
+  };
+
+  /**
+   * Apply the grip zone at the arrow's current pose. The engine has no grip
+   * zone, so this rebuilds it with the player's `turning_speed` and
+   * `traction_power` scaled — the same continuous-rebuild trick as the force
+   * fields. Only two constants change, so the pose is unaffected at the swap.
+   */
+  const applyGrip = (): void => {
+    const s = JSON.parse(engine.state) as EnginePlayerState;
+    const { multiplier, traction } = gripAt(s.player.translation.x, s.player.translation.y);
+    const want = {
+      turning_speed: (stockConstants.turning_speed ?? 0) * multiplier,
+      traction_power: (stockConstants.traction_power ?? 0) * traction,
+    };
+    const cur = s.player.constants ?? stockConstants;
+    // Compare against the desired values rather than tracking "inside" in a
+    // flag: a restored checkpoint carries whatever constants it was saved with,
+    // so the current state is the only reliable source of truth.
+    if (cur.turning_speed === want.turning_speed && cur.traction_power === want.traction_power) {
+      return;
+    }
+    s.player.constants = { ...cur, ...want };
+    engine.free();
+    engine = new mod.GameMechanicsEngine(s as never);
+  };
+
   /** Apply the fields' force at the arrow's current pose, if any apply. */
   const applyFields = (): void => {
     const s = JSON.parse(engine.state) as EnginePlayerState;
@@ -1539,6 +1642,7 @@ export async function createReplayEngine(
           applyTriggers(before.x, before.y, engine.get_ticks());
         if (hasMotions || hasPointRewrites) applyGeometry(engine.get_ticks());
         if (hasFields) applyFields();
+        if (hasGrips) applyGrip();
         if (hasTriggers && before) {
           armWire(before.x, before.y);
           applyWire(symbol);
@@ -1555,6 +1659,7 @@ export async function createReplayEngine(
           applyTriggers(before.x, before.y, engine.get_ticks());
         if (hasMotions || hasPointRewrites) applyGeometry(engine.get_ticks());
         if (hasFields) applyFields();
+        if (hasGrips) applyGrip();
         if (hasTriggers && before) {
           armWire(before.x, before.y);
           applyWire(symbol);

@@ -209,7 +209,7 @@ export function SiteLevelsView({
           </h2>
           <p className="text-slate-500 text-sm">
             Community levels built with the Level editor and hosted here — including ones that use
-            the site-only wind and suction fields. Play them, or race the leaderboard.
+            the site-only custom mechanics (wind, suction, grip zones and puzzle parts). Play them, or race the leaderboard.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
@@ -251,7 +251,7 @@ export function SiteLevelsView({
               {level.hasCustomMechanics && (
                 <span
                   className="shrink-0 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-300 flex items-center gap-1"
-                  title="Uses site-only wind/suction fields"
+                  title="Uses site-only custom mechanics (wind, suction, grip, puzzle parts)"
                 >
                   <Wind className="w-3 h-3" /> custom
                 </span>

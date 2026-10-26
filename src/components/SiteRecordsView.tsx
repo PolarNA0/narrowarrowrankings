@@ -116,7 +116,7 @@ export function SiteRecordsView({ onPlay, onOpenLevels }: SiteRecordsViewProps) 
                         {r.hasCustomMechanics && (
                           <span
                             className="shrink-0 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] text-cyan-300 flex items-center gap-1"
-                            title="Uses site-only wind/suction fields"
+                            title="Uses site-only custom mechanics (wind, suction, grip, puzzle parts)"
                           >
                             <Wind className="w-2.5 h-2.5" /> custom
                           </span>

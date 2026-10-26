@@ -14,9 +14,11 @@
 
 import * as React from "react";
 import { wallVisual, withAlpha } from "@/lib/replay-visuals";
-import { paintForceFields, type FieldParticle } from "@/lib/replay-paint";
+import { paintForceFields, paintGripZones, type FieldParticle } from "@/lib/replay-paint";
 import {
   DEFAULT_BLINK_DUTY,
+  DEFAULT_GRIP_MULTIPLIER,
+  DEFAULT_GRIP_TRACTION,
   DEFAULT_BLINK_PERIOD,
   DEFAULT_SWITCH_GROUP,
   defaultObstacle,
@@ -35,6 +37,7 @@ export type EditorTool =
   | "portal"
   | "wind"
   | "suction"
+  | "grip"
   | "accelerator"
   | "switch"
   | "door"
@@ -60,6 +63,10 @@ export interface LevelEditorCanvasProps {
   fieldDirection: number;
   /** Strength (velocity/tick) of a newly drawn field. */
   fieldStrength: number;
+  /** Turning-speed multiplier of a newly drawn grip zone. */
+  gripMultiplier?: number;
+  /** Traction multiplier of a newly drawn grip zone. */
+  gripTraction?: number;
   /** Target speed (velocity/tick) of a newly drawn accelerator wire. */
   acceleratorSpeed: number;
   /** Push (velocity/tick) of a newly drawn accelerator wire. */
@@ -129,6 +136,8 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       zoneType,
       fieldDirection,
       fieldStrength,
+      gripMultiplier = DEFAULT_GRIP_MULTIPLIER,
+      gripTraction = DEFAULT_GRIP_TRACTION,
       acceleratorSpeed,
       acceleratorAccel,
       switchGroup = DEFAULT_SWITCH_GROUP,
@@ -155,6 +164,8 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       zoneType,
       fieldDirection,
       fieldStrength,
+      gripMultiplier,
+      gripTraction,
       acceleratorSpeed,
       acceleratorAccel,
       switchGroup,
@@ -172,6 +183,8 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       zoneType,
       fieldDirection,
       fieldStrength,
+      gripMultiplier,
+      gripTraction,
       acceleratorSpeed,
       acceleratorAccel,
       switchGroup,
@@ -258,6 +271,41 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         // Wind/suction fields share the "faint white area with particles"
         // look with the replay renderer, so the editor previews exactly what
         // test-play and Play will show.
+        // Grip zones preview with the same painter the game uses, so the
+        // editor, test-play and Play all show the same surface.
+        if (o.kind === "grip") {
+          paintGripZones(
+            ctx,
+            [
+              {
+                points: o.points,
+                multiplier: o.gripMultiplier ?? 1,
+                traction: o.gripTraction ?? 1,
+              },
+            ],
+            {
+              tx: (x) => (x - cam.x) * cam.scale + view.current.width / 2,
+              ty: (y) => (y - cam.y) * cam.scale + view.current.height / 2,
+              scale: cam.scale,
+              mode: "lines",
+            },
+          );
+          if (selected) {
+            ctx.save();
+            ctx.strokeStyle = "#38bdf8";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            o.points.forEach((p, i) => {
+              const sp = toScreen(p);
+              if (i === 0) ctx.moveTo(sp.x, sp.y);
+              else ctx.lineTo(sp.x, sp.y);
+            });
+            ctx.closePath();
+            ctx.stroke();
+            ctx.restore();
+          }
+          return;
+        }
         if (o.kind === "wind" || o.kind === "suction") {
           paintForceFields(
             ctx,
@@ -563,7 +611,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         ctx.fillStyle = "rgba(56,189,248,0.2)";
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 4]);
-        if (t === "zone" || t === "wind" || t === "suction" || t === "switch") {
+        if (t === "zone" || t === "wind" || t === "suction" || t === "grip" || t === "switch") {
           ctx.beginPath();
           ctx.rect(pts[0].x, pts[0].y, cur.x - pts[0].x, cur.y - pts[0].y);
           ctx.fill();
@@ -854,6 +902,8 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         zoneType: zt,
         fieldDirection: fd,
         fieldStrength: fs,
+        gripMultiplier: gm,
+        gripTraction: gt,
         acceleratorSpeed: as,
         acceleratorAccel: aa,
         switchGroup: sg,
@@ -867,7 +917,7 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
       const moved = Math.hypot(end.x - start.x, end.y - start.y) > 8;
       const round = (p: NalvlPoint) => snapWorld({ x: Math.round(p.x), y: Math.round(p.y) });
       const lvl = propsRef.current.level;
-      if (t === "zone" || t === "wind" || t === "suction") {
+      if (t === "zone" || t === "wind" || t === "suction" || t === "grip") {
         if (!moved) {
           draw();
           return;
@@ -881,11 +931,13 @@ export const LevelEditorCanvas = React.forwardRef<LevelEditorCanvasHandle, Level
         const o =
           t === "zone"
             ? { ...defaultObstacle("zone", pts), zoneType: zt }
-            : {
-                ...defaultObstacle(t, pts),
-                fieldDirection: fd,
-                fieldStrength: fs,
-              };
+            : t === "grip"
+              ? { ...defaultObstacle("grip", pts), gripMultiplier: gm, gripTraction: gt }
+              : {
+                  ...defaultObstacle(t, pts),
+                  fieldDirection: fd,
+                  fieldStrength: fs,
+                };
         onSelect([o.id]);
         onChange({ ...lvl, obstacles: [...lvl.obstacles, o] });
       } else if (t === "switch") {

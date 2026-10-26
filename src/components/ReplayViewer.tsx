@@ -77,6 +77,7 @@ import {
 import {
   drawGameThrust,
   paintForceFields,
+  paintGripZones,
   paintSiteMechanics,
   paintTriggers,
   paintWalls,
@@ -946,14 +947,11 @@ export function ReplayStage({
     }));
     const paintFieldsLocal = (g: CanvasRenderingContext2D) => {
       const fields = geometry.forceFields;
-      if (!fields || fields.length === 0) return;
-      paintForceFields(
-        g,
-        fields,
-        { tx, ty, scale, mode },
-        fieldParticles,
-        performance.now() / 1000,
-      );
+      if (fields && fields.length > 0) {
+        paintForceFields(g, fields, { tx, ty, scale, mode }, fieldParticles, performance.now() / 1000);
+      }
+      const grips = geometry.gripZones;
+      if (grips && grips.length > 0) paintGripZones(g, grips, { tx, ty, scale, mode });
     };
 
     /** Site-only accelerator wires; static, so they bake onto the base layer. */

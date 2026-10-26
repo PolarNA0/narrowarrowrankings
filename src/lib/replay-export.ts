@@ -24,6 +24,7 @@ import {
   drawInputIndicator,
   drawSprite,
   paintForceFields,
+  paintGripZones,
   paintSiteMechanics,
   paintWalls,
   paintTriggers,
@@ -523,6 +524,9 @@ function renderScene(
   // the interactive stage. The particle drift is a function of the clip's own
   // time (`frame` ticks → seconds), so the field animates and the export is
   // reproducible frame for frame.
+  if (geometry.gripZones && geometry.gripZones.length > 0) {
+    paintGripZones(ctx, geometry.gripZones, pc);
+  }
   if (geometry.forceFields && geometry.forceFields.length > 0) {
     paintForceFields(ctx, geometry.forceFields, pc, EXPORT_FIELD_PARTICLES, frame / 240);
   }

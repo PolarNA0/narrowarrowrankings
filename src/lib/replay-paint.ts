@@ -23,6 +23,7 @@ import {
 } from "@/lib/replay-render";
 import type {
   ForceField,
+  GripZone,
   SimGeometry,
   SimMotion,
   SimPortal,
@@ -422,6 +423,73 @@ export function paintForceFields(
         ctx.fill();
       }
     }
+    ctx.restore();
+  }
+}
+
+/**
+ * Site-only grip zones: high-friction surfaces the arrow turns far tighter on.
+ * Deliberately not the wind/suction look (a faint white area with drifting
+ * particles) — grip is a surface, so it reads as a dense amber hatch with a
+ * solid border. Amber is otherwise unused in the level palette, so a grip zone
+ * is never confused with a boost or an ice zone.
+ */
+export function paintGripZones(ctx: CanvasRenderingContext2D, zones: GripZone[], pc: PaintCtx) {
+  const { tx, ty } = pc;
+  for (const z of zones) {
+    const pts = z.points;
+    if (pts.length < 3) continue;
+
+    const trace = () => {
+      ctx.beginPath();
+      pts.forEach((p, i) => {
+        const X = tx(p.x);
+        const Y = ty(p.y);
+        if (i === 0) ctx.moveTo(X, Y);
+        else ctx.lineTo(X, Y);
+      });
+      ctx.closePath();
+    };
+
+    ctx.save();
+    // Warm fill, so the surface reads as "grippy" rather than as empty space.
+    trace();
+    ctx.fillStyle = "rgba(251,191,36,0.10)";
+    ctx.fill();
+
+    // A 45-degree hatch, clipped to the polygon. Spacing is in world units so
+    // the texture stays put while the camera zooms instead of crawling.
+    trace();
+    ctx.clip();
+    const stepWorld = 14;
+    const b = pts.reduce(
+      (acc, p) => ({
+        minX: Math.min(acc.minX, p.x), maxX: Math.max(acc.maxX, p.x),
+        minY: Math.min(acc.minY, p.y), maxY: Math.max(acc.maxY, p.y),
+      }),
+      { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
+    );
+    const diag = Math.hypot(b.maxX - b.minX, b.maxY - b.minY);
+    const n = Math.ceil(diag / stepWorld) + 2;
+    ctx.strokeStyle = "rgba(251,191,36,0.22)";
+    ctx.lineWidth = 1;
+    for (let i = -n; i <= n; i++) {
+      // Lines of slope +1 across the bounding box: (minX + t, minY - t).
+      const x0 = b.minX + i * stepWorld;
+      ctx.beginPath();
+      ctx.moveTo(tx(x0), ty(b.minY));
+      ctx.lineTo(tx(x0 + (b.maxY - b.minY)), ty(b.maxY));
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Solid border, drawn last so the hatch never crosses it.
+    ctx.save();
+    trace();
+    ctx.strokeStyle = "rgba(251,191,36,0.65)";
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash([7, 4]);
+    ctx.stroke();
     ctx.restore();
   }
 }

@@ -42,6 +42,7 @@ import {
   ArrowLeftRight,
   Timer,
   Hammer,
+  Grip,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,8 @@ import {
   NALVL_ZONE_TYPES,
   DEFAULT_FIELD_DIRECTION,
   DEFAULT_FIELD_STRENGTH,
+  DEFAULT_GRIP_MULTIPLIER,
+  DEFAULT_GRIP_TRACTION,
   DEFAULT_ACCELERATOR_SPEED,
   DEFAULT_ACCELERATOR_ACCEL,
   DEFAULT_SWITCH_GROUP,
@@ -116,6 +119,8 @@ export function LevelEditorView({
   const [zoneType, setZoneType] = React.useState<NalvlZoneType>("boost");
   const [fieldDirection, setFieldDirection] = React.useState(DEFAULT_FIELD_DIRECTION);
   const [fieldStrength, setFieldStrength] = React.useState(DEFAULT_FIELD_STRENGTH);
+  const [gripMultiplier, setGripMultiplier] = React.useState(DEFAULT_GRIP_MULTIPLIER);
+  const [gripTraction, setGripTraction] = React.useState(DEFAULT_GRIP_TRACTION);
   const [acceleratorSpeed, setAcceleratorSpeed] = React.useState(DEFAULT_ACCELERATOR_SPEED);
   const [acceleratorAccel, setAcceleratorAccel] = React.useState(DEFAULT_ACCELERATOR_ACCEL);
   const [switchGroup, setSwitchGroup] = React.useState(DEFAULT_SWITCH_GROUP);
@@ -435,6 +440,8 @@ export function LevelEditorView({
           zoneType={zoneType}
           fieldDirection={fieldDirection}
           fieldStrength={fieldStrength}
+          gripMultiplier={gripMultiplier}
+          gripTraction={gripTraction}
           acceleratorSpeed={acceleratorSpeed}
           acceleratorAccel={acceleratorAccel}
           switchGroup={switchGroup}
@@ -480,6 +487,7 @@ export function LevelEditorView({
     { id: "portal", icon: <DoorOpen className="w-4 h-4" />, label: "Portal" },
     { id: "wind", icon: <Wind className="w-4 h-4" />, label: "Wind (site-only)" },
     { id: "suction", icon: <Magnet className="w-4 h-4" />, label: "Suction (site-only)" },
+    { id: "grip", icon: <Grip className="w-4 h-4" />, label: "Grip zone (site-only)" },
     { id: "accelerator", icon: <Zap className="w-4 h-4" />, label: "Accelerator wire (site-only)" },
     { id: "switch", icon: <ToggleLeft className="w-4 h-4" />, label: "Switch (site-only)" },
     { id: "door", icon: <DoorClosed className="w-4 h-4" />, label: "Door (site-only)" },
@@ -588,6 +596,37 @@ export function LevelEditorView({
                 <p className="text-[11px] text-slate-500">
                   Site-only: the game&apos;s engine has no force fields, so wind and suction are
                   stripped from the game export but simulated here.
+                </p>
+              </div>
+            )}
+            {tool === "grip" && (
+              <div className="space-y-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Turn multiplier</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    value={gripMultiplier}
+                    onChange={(e) => setGripMultiplier(Number(e.target.value))}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Traction multiplier</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    value={gripTraction}
+                    onChange={(e) => setGripTraction(Number(e.target.value))}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Site-only high-friction surface: inside it the arrow turns far tighter. The
+                  response is superlinear, so 2x on the turn multiplier is already a very tight
+                  arc. Stripped from a game export.
                 </p>
               </div>
             )}
@@ -1109,6 +1148,35 @@ export function LevelEditorView({
                   </div>
                   <p className="text-[11px] text-slate-500">
                     Site-only force field: simulated here, stripped from the game export.
+                  </p>
+                </>
+              )}
+              {selected.kind === "grip" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Turn multiplier</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="1"
+                      value={selected.gripMultiplier ?? DEFAULT_GRIP_MULTIPLIER}
+                      onChange={(e) => updateSelected({ gripMultiplier: Number(e.target.value) })}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Traction multiplier</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="1"
+                      value={selected.gripTraction ?? DEFAULT_GRIP_TRACTION}
+                      onChange={(e) => updateSelected({ gripTraction: Number(e.target.value) })}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Site-only grip zone: simulated here, stripped from the game export.
                   </p>
                 </>
               )}

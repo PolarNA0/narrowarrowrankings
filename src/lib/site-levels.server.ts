@@ -248,6 +248,7 @@ function summarize(
       (o) =>
         o.field_type === "wind" ||
         o.field_type === "suction" ||
+        o.obstacle_type === "grip" ||
         (Number.isFinite(Number(o.accelerator_speed)) && Number(o.accelerator_speed) > 0) ||
         typeof o.switch_group === "string" ||
         o.gate_normal != null ||

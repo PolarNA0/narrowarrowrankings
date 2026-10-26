@@ -67,6 +67,7 @@ export type NalvlKind =
   | "portal"
   | "wind"
   | "suction"
+  | "grip"
   | "accelerator"
   | "switch"
   | "door"
@@ -103,6 +104,7 @@ export function isWallLikePuzzleKind(kind: NalvlKind): boolean {
 export const NALVL_SITE_ONLY_KINDS: NalvlKind[] = [
   "wind",
   "suction",
+  "grip",
   "accelerator",
   "switch",
   "door",
@@ -120,6 +122,15 @@ export function isSiteOnlyKind(kind: NalvlKind): boolean {
 export const DEFAULT_FIELD_DIRECTION = 0;
 /** Default field strength in world units per 240Hz tick (0.05 ≈ 12 units/s). */
 export const DEFAULT_FIELD_STRENGTH = 0.05;
+/**
+ * Default grip-zone multiplier applied to the arrow's `turning_speed` while it
+ * is inside the zone. 2 is the measured sweet spot: a 180-degree turn drops
+ * from ~1.07s to ~0.63s, and the arrow bleeds speed for it (0.55 -> 0.28),
+ * which is what makes a tight surface a trade rather than a free upgrade.
+ */
+export const DEFAULT_GRIP_MULTIPLIER = 2;
+/** Default grip-zone traction multiplier (how hard the arrow is pulled onto its heading). */
+export const DEFAULT_GRIP_TRACTION = 1;
 /** Default accelerator target speed, in world units per 240Hz tick. */
 export const DEFAULT_ACCELERATOR_SPEED = 1.5;
 /** Default accelerator push, in world units per tick. */
@@ -159,6 +170,15 @@ export interface NalvlObstacle {
   motionDx?: number;
   motionDy?: number;
   motionPeriod?: number;
+  /**
+   * Grip zone (site-only). While the arrow is inside the polygon its
+   * `turning_speed` is scaled by `gripMultiplier` and its `traction_power` by
+   * `gripTraction`, so it turns far tighter and slides less — a high-friction
+   * surface. The game's engine has no such zone (an unknown `zone_type` is
+   * silently ignored), so this is simulated here and stripped from the export.
+   */
+  gripMultiplier?: number;
+  gripTraction?: number;
   portalId?: string;
   side?: string;
   speed?: number;
@@ -235,6 +255,13 @@ export function defaultObstacle(kind: NalvlKind, points: NalvlPoint[]): NalvlObs
       ...base,
       fieldDirection: DEFAULT_FIELD_DIRECTION,
       fieldStrength: DEFAULT_FIELD_STRENGTH,
+    };
+  }
+  if (kind === "grip") {
+    return {
+      ...base,
+      gripMultiplier: DEFAULT_GRIP_MULTIPLIER,
+      gripTraction: DEFAULT_GRIP_TRACTION,
     };
   }
   if (kind === "accelerator") {
@@ -352,6 +379,17 @@ export function nalvlToRawLevelData(level: NalvlLevel): RawLevelData {
       field_strength: isNum(o.fieldStrength) ? o.fieldStrength : DEFAULT_FIELD_STRENGTH,
       points: o.points.map((p) => ({ x: p.x, y: p.y })),
     }));
+  // Grip zones are site-only and never reach the engine (an unknown zone_type
+  // is silently ignored there anyway), so they ride as a stripped obstacle the
+  // sim layer reads, exactly like a force field.
+  const grips: NonNullable<RawLevelData["obstacles"]> = level.obstacles
+    .filter((o) => o.kind === "grip")
+    .map((o) => ({
+      obstacle_type: "grip",
+      points: o.points.map((p) => ({ x: p.x, y: p.y })),
+      grip_multiplier: isNum(o.gripMultiplier) ? o.gripMultiplier : DEFAULT_GRIP_MULTIPLIER,
+      grip_traction: isNum(o.gripTraction) ? o.gripTraction : DEFAULT_GRIP_TRACTION,
+    }));
   const triggers: NonNullable<RawLevelData["obstacles"]> = level.obstacles
     .filter((o) => o.kind === "accelerator")
     .map((o) => ({
@@ -409,7 +447,7 @@ export function nalvlToRawLevelData(level: NalvlLevel): RawLevelData {
       }
       return { ...wall, breakable: true };
     });
-  return { ...data, obstacles: [...obstacles, ...fields, ...triggers, ...puzzle] };
+  return { ...data, obstacles: [...obstacles, ...fields, ...grips, ...triggers, ...puzzle] };
 }
 
 /**
@@ -495,6 +533,16 @@ export function rawLevelDataToNalvl(data: RawLevelData, name?: string): NalvlLev
   for (const o of data.obstacles ?? []) {
     const points = cleanPoints(o.points);
     if (points.length === 0) continue;
+    if (o.obstacle_type === "grip") {
+      obstacles.push({
+        id: nextObstacleId(),
+        kind: "grip",
+        points,
+        gripMultiplier: isNum(o.grip_multiplier) ? o.grip_multiplier : DEFAULT_GRIP_MULTIPLIER,
+        gripTraction: isNum(o.grip_traction) ? o.grip_traction : DEFAULT_GRIP_TRACTION,
+      });
+      continue;
+    }
     if (o.field_type === "wind" || o.field_type === "suction") {
       obstacles.push({
         id: nextObstacleId(),
