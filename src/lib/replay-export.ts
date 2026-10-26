@@ -578,7 +578,6 @@ function renderScene(
         tx,
         ty,
         point.thrustPower ?? 1,
-        upto,
       );
     }
     if (mode === "game") {

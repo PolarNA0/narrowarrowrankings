@@ -933,8 +933,7 @@ export function ReplayStage({
       rot: number,
       radius: number,
       power: number,
-      tick: number,
-    ) => drawGameThrust(g, kind, x, y, rot, radius, scale, tx, ty, power, tick);
+    ) => drawGameThrust(g, kind, x, y, rot, radius, scale, tx, ty, power);
 
     const paintWallsLocal = (g: CanvasRenderingContext2D, walls: SimWall[], tick: number) =>
       paintWalls(g, walls, tick, { tx, ty, scale, mode, motions: geometry.movingBlocks });
@@ -1103,7 +1102,6 @@ export function ReplayStage({
             point.rot,
             arrowRadius,
             point.thrustPower ?? 1,
-            upto,
           );
         }
         ctx.save();

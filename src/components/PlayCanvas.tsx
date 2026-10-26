@@ -404,7 +404,6 @@ export const PlayCanvas = React.forwardRef<PlayCanvasHandle, PlayCanvasProps>(fu
         tx,
         ty,
         p.thrustPower ?? 0,
-        tick,
       );
       // The arrow's collision circle, drawn faintly under the sprite in game
       // mode so the true hitbox is visible (matches the replay stage).
