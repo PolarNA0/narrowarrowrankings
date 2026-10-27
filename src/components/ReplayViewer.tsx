@@ -8,6 +8,7 @@ import {
   RotateCcw,
   ChevronDown,
   SlidersHorizontal,
+  Hand,
   Flag,
 } from "lucide-react";
 import {
@@ -76,6 +77,7 @@ import {
 } from "@/lib/replay-render";
 import {
   drawGameThrust,
+  drawTouchOverlay,
   paintForceFields,
   paintGripZones,
   paintSiteMechanics,
@@ -650,6 +652,13 @@ interface StageProps {
    * breakables are drawn from it so a scrub shows the true state at each tick.
    */
   timeline?: SiteTimeline;
+  /**
+   * Offer the touch-control overlay. Only meaningful for a run played on the
+   * site's own touch controls, since the overlay is derived from the recorded
+   * input symbol (see {@link drawTouchOverlay}); it is a view of the control
+   * scheme, not a record of where a finger actually landed.
+   */
+  allowTouch?: boolean;
 }
 
 /** "lines" is the schematic stroke look; "game" mirrors the real game's render. */
@@ -693,10 +702,13 @@ export function ReplayStage({
   drawnPath,
   drawColor = "var(--app-accent)",
   timeline,
+  allowTouch = false,
 }: StageProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   // How the stage draws: the schematic line look, or a render matching the game.
   const [mode, setMode] = React.useState<ReplayRenderMode>("lines");
+  // Touch overlay, off by default so it never obscures a run unasked.
+  const [showTouch, setShowTouch] = React.useState(false);
   // Camera state for "game" mode; a ref so the draw effect reads it without
   // re-running on every settings change (the frame effect repaints anyway).
   const [cameraSettings, setCameraSettings] = React.useState<CameraSettings>(DEFAULT_GAME_CAMERA);
@@ -947,7 +959,13 @@ export function ReplayStage({
     const paintFieldsLocal = (g: CanvasRenderingContext2D) => {
       const fields = geometry.forceFields;
       if (fields && fields.length > 0) {
-        paintForceFields(g, fields, { tx, ty, scale, mode }, fieldParticles, performance.now() / 1000);
+        paintForceFields(
+          g,
+          fields,
+          { tx, ty, scale, mode },
+          fieldParticles,
+          performance.now() / 1000,
+        );
       }
       const grips = geometry.gripZones;
       if (grips && grips.length > 0) paintGripZones(g, grips, { tx, ty, scale, mode });
@@ -1131,6 +1149,12 @@ export function ReplayStage({
           ctx.font = "bold 11px ui-monospace, monospace";
           ctx.fillText("FINISH", 10, 18);
         }
+        // The overlay is a screen-space HUD, so it must be drawn in CSS px, not
+        // under the moving camera transform.
+        if (allowTouch && showTouch) {
+          vector();
+          drawTouchOverlay(ctx, point?.input, width, HEIGHT);
+        }
         return;
       }
 
@@ -1263,6 +1287,11 @@ export function ReplayStage({
         ctx.fillText("FINISH", 10, 18);
       }
 
+      if (allowTouch && showTouch) {
+        vector();
+        drawTouchOverlay(ctx, sim.path[upto]?.input, width, HEIGHT);
+      }
+
       // A drawn route is overlaid last so it sits above the walls and trail.
       const stroke = drawPathRef.current;
       if (stroke && stroke.length > 1) {
@@ -1315,7 +1344,20 @@ export function ReplayStage({
     return () => ro.disconnect();
     // `frame` is not a dependency: `draw` reads it through `frameRef` so the
     // static layer and world bounds are not rebuilt on every frame.
-  }, [sim, geometry, bodyColor, trail, thrust, arrow, arrowRadius, overlays, mode, timeline]);
+  }, [
+    sim,
+    geometry,
+    bodyColor,
+    trail,
+    thrust,
+    arrow,
+    arrowRadius,
+    overlays,
+    mode,
+    timeline,
+    allowTouch,
+    showTouch,
+  ]);
 
   // Repaint on every external frame change (scrub, restart, or the settled
   // frame reported after playback) and resync the live ref and readouts to it.
@@ -1404,18 +1446,36 @@ export function ReplayStage({
             </SelectContent>
           </Select>
         </div>
-        {mode === "game" && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 text-xs text-slate-300 hover:text-slate-100"
-            onClick={() => setShowCamera((v) => !v)}
-            aria-expanded={showCamera}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            Camera
-          </Button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {allowTouch && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "h-7 gap-1.5 text-xs",
+                showTouch ? "text-slate-100" : "text-slate-400 hover:text-slate-200",
+              )}
+              onClick={() => setShowTouch((v) => !v)}
+              aria-pressed={showTouch}
+              title="Show the site's two touch zones, with the hand number lit while held"
+            >
+              <Hand className="w-3.5 h-3.5" />
+              Touch
+            </Button>
+          )}
+          {mode === "game" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 text-xs text-slate-300 hover:text-slate-100"
+              onClick={() => setShowCamera((v) => !v)}
+              aria-expanded={showCamera}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Camera
+            </Button>
+          )}
+        </div>
       </div>
       {mode === "game" && showCamera && (
         <CameraSettingsPanel settings={cameraSettings} onChange={setCameraSettings} />
@@ -1588,6 +1648,12 @@ interface TasReplayViewerProps {
    * position, so a player can practise that section in Play.
    */
   onMakeCheckpoint?: (cp: NewPlayCheckpoint) => void;
+  /**
+   * Offer the touch-control overlay. Set only by the site-level board, whose
+   * runs are played on the site's touch controls; a TAS entry came from the real
+   * game's keyboard, where the overlay would be meaningless.
+   */
+  allowTouch?: boolean;
 }
 
 /**
@@ -1607,6 +1673,7 @@ export function TasReplayViewer({
   levelData: levelDataProp,
   boardEntries,
   onMakeCheckpoint,
+  allowTouch,
 }: TasReplayViewerProps) {
   const [open, setOpen] = React.useState(false);
   const [state, setState] = React.useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -1821,6 +1888,7 @@ export function TasReplayViewer({
                 arrow={arrow}
                 arrowRadius={arrowRadius}
                 replayTimeMs={frame * SIM_TICK_MS}
+                allowTouch={allowTouch}
                 onTogglePlay={() => {
                   if (frame >= pathLength - 1) setFrame(0);
                   setPlaying((p) => !p);

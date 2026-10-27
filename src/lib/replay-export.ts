@@ -23,6 +23,7 @@ import {
   drawGameThrust,
   drawInputIndicator,
   drawSprite,
+  drawTouchOverlay,
   paintForceFields,
   paintGripZones,
   paintSiteMechanics,
@@ -114,6 +115,11 @@ export interface ExportOptions {
   showInputs?: boolean;
   /** Draw the elapsed-time pill at the top centre of the frame. */
   showTimer?: boolean;
+  /**
+   * Draw the site's two touch zones over the scene. Only meaningful for a run
+   * played on the site's touch controls (see {@link drawTouchOverlay}).
+   */
+  showTouch?: boolean;
   ghosts?: ExportGhost[];
   /** Reports 0..1 as the clip records. */
   onProgress?: (fraction: number) => void;
@@ -613,6 +619,8 @@ function renderScene(
     // transform already carries `dpr`), so its size is resolution-independent.
     drawInputIndicator(ctx, point?.input, width, height);
   }
+
+  if (opts.showTouch) drawTouchOverlay(ctx, point?.input, width, height);
 }
 
 /** A readable filename stem for the download, e.g. `Red-Velocity-speedy`. */

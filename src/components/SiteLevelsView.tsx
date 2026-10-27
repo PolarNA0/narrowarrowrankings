@@ -209,7 +209,8 @@ export function SiteLevelsView({
           </h2>
           <p className="text-slate-500 text-sm">
             Community levels built with the Level editor and hosted here — including ones that use
-            the site-only custom mechanics (wind, suction, grip zones and puzzle parts). Play them, or race the leaderboard.
+            the site-only custom mechanics (wind, suction, grip zones and puzzle parts). Play them,
+            or race the leaderboard.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
@@ -486,6 +487,7 @@ function SiteLevelDetail({
                         timeMs={e.timeMs}
                         levelData={levelData}
                         boardEntries={ghosts}
+                        allowTouch
                         onMakeCheckpoint={
                           onMakeCheckpoint
                             ? (cp) =>

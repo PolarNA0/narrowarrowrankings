@@ -124,6 +124,7 @@ export function ReplayExportDialog({
   const [light, setLight] = React.useState(0.72);
   const [useSkinColors, setUseSkinColors] = React.useState(false);
   const [showInputs, setShowInputs] = React.useState(true);
+  const [showTouch, setShowTouch] = React.useState(false);
   const [showTimer, setShowTimer] = React.useState(true);
   const [ghostIds, setGhostIds] = React.useState<string[]>([]);
   const [recording, setRecording] = React.useState(false);
@@ -212,6 +213,7 @@ export function ReplayExportDialog({
         backgroundTheme: bgTheme,
         infoCard,
         showInputs,
+        showTouch,
         showTimer,
         ghosts,
         onProgress: setProgress,
@@ -377,6 +379,15 @@ export function ReplayExportDialog({
                 className="accent-[var(--app-accent)]"
               />
               Show the in-game steer dots (bottom-right)
+            </label>
+            <label className="flex items-center gap-2 text-[11px] text-slate-300">
+              <input
+                type="checkbox"
+                checked={showTouch}
+                onChange={(e) => setShowTouch(e.target.checked)}
+                className="accent-[var(--app-accent)]"
+              />
+              Show the site touch zones (hand numbers while held)
             </label>
             <label className="flex items-center gap-2 text-[11px] text-slate-300">
               <input

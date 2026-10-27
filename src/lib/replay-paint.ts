@@ -464,8 +464,10 @@ export function paintGripZones(ctx: CanvasRenderingContext2D, zones: GripZone[],
     const stepWorld = 14;
     const b = pts.reduce(
       (acc, p) => ({
-        minX: Math.min(acc.minX, p.x), maxX: Math.max(acc.maxX, p.x),
-        minY: Math.min(acc.minY, p.y), maxY: Math.max(acc.maxY, p.y),
+        minX: Math.min(acc.minX, p.x),
+        maxX: Math.max(acc.maxX, p.x),
+        minY: Math.min(acc.minY, p.y),
+        maxY: Math.max(acc.maxY, p.y),
       }),
       { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
     );
@@ -963,5 +965,69 @@ export function drawInputIndicator(
   ctx.globalAlpha = 1;
   dot(lx, left);
   dot(rx, right);
+  ctx.restore();
+}
+
+/**
+ * The site's touch controls: two translucent circles over the two tap zones,
+ * with the hand number in each one that is currently held.
+ *
+ * The site steers with two fixed half-screen zones — the left half steers left
+ * and the right half steers right — so a touch carries no position beyond which
+ * half it landed in. That means the overlay is derived from the recorded input
+ * symbol rather than from stored coordinates: 2 lights the left zone, 1 the
+ * right, and 3 (brake) lights both, which is the two-hand grip and is what makes
+ * a brake visible at a glance. The digits number the hands, so a brake reads as
+ * "1" and "2" together.
+ *
+ * Only true for touch runs. A keyboard or gamepad press collapses to the same
+ * symbol stream, so nothing in the data says which was used; this draws the
+ * scheme the site's touch controls use, not a claim about how the run was played.
+ *
+ * Both zones are outlined always, so the control layout is legible while
+ * coasting; only a held zone is filled and numbered.
+ */
+export function drawTouchOverlay(
+  ctx: CanvasRenderingContext2D,
+  symbol: number | undefined,
+  width: number,
+  height: number,
+  opts: { radius?: number } = {},
+) {
+  const r = opts.radius ?? Math.max(22, Math.min(width, height) * 0.085);
+  const cy = height * 0.5;
+  const leftOn = symbol === 2 || symbol === 3;
+  const rightOn = symbol === 1 || symbol === 3;
+  // The left hand is always "1"; the right is "2" only while the left is also
+  // down, which is exactly when the run is braking.
+  const zones = [
+    { x: width * 0.25, label: 1, on: leftOn },
+    { x: width * 0.75, label: leftOn ? 2 : 1, on: rightOn },
+  ];
+
+  ctx.save();
+  for (const z of zones) {
+    ctx.beginPath();
+    ctx.arc(z.x, cy, r, 0, Math.PI * 2);
+    if (z.on) {
+      ctx.fillStyle = "rgba(148, 156, 172, 0.22)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(203, 213, 225, 0.60)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = "rgba(148, 156, 172, 0.28)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `bold ${Math.round(r)}px ui-monospace, monospace`;
+  ctx.fillStyle = "rgba(226, 232, 240, 0.90)";
+  for (const z of zones) {
+    if (z.on) ctx.fillText(String(z.label), z.x, cy);
+  }
   ctx.restore();
 }
