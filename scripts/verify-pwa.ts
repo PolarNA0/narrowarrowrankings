@@ -52,8 +52,18 @@ check(
 );
 
 // Shortcuts must point at real view params, or the long-press menu opens a
-// blank app.
-const viewIds = new Set(["play", "tas-board", "race"]);
+// blank app. Read the ids from the nav definition itself so the check follows a
+// rename instead of pinning a list that drifts out of date.
+const navSource = readFileSync(join(ROOT, "src/components/GroupedNavigation.tsx"), "utf8");
+const navMatch = navSource.match(/export const NAV_GROUPS = (\[[\s\S]*?\n\]) as const;/);
+check("found NAV_GROUPS in source", navMatch !== null);
+const navSandbox: Record<string, unknown> = {};
+vm.createContext(navSandbox);
+vm.runInContext(`globalThis.__nav = ${navMatch?.[1] ?? "[]"};`, navSandbox);
+const navGroups = navSandbox.__nav as { items: { id: string }[] }[];
+const viewIds = new Set(navGroups.flatMap((g) => g.items.map((i) => i.id)));
+check("read real nav view ids", viewIds.size > 0, `${viewIds.size} ids`);
+
 for (const shortcut of manifest.shortcuts ?? []) {
   const view = new URL(shortcut.url, "https://x").searchParams.get("v");
   check(
