@@ -40,6 +40,7 @@ export const NAV_GROUPS = [
     items: [
       { id: "wrs", label: "World & category records" },
       { id: "medal-ease", label: "Easiest medals" },
+      { id: "tas-human", label: "TAS vs Human" },
       { id: "tracker", label: "Recent runs" },
       { id: "fame", label: "Player achievements" },
     ],

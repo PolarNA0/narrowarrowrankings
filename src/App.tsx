@@ -516,7 +516,7 @@ export default function App() {
   /** The 1v1 race the Play tab is currently running a round for. */
   const [raceTarget, setRaceTarget] = useState<RacePlayTarget | null>(null);
   const [showRankLegend, setShowRankLegend] = useState(false);
-  const [wrsTab, setWrsTab] = useState<"wrs" | "hof" | "history" | "arrows" | "tas-human">("wrs");
+  const [wrsTab, setWrsTab] = useState<"wrs" | "hof" | "history" | "arrows">("wrs");
   const [randomLevelSuggestion, setRandomLevelSuggestion] = useState<LevelInfo | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(
     initialUrlState.player ?? null,
@@ -929,11 +929,11 @@ export default function App() {
   // The TAS boards are a separate collection from the game leaderboards, so the
   // home page's TAS totals are fetched on their own — and only once the page
   // that needs them is actually shown, rather than on every visit to the site.
-  // The "TAS vs human" records tab reads the same boards, so it triggers the
-  // fetch too; the ref keeps it to a single request either way.
+  // The "TAS vs Human" view reads the same boards, so it triggers the fetch too;
+  // the ref keeps it to a single request either way.
   const tasBoardsRequested = React.useRef(false);
   useEffect(() => {
-    const wanted = view === "home" || (view === "wrs" && wrsTab === "tas-human");
+    const wanted = view === "home" || view === "tas-human";
     if (!wanted || tasBoardsRequested.current) return;
     tasBoardsRequested.current = true;
     setTasBoardsLoading(true);
@@ -941,7 +941,7 @@ export default function App() {
       .then(setAllTasBoards)
       .catch(() => setAllTasBoards({}))
       .finally(() => setTasBoardsLoading(false));
-  }, [view, wrsTab]);
+  }, [view]);
 
   const getPlayerStats = (username: string): PlayerStats | null => {
     if (!username) return null;
@@ -2200,7 +2200,7 @@ export default function App() {
                 </h2>
                 <p className="text-slate-500 text-sm">The fastest times and top performers.</p>
               </div>
-              <div className="flex bg-white/5 border border-white/10 rounded-lg p-1 w-full sm:w-[540px]">
+              <div className="flex bg-white/5 border border-white/10 rounded-lg p-1 w-full sm:w-[420px]">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -2253,37 +2253,10 @@ export default function App() {
                 >
                   Arrow WRs
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setWrsTab("tas-human")}
-                  className={cn(
-                    "flex-1 h-8 text-xs font-medium rounded-md transition-all",
-                    wrsTab === "tas-human"
-                      ? "bg-[var(--app-accent)] text-slate-950 font-bold shadow-lg"
-                      : "text-slate-400 hover:text-white",
-                  )}
-                >
-                  TAS vs Human
-                </Button>
               </div>
             </div>
 
-            {wrsTab === "tas-human" ? (
-              <TasVsHumanView
-                levels={sortedLevels.filter((l) => l.packId !== "custom")}
-                data={processedAllLevelsData}
-                tasBoards={allTasBoards}
-                tasLoading={tasBoardsLoading}
-                profiles={playerProfiles}
-                formatTime={(seconds) => formatTime(seconds)}
-                onLevelClick={(levelId) => {
-                  setSelectedLevel(levelId);
-                  setView("leaderboard");
-                }}
-                onPlayerClick={handlePlayerClick}
-              />
-            ) : wrsTab === "arrows" ? (
+            {wrsTab === "arrows" ? (
               <ArrowRecordsView
                 levels={sortedLevels.filter((l) => l.packId !== "custom")}
                 data={processedAllLevelsData}
@@ -2761,6 +2734,20 @@ export default function App() {
               setView("leaderboard");
             }}
             formatTime={(seconds) => formatTime(seconds)}
+          />
+        ) : view === "tas-human" ? (
+          <TasVsHumanView
+            levels={sortedLevels.filter((l) => l.packId !== "custom")}
+            data={processedAllLevelsData}
+            tasBoards={allTasBoards}
+            tasLoading={tasBoardsLoading}
+            profiles={playerProfiles}
+            formatTime={(seconds) => formatTime(seconds)}
+            onLevelClick={(levelId) => {
+              setSelectedLevel(levelId);
+              setView("leaderboard");
+            }}
+            onPlayerClick={handlePlayerClick}
           />
         ) : view === "rivalries" ? (
           <RivalriesView
