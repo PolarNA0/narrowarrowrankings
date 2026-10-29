@@ -139,6 +139,7 @@ import { removedRunKey } from "./lib/removedRuns";
 import { computeMedals } from "./lib/medals";
 import { useAppSettings, formatWithSettings } from "./hooks/useAppSettings";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { InstallAppBanner } from "./components/InstallAppBanner";
 import { toast } from "sonner";
 import { ArrowRecordsView } from "@/components/ArrowRecordsView";
 import { TasVsHumanView } from "@/components/TasVsHumanView";
@@ -1824,6 +1825,8 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {!showAdmin && <InstallAppBanner />}
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {!showAdmin && <SectionNavigation view={view} onNavigate={navigateView} />}

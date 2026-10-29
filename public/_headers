@@ -1,0 +1,11 @@
+# Service worker and manifest must be revalidated on every load, or a client
+# can stay pinned to an old worker and never pick up a deploy. Nitro appends
+# its own generated rules (the long-lived /assets/* cache) to this file.
+/sw.js
+  cache-control: no-cache
+
+/manifest.webmanifest
+  cache-control: no-cache
+
+/icons/*
+  cache-control: public, max-age=604800
