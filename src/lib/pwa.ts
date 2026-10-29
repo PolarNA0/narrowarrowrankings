@@ -31,9 +31,18 @@ export function isIosSafari(): boolean {
 export function registerServiceWorker(): void {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
   if (!import.meta.env.PROD) return;
-  window.addEventListener("load", () => {
+  const register = () => {
     void navigator.serviceWorker.register("/sw.js").catch((error) => {
       console.warn("Service worker registration failed", error);
     });
-  });
+  };
+  // Hydration can finish *after* the load event (the boards keep the page busy),
+  // so waiting on `load` unconditionally would attach a listener that never
+  // fires and the worker would never register. Register now if we are already
+  // loaded, and otherwise wait for it.
+  if (document.readyState === "complete") {
+    register();
+  } else {
+    window.addEventListener("load", register, { once: true });
+  }
 }

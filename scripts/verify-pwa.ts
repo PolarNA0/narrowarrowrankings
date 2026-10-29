@@ -209,5 +209,81 @@ listeners.fetch?.({
 });
 check("POST is NOT intercepted", !postHandled);
 
+// --- Registration timing -----------------------------------------------------
+// The worker only registers in production, and only once the document is loaded.
+// Hydration on this app finishes *after* the load event (the boards keep the page
+// busy), so a naive `window.addEventListener("load", ...)` attaches too late and
+// the worker silently never registers — invisible until a real browser is driven.
+// Run the real `registerServiceWorker` source against stubbed globals to pin both
+// the already-loaded and still-loading paths.
+const pwaSource = readFileSync(join(ROOT, "src/lib/pwa.ts"), "utf8");
+const fnMatch = pwaSource.match(/export function registerServiceWorker\(\): void \{[\s\S]*?\n\}/);
+check("found registerServiceWorker in source", fnMatch !== null);
+const fnSource = (fnMatch?.[0] ?? "")
+  .replace("export function", "function")
+  .replace(": void", "")
+  .replace(/import\.meta\.env\.PROD/g, "__PROD__");
+
+interface RegRun {
+  registered: string[];
+  loadListeners: (() => void)[];
+}
+
+function runRegister(opts: { prod: boolean; readyState: string; hasSw: boolean }): RegRun {
+  const run: RegRun = { registered: [], loadListeners: [] };
+  const sandbox: Record<string, unknown> = {
+    __PROD__: opts.prod,
+    console,
+    window: {
+      addEventListener: (type: string, handler: () => void) => {
+        if (type === "load") run.loadListeners.push(handler);
+      },
+    },
+    document: { readyState: opts.readyState },
+    navigator: opts.hasSw
+      ? {
+          serviceWorker: {
+            register: (url: string) => (run.registered.push(url), Promise.resolve()),
+          },
+        }
+      : {},
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(`${fnSource}\nglobalThis.__reg = registerServiceWorker;`, sandbox);
+  (sandbox.__reg as () => void)();
+  return run;
+}
+
+// Already loaded when the effect runs: register immediately, do not wait for a
+// `load` that already happened.
+const loaded = runRegister({ prod: true, readyState: "complete", hasSw: true });
+check(
+  "registers immediately when the document is already loaded",
+  loaded.registered.length === 1,
+  loaded.registered.join(","),
+);
+check("does not defer to a load event that already fired", loaded.loadListeners.length === 0);
+
+// Still loading: wait for load, then register.
+const loading = runRegister({ prod: true, readyState: "loading", hasSw: true });
+check("does not register before load", loading.registered.length === 0);
+check("waits for the load event", loading.loadListeners.length === 1);
+loading.loadListeners.forEach((l) => l());
+check(
+  "registers once load fires",
+  loading.registered[0] === "/sw.js",
+  loading.registered.join(","),
+);
+
+// Dev, and browsers with no service worker, must never register.
+check(
+  "never registers in dev",
+  runRegister({ prod: false, readyState: "complete", hasSw: true }).registered.length === 0,
+);
+check(
+  "never registers without serviceWorker support",
+  runRegister({ prod: true, readyState: "complete", hasSw: false }).registered.length === 0,
+);
+
 console.log(`\n${failures === 0 ? "all" : `${failures} failing`} PWA checks`);
 process.exit(failures === 0 ? 0 : 1);
