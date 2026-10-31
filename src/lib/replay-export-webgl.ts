@@ -39,6 +39,8 @@ export interface WebGLFrameSourceOptions {
   camera?: CameraSettings;
   /** The run's path, in world units, drawn as the game's trail ribbon. */
   trail?: Array<{ x: number; y: number }>;
+  /** Colour overrides (hex) for the arrow body / thrust / trail. */
+  colors?: { body?: string; thrust?: string; trail?: string };
 }
 
 export interface WebGLFrameSource {
@@ -118,6 +120,7 @@ export async function createWebGLFrameSource(
           arrowType,
           background: opts.background ?? "grid",
           showHitbox: opts.showHitbox !== false,
+          colors: opts.colors,
         },
         size,
         nowMs,

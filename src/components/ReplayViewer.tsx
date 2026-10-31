@@ -10,6 +10,7 @@ import {
   SlidersHorizontal,
   Hand,
   Flag,
+  Palette,
 } from "lucide-react";
 import {
   Dialog,
@@ -95,6 +96,7 @@ import { ReplayExportDialog } from "@/components/ReplayExportDialog";
 const GameCanvas = React.lazy(() =>
   import("@/components/GameCanvas").then((m) => ({ default: m.GameCanvas })),
 );
+import type { GameCanvasHandle } from "@/components/GameCanvas";
 import { GhostPicker } from "@/components/CompareGhosts";
 import { ghostLabel, useCompareGhosts, type CompareCandidate } from "@/hooks/useCompareGhosts";
 import bounceIcon from "@/assets/game/bounce.svg";
@@ -736,6 +738,14 @@ export function ReplayStage({
   const [mode, setMode] = React.useState<ReplayRenderMode>("lines");
   // Touch overlay, off by default so it never obscures a run unasked.
   const [showTouch, setShowTouch] = React.useState(false);
+  // Colour overrides for the arrow in "game"/"webgl" mode. `null` = use the
+  // run's own skin, so the default look is untouched.
+  const [bodyOverride, setBodyOverride] = React.useState<string | null>(null);
+  const [thrustOverride, setThrustOverride] = React.useState<string | null>(null);
+  const [trailOverride, setTrailOverride] = React.useState<string | null>(null);
+  const [showColors, setShowColors] = React.useState(false);
+  // The GL stage, so the parent's frame/playback can drive it (one transport).
+  const gameRef = React.useRef<GameCanvasHandle | null>(null);
   // Camera state for "game" mode; a ref so the draw effect reads it without
   // re-running on every settings change (the frame effect repaints anyway).
   const [cameraSettings, setCameraSettings] = React.useState<CameraSettings>(DEFAULT_GAME_CAMERA);
@@ -748,6 +758,10 @@ export function ReplayStage({
   // a relayout repaints without the draw effect re-running (and without React
   // re-rendering the whole stage 60 times a second).
   const drawRef = React.useRef<() => void>(() => {});
+  // Dispatch a repaint to whichever canvas is live: the 2D stage's draw, or the
+  // WebGL stage (which steps its own engine to the frame). One entry point, so
+  // the transport below drives both render modes identically.
+  const paintRef = React.useRef<(f: number) => void>(() => {});
   // The draw effect deliberately omits `frame`, so `draw` reads the current
   // frame through this ref instead of a stale closure. During playback the loop
   // below owns this ref, so it is only re-synced when the parent changes `frame`
@@ -765,6 +779,41 @@ export function ReplayStage({
   // playing replay never re-renders the tree.
   const timeRef = React.useRef<HTMLSpanElement | null>(null);
   const scrubberRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Effective colours: the run's skin unless the viewer overrides them. Applied
+  // to both the 2D "game" painter and the WebGL renderer, so a colour choice
+  // looks the same in either.
+  const bodyShown = bodyOverride ?? bodyColor;
+  const trailShown = trailOverride ?? trail;
+  const thrustShown = thrustOverride ?? thrust;
+  const colorOverrides = React.useMemo(
+    () => ({
+      body: bodyOverride ?? undefined,
+      thrust: thrustOverride ?? undefined,
+      trail: trailOverride ?? undefined,
+    }),
+    [bodyOverride, thrustOverride, trailOverride],
+  );
+  // The GL stage draws ghosts on its own overlay; map the shared overlays across.
+  const gameGhosts = React.useMemo(
+    () =>
+      overlays.map((o) => ({
+        id: o.id,
+        sim: o.sim,
+        color: o.color,
+        arrow: o.arrow,
+        arrowRadius: o.arrowRadius,
+        label: o.label,
+      })),
+    [overlays],
+  );
+
+  // Route a repaint to the active renderer. `mode` is read here (during render)
+  // so the transport never needs to know which stage is mounted.
+  paintRef.current = (f: number) => {
+    if (mode === "webgl") gameRef.current?.render(f);
+    else drawRef.current();
+  };
 
   // Drawing support: pointer→world uses the live transform, which lives inside
   // the canvas effect, so it is exposed through refs the handlers read.
@@ -1146,7 +1195,7 @@ export function ReplayStage({
             ctx.fillText(o.label, tx(gp2.x) + 9, ty(gp2.y) - 9);
           }
         }
-        strokeTrailLocal(ctx, sim.path, upto, trail, true);
+        strokeTrailLocal(ctx, sim.path, upto, trailShown, true);
         const point = sim.path[upto];
         if ((point.thrustPower ?? 0) > 0.05) {
           drawGameThrustLocal(
@@ -1178,8 +1227,8 @@ export function ReplayStage({
           point.rot,
           scale,
           arrowRadius,
-          bodyColor,
-          thrust,
+          bodyShown,
+          thrustShown,
         );
         if (sim.finishTick !== null && upto >= sim.finishTick) {
           ctx.fillStyle = "#ffffff";
@@ -1271,7 +1320,7 @@ export function ReplayStage({
               [7, 0.12],
               [3.5, 0.3],
             ] as const) {
-              tg.strokeStyle = withAlpha(trail, a);
+              tg.strokeStyle = withAlpha(trailShown, a);
               tg.lineWidth = w;
               tg.beginPath();
               const s0 = sim.path[start];
@@ -1282,7 +1331,7 @@ export function ReplayStage({
               }
               tg.stroke();
             }
-            tg.strokeStyle = lighten(trail, 0.35);
+            tg.strokeStyle = lighten(trailShown, 0.35);
             tg.lineWidth = 1.4;
             tg.beginPath();
             const s0 = sim.path[start];
@@ -1313,8 +1362,8 @@ export function ReplayStage({
           point.rot,
           scale,
           arrowRadius,
-          bodyColor,
-          thrust,
+          bodyShown,
+          thrustShown,
         );
       }
 
@@ -1384,9 +1433,9 @@ export function ReplayStage({
   }, [
     sim,
     geometry,
-    bodyColor,
-    trail,
-    thrust,
+    bodyShown,
+    trailShown,
+    thrustShown,
     arrow,
     arrowRadius,
     overlays,
@@ -1400,7 +1449,7 @@ export function ReplayStage({
   // frame reported after playback) and resync the live ref and readouts to it.
   React.useEffect(() => {
     frameRef.current = frame;
-    drawRef.current();
+    paintRef.current(frame);
     if (timeRef.current)
       timeRef.current.textContent = `${((frame * SIM_TICK_MS) / 1000).toFixed(2)}s`;
     if (scrubberRef.current) scrubberRef.current.value = String(Math.floor(frame));
@@ -1428,13 +1477,13 @@ export function ReplayStage({
       const max = pathLengthRef.current - 1;
       if (next >= max) {
         frameRef.current = max;
-        drawRef.current();
+        paintRef.current(max);
         onFrameCommitRef.current?.(max);
         onTogglePlayRef.current();
         return;
       }
       frameRef.current = next;
-      drawRef.current();
+      paintRef.current(next);
       if (timeRef.current)
         timeRef.current.textContent = `${((next * SIM_TICK_MS) / 1000).toFixed(2)}s`;
       if (scrubberRef.current) scrubberRef.current.value = String(Math.floor(next));
@@ -1446,19 +1495,19 @@ export function ReplayStage({
 
   // Repaint when the drawn route changes so the trace tracks the pointer.
   React.useEffect(() => {
-    drawRef.current();
+    paintRef.current(frameRef.current);
   }, [drawnPath]);
 
   // Camera changes (a new preset or a slider) only need a repaint.
   React.useEffect(() => {
-    drawRef.current();
+    paintRef.current(frameRef.current);
   }, [cameraSettings]);
 
   // A new run or level resets the follow camera to the spawn point.
   React.useEffect(() => {
     const p = sim.path[0];
     if (p) cameraRef.current.reset(p.x, p.y);
-    drawRef.current();
+    paintRef.current(frameRef.current);
   }, [sim, mode]);
 
   // Ghosts may run past the primary run's finish; keep the scrubber covering
@@ -1515,10 +1564,59 @@ export function ReplayStage({
               Camera
             </Button>
           )}
+          {(mode === "game" || mode === "webgl") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "h-7 gap-1.5 text-xs",
+                bodyOverride || thrustOverride || trailOverride
+                  ? "text-slate-100"
+                  : "text-slate-300 hover:text-slate-100",
+              )}
+              onClick={() => setShowColors((v) => !v)}
+              aria-expanded={showColors}
+              title="Override the arrow, thrust and trail colours"
+            >
+              <Palette className="w-3.5 h-3.5" />
+              Colours
+            </Button>
+          )}
         </div>
       </div>
       {mode === "game" && showCamera && (
         <CameraSettingsPanel settings={cameraSettings} onChange={setCameraSettings} />
+      )}
+      {(mode === "game" || mode === "webgl") && showColors && (
+        <div className="grid grid-cols-3 gap-3 rounded-lg border border-white/10 bg-black/30 p-3">
+          {(
+            [
+              ["Arrow", bodyOverride, setBodyOverride, bodyColor],
+              ["Thrust", thrustOverride, setThrustOverride, thrust],
+              ["Trail", trailOverride, setTrailOverride, trail],
+            ] as const
+          ).map(([label, value, set, fallback]) => (
+            <label key={label} className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span>
+              <input
+                type="color"
+                value={value ?? fallback}
+                onChange={(e) => set(e.target.value)}
+                className="h-6 w-10 cursor-pointer rounded border border-white/20 bg-transparent"
+                aria-label={`${label} colour`}
+              />
+              <button
+                type="button"
+                className="text-[10px] text-slate-500 hover:text-slate-300 disabled:opacity-40"
+                onClick={() => set(null)}
+                disabled={value === null}
+                title="Use the run's own skin colour"
+              >
+                reset
+              </button>
+            </label>
+          ))}
+        </div>
       )}
       <div className="rounded-lg overflow-hidden border border-white/10 bg-[#07070b]">
         {mode === "webgl" ? (
@@ -1530,11 +1628,15 @@ export function ReplayStage({
             }
           >
             <GameCanvas
+              ref={gameRef}
               data={levelData ?? null}
               inputs={inputs ?? ""}
               inputCount={inputCount}
               arrowName={arrowName}
               background="grid"
+              colors={colorOverrides}
+              ghosts={gameGhosts}
+              height={340}
             />
           </React.Suspense>
         ) : (

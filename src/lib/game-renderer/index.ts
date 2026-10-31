@@ -22,6 +22,7 @@ import {
   drawWallEffects,
   loadSkins,
   skinFor,
+  withColorOverrides,
 } from "./render.js";
 
 // The ported modules are verbatim game code and deliberately stay untyped
@@ -65,6 +66,13 @@ export interface RendererFrame {
    * eased pan would look like the arrow sliding across the level.
    */
   snap?: boolean;
+  /**
+   * Override the arrow's own colours (the viewer's colour pickers). Each field
+   * is a hex string; an omitted field keeps the run's skin value, so a caller
+   * can override just the trail. Without this the renderer uses the arrow's
+   * default skin, which is why the colour controls had no effect in WebGL.
+   */
+  colors?: { body?: string; thrust?: string; trail?: string };
 }
 
 const ARROW_KINDS: GameArrowType[] = ["narrow", "speedy", "energy"];
@@ -136,7 +144,7 @@ export class GameRenderer {
     const dt = this.lastTime ? Math.max(0, (nowMs - this.lastTime) / 1000) : 0;
     this.lastTime = nowMs;
 
-    const skin = skinFor(frame.arrowType, null);
+    const skin = withColorOverrides(skinFor(frame.arrowType, null), frame.colors);
     const player = frame.player;
 
     // Follow before drawing so the first frame is already framed on the arrow,

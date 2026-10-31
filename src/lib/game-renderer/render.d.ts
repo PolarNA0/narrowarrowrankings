@@ -25,6 +25,10 @@ export class Camera {
 
 export function loadSkins(): Promise<void>;
 export function skinFor(arrowType: string, skinConfig: unknown): unknown;
+export function withColorOverrides(
+  skin: unknown,
+  colors?: { body?: string; thrust?: string; trail?: string },
+): unknown;
 export function arrowSpriteHalf(arrowType: string, zoom?: number): number;
 export function drawLevel(
   r: unknown,

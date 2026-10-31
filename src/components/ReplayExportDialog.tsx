@@ -140,6 +140,10 @@ export function ReplayExportDialog({
   const [sat, setSat] = React.useState(0.85);
   const [light, setLight] = React.useState(0.72);
   const [useSkinColors, setUseSkinColors] = React.useState(false);
+  // Optional per-part overrides. `null` = derive from the body colour, so the
+  // default look is unchanged; the user can set the trail and thrust separately.
+  const [trailColorOverride, setTrailColorOverride] = React.useState<string | null>(null);
+  const [thrustColorOverride, setThrustColorOverride] = React.useState<string | null>(null);
   const [showInputs, setShowInputs] = React.useState(true);
   const [showTouch, setShowTouch] = React.useState(false);
   const [showTimer, setShowTimer] = React.useState(true);
@@ -152,9 +156,14 @@ export function ReplayExportDialog({
 
   const size = SIZE_PRESETS[sizeIdx];
   const customColor = hslToHex(hue, sat, light);
+  const derived = deriveArrowColors(customColor);
   const colors = useSkinColors
     ? defaultColors
-    : { body: customColor, ...deriveArrowColors(customColor) };
+    : {
+        body: customColor,
+        trail: trailColorOverride ?? derived.trail,
+        thrust: thrustColorOverride ?? derived.thrust,
+      };
   const supported = React.useMemo(() => canExportVideo() || canExportOffline(), []);
   // On phones the offline encoder floods the hardware encoder and kills the tab,
   // so the dialog takes the realtime capture there and should say so.
@@ -659,6 +668,34 @@ export function ReplayExportDialog({
                         setLight(l);
                       }}
                     />
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  {(
+                    [
+                      ["Trail", trailColorOverride, setTrailColorOverride, derived.trail],
+                      ["Thrust", thrustColorOverride, setThrustColorOverride, derived.thrust],
+                    ] as const
+                  ).map(([label, value, set, fallback]) => (
+                    <label key={label} className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-500">{label}</span>
+                      <input
+                        type="color"
+                        value={value ?? fallback}
+                        onChange={(e) => set(e.target.value)}
+                        className="h-6 w-10 cursor-pointer rounded border border-white/20 bg-transparent"
+                        aria-label={`${label} colour`}
+                      />
+                      <button
+                        type="button"
+                        className="text-[10px] text-slate-500 hover:text-slate-300 disabled:opacity-40"
+                        onClick={() => set(null)}
+                        disabled={value === null}
+                        title="Match the arrow colour"
+                      >
+                        auto
+                      </button>
+                    </label>
                   ))}
                 </div>
               </>

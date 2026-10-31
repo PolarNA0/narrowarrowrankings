@@ -81,6 +81,24 @@ export function skinFor(arrowType, skinConfig) {
   return s;
 }
 
+/**
+ * Apply the viewer's colour overrides to a resolved skin. Each field is
+ * optional, so a caller can override just the trail. An unparsable value is
+ * ignored rather than blanking the colour.
+ */
+export function withColorOverrides(skin, colors) {
+  if (!colors) return skin;
+  const s = { ...skin };
+  const body = parseColor(colors.body);
+  if (body) s.theme = body;
+  const thrust = parseColor(colors.thrust);
+  if (thrust) s.thrust = thrust;
+  const trail = parseColor(colors.trail);
+  if (trail) s.trailColor = trail;
+  return s;
+}
+
+
 // Accepts "#rrggbb", "0xRRGGBB" or a 24-bit number.
 function parseColor(v) {
   if (v == null) return null;

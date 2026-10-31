@@ -35,7 +35,13 @@ import {
   type PaintCtx,
   type RenderMode,
 } from "@/lib/replay-paint";
-import { SIM_TICK_MS, hasSiteMechanics, type RawLevelData, type SimGeometry, type SimResult } from "@/lib/replay-sim";
+import {
+  SIM_TICK_MS,
+  hasSiteMechanics,
+  type RawLevelData,
+  type SimGeometry,
+  type SimResult,
+} from "@/lib/replay-sim";
 import type { WebGLFrameSource } from "@/lib/replay-export-webgl";
 import type { GameBackground } from "@/lib/game-renderer";
 import { darken, withAlpha } from "@/lib/replay-visuals";
@@ -939,6 +945,7 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
         showHitbox: opts.showHitbox,
         camera: opts.camera,
         trail: opts.sim.path.map((p) => ({ x: p.x, y: p.y })),
+        colors: { body: opts.bodyColor, trail: opts.trail, thrust: opts.thrust },
       });
     } catch {
       webgl = null;
@@ -1164,6 +1171,7 @@ async function exportWithMediaRecorder(opts: ExportOptions): Promise<Blob> {
         showHitbox: opts.showHitbox,
         camera: opts.camera,
         trail: opts.sim.path.map((p) => ({ x: p.x, y: p.y })),
+        colors: { body: opts.bodyColor, trail: opts.trail, thrust: opts.thrust },
       });
     } catch {
       webgl = null;
