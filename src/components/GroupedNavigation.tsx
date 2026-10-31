@@ -24,6 +24,11 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    id: "campaign",
+    label: "Campaign",
+    items: [{ id: "campaign", label: "Campaign" }],
+  },
+  {
     id: "rankings",
     label: "Rankings",
     items: [

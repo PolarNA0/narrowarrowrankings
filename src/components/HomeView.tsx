@@ -9,6 +9,7 @@ import { computeNarrowScores, type PlayerScore } from "@/lib/narrowscore";
 import { arrowKind } from "@/lib/arrow-sprites";
 import { displayNameFor, avatarFor, type ProfileDirectory } from "@/lib/display-name";
 import { NAV_GROUPS, type NavigableView } from "@/components/GroupedNavigation";
+import { HomeCampaignCard } from "@/components/HomeCampaignCard";
 import type { LeaderboardEntry, LevelInfo } from "@/types";
 import type { TasSummary } from "@/lib/tas-leaderboard";
 
@@ -328,6 +329,13 @@ export function HomeView({
           />
         </div>
       </section>
+
+      <HomeCampaignCard
+        profiles={profiles}
+        formatTime={formatTime}
+        onNavigate={() => onNavigate("campaign")}
+        onPlayerClick={onPlayerClick}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top players */}

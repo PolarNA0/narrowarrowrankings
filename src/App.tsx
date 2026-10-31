@@ -59,6 +59,7 @@ import { RankPointsView } from "./components/RankPointsView";
 import { PlayerVotingView } from "./components/PlayerVotingView";
 import { LevelRatingView } from "./components/LevelRatingView";
 import { PositionPointsView } from "./components/PositionPointsView";
+import { CampaignView } from "./components/CampaignView";
 import { LevelInsightsView } from "./components/LevelInsightsView";
 import { RivalriesView } from "./components/RivalriesView";
 import { HallOfFameView } from "./components/HallOfFameView";
@@ -2943,6 +2944,17 @@ export default function App() {
             data={processedAllLevelsData}
             profiles={playerProfiles}
             onPlayerClick={handlePlayerClick}
+          />
+        ) : view === "campaign" ? (
+          <CampaignView
+            profiles={playerProfiles}
+            formatTime={(seconds, forceMode) => formatTime(seconds, forceMode)}
+            onPlayerClick={handlePlayerClick}
+            isAdmin={isAdmin}
+            onLevelClick={(levelId) => {
+              setSelectedLevel(levelId);
+              setView("leaderboard");
+            }}
           />
         ) : view === "position" ? (
           isFetchingAll && Object.keys(processedAllLevelsData).length === 0 ? (

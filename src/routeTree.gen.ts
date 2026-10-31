@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ApiAllLeaderboardsRouteImport } from './routes/api/all-leaderboards'
+import { Route as ApiCampaignsRouteImport } from './routes/api/campaigns'
 import { Route as ApiDailySkinsRouteImport } from './routes/api/daily-skins'
 import { Route as ApiEndlessLeaderboardRouteImport } from './routes/api/endless-leaderboard'
 import { Route as ApiInGameMedalsRouteImport } from './routes/api/in-game-medals'
@@ -22,6 +23,7 @@ import { Route as ApiSiteLevelsRouteImport } from './routes/api/site-levels'
 import { Route as ApiSiteRecordsRouteImport } from './routes/api/site-records'
 import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
 import { Route as ApiTasLeaderboardsRouteImport } from './routes/api/tas-leaderboards'
+import { Route as ApiCampaignsIdRouteImport } from './routes/api/campaigns.$id'
 import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
 import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-details.$levelId'
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
@@ -53,6 +55,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const ApiAllLeaderboardsRoute = ApiAllLeaderboardsRouteImport.update({
   id: '/api/all-leaderboards',
   path: '/api/all-leaderboards',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCampaignsRoute = ApiCampaignsRouteImport.update({
+  id: '/api/campaigns',
+  path: '/api/campaigns',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiDailySkinsRoute = ApiDailySkinsRouteImport.update({
@@ -104,6 +111,11 @@ const ApiTasLeaderboardsRoute = ApiTasLeaderboardsRouteImport.update({
   id: '/api/tas-leaderboards',
   path: '/api/tas-leaderboards',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCampaignsIdRoute = ApiCampaignsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiCampaignsRoute,
 } as any)
 const ApiLeaderboardLevelRoute = ApiLeaderboardLevelRouteImport.update({
   id: '/api/leaderboard/$level',
@@ -196,6 +208,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
+  '/api/campaigns': typeof ApiCampaignsRouteWithChildren
   '/api/daily-skins': typeof ApiDailySkinsRoute
   '/api/endless-leaderboard': typeof ApiEndlessLeaderboardRoute
   '/api/in-game-medals': typeof ApiInGameMedalsRoute
@@ -206,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
+  '/api/campaigns/$id': typeof ApiCampaignsIdRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -228,6 +242,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
+  '/api/campaigns': typeof ApiCampaignsRouteWithChildren
   '/api/daily-skins': typeof ApiDailySkinsRoute
   '/api/endless-leaderboard': typeof ApiEndlessLeaderboardRoute
   '/api/in-game-medals': typeof ApiInGameMedalsRoute
@@ -238,6 +253,7 @@ export interface FileRoutesByTo {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
+  '/api/campaigns/$id': typeof ApiCampaignsIdRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -261,6 +277,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/all-leaderboards': typeof ApiAllLeaderboardsRoute
+  '/api/campaigns': typeof ApiCampaignsRouteWithChildren
   '/api/daily-skins': typeof ApiDailySkinsRoute
   '/api/endless-leaderboard': typeof ApiEndlessLeaderboardRoute
   '/api/in-game-medals': typeof ApiInGameMedalsRoute
@@ -271,6 +288,7 @@ export interface FileRoutesById {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
+  '/api/campaigns/$id': typeof ApiCampaignsIdRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
@@ -295,6 +313,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sitemap.xml'
     | '/api/all-leaderboards'
+    | '/api/campaigns'
     | '/api/daily-skins'
     | '/api/endless-leaderboard'
     | '/api/in-game-medals'
@@ -305,6 +324,7 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
+    | '/api/campaigns/$id'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -327,6 +347,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sitemap.xml'
     | '/api/all-leaderboards'
+    | '/api/campaigns'
     | '/api/daily-skins'
     | '/api/endless-leaderboard'
     | '/api/in-game-medals'
@@ -337,6 +358,7 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
+    | '/api/campaigns/$id'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -359,6 +381,7 @@ export interface FileRouteTypes {
     | '/'
     | '/sitemap.xml'
     | '/api/all-leaderboards'
+    | '/api/campaigns'
     | '/api/daily-skins'
     | '/api/endless-leaderboard'
     | '/api/in-game-medals'
@@ -369,6 +392,7 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
+    | '/api/campaigns/$id'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
@@ -392,6 +416,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiAllLeaderboardsRoute: typeof ApiAllLeaderboardsRoute
+  ApiCampaignsRoute: typeof ApiCampaignsRouteWithChildren
   ApiDailySkinsRoute: typeof ApiDailySkinsRoute
   ApiEndlessLeaderboardRoute: typeof ApiEndlessLeaderboardRoute
   ApiInGameMedalsRoute: typeof ApiInGameMedalsRoute
@@ -441,6 +466,13 @@ declare module '@tanstack/react-router' {
       path: '/api/all-leaderboards'
       fullPath: '/api/all-leaderboards'
       preLoaderRoute: typeof ApiAllLeaderboardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/campaigns': {
+      id: '/api/campaigns'
+      path: '/api/campaigns'
+      fullPath: '/api/campaigns'
+      preLoaderRoute: typeof ApiCampaignsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/daily-skins': {
@@ -512,6 +544,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/tas-leaderboards'
       preLoaderRoute: typeof ApiTasLeaderboardsRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/campaigns/$id': {
+      id: '/api/campaigns/$id'
+      path: '/$id'
+      fullPath: '/api/campaigns/$id'
+      preLoaderRoute: typeof ApiCampaignsIdRouteImport
+      parentRoute: typeof ApiCampaignsRoute
     }
     '/api/leaderboard/$level': {
       id: '/api/leaderboard/$level'
@@ -635,6 +674,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ApiCampaignsRouteChildren {
+  ApiCampaignsIdRoute: typeof ApiCampaignsIdRoute
+}
+
+const ApiCampaignsRouteChildren: ApiCampaignsRouteChildren = {
+  ApiCampaignsIdRoute: ApiCampaignsIdRoute,
+}
+
+const ApiCampaignsRouteWithChildren = ApiCampaignsRoute._addFileChildren(
+  ApiCampaignsRouteChildren,
+)
+
 interface ApiSiteLevelsRouteChildren {
   ApiSiteLevelsLevelRoute: typeof ApiSiteLevelsLevelRoute
 }
@@ -651,6 +702,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiAllLeaderboardsRoute: ApiAllLeaderboardsRoute,
+  ApiCampaignsRoute: ApiCampaignsRouteWithChildren,
   ApiDailySkinsRoute: ApiDailySkinsRoute,
   ApiEndlessLeaderboardRoute: ApiEndlessLeaderboardRoute,
   ApiInGameMedalsRoute: ApiInGameMedalsRoute,
