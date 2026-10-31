@@ -11,8 +11,8 @@
 //   - portals      : portal_particles.frag (particle band along the segment)
 //   - thrust       : thrust_<skin>.frag, else thrust_default.frag
 //   - background   : background_{grid,dots,circles,squares}.frag
-import * as SH from './shaders.js';
-import { TRAIL_VERTEX, TRAIL_FRAG, TRAIL_STYLES } from './trail-shaders.js';
+import * as SH from "./shaders.js";
+import { TRAIL_VERTEX, TRAIL_FRAG, TRAIL_STYLES } from "./trail-shaders.js";
 
 const VS_QUAD = `#version 300 es
 in vec2 aPos;                       // screen pixels, y down
@@ -95,8 +95,10 @@ void main(){
 
 function compile(gl, type, src) {
   const s = gl.createShader(type);
-  gl.shaderSource(s, src); gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + '\n' + src);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s) + "\n" + src);
   return s;
 }
 
@@ -111,7 +113,7 @@ function program(gl, vs, fs) {
   const nu = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
   for (let i = 0; i < nu; i++) {
     const info = gl.getActiveUniform(p, i);
-    o.u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name);
+    o.u[info.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, info.name);
   }
   const na = gl.getProgramParameter(p, gl.ACTIVE_ATTRIBUTES);
   for (let i = 0; i < na; i++) {
@@ -121,16 +123,21 @@ function program(gl, vs, fs) {
   return o;
 }
 
-const IDENT3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];   // identity for shaders' optional uInvCol* tilt
+const IDENT3 = [1, 0, 0, 0, 1, 0, 0, 0, 1]; // identity for shaders' optional uInvCol* tilt
 
 export class Renderer {
   constructor(canvas) {
-    const gl = canvas.getContext('webgl2', { alpha: false, antialias: true, premultipliedAlpha: true });
-    if (!gl) throw new Error('WebGL2 unavailable');
-    this.gl = gl; this.canvas = canvas;
+    const gl = canvas.getContext("webgl2", {
+      alpha: false,
+      antialias: true,
+      premultipliedAlpha: true,
+    });
+    if (!gl) throw new Error("WebGL2 unavailable");
+    this.gl = gl;
+    this.canvas = canvas;
 
-    this.vbuf = gl.createBuffer();     // dynamic screen-px quad (px, or px+uv)
-    this.tex = {};                     // key -> GL texture
+    this.vbuf = gl.createBuffer(); // dynamic screen-px quad (px, or px+uv)
+    this.tex = {}; // key -> GL texture
 
     const P = (fs, vs = VS_QUAD) => program(gl, vs, fs);
     this.bg = {
@@ -145,7 +152,7 @@ export class Renderer {
     this.contact = P(SH.wall_contact);
     this.thrust = { default: P(SH.thrust_default) };
     for (const k of Object.keys(SH)) {
-      if (k.startsWith('thrust_') && k !== 'thrust_default') this.thrust[k.slice(7)] = P(SH[k]);
+      if (k.startsWith("thrust_") && k !== "thrust_default") this.thrust[k.slice(7)] = P(SH[k]);
     }
     this.sprite = P(FS_SPRITE, VS_SPRITE);
     this.flat = P(FS_FLAT);
@@ -155,7 +162,7 @@ export class Renderer {
     // Trail: the game's world-space mesh shaders, one program per style.
     this.trail = {};
     for (const k of TRAIL_STYLES) this.trail[k] = program(gl, TRAIL_VERTEX, TRAIL_FRAG[k]);
-    this.trailMesh = gl.createBuffer();   // interleaved [x,y,z, along, lateral]
+    this.trailMesh = gl.createBuffer(); // interleaved [x,y,z, along, lateral]
     this.trailWhite = this._solidTex([255, 255, 255, 255]);
 
     // Offscreen target for the half-resolution background pass.
@@ -171,14 +178,31 @@ export class Renderer {
     // 1x1 transparent texture for the thrust shaders' uImage sampler.
     this.blank = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.blank);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      1,
+      1,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      new Uint8Array([0, 0, 0, 0]),
+    );
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   }
 
   setSize(w, h) {
+    // Reassigning `canvas.width`/`height` reallocates the whole drawing buffer,
+    // even when the value is unchanged. The interactive viewer repaints every
+    // animation frame, so an unconditional write here reallocated 60x a second
+    // and made WebGL playback crawl. Only touch the canvas when the size moves.
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+    }
     const gl = this.gl;
-    this.canvas.width = w; this.canvas.height = h;
     gl.viewport(0, 0, w, h);
     // The procedural background is shaded into an offscreen target and blitted
     // back. It runs at FULL canvas resolution: shading it at a fraction (a former
@@ -186,9 +210,11 @@ export class Renderer {
     // grid/dots shimmer as the camera moved, which is worse than the fill it
     // saved. bgDiv stays available but must be 1 for correct output.
     this.bgDiv = 1;
-    const bw = Math.max(1, Math.round(w / this.bgDiv)), bh = Math.max(1, Math.round(h / this.bgDiv));
+    const bw = Math.max(1, Math.round(w / this.bgDiv)),
+      bh = Math.max(1, Math.round(h / this.bgDiv));
     if (bw !== this.bgW || bh !== this.bgH) {
-      this.bgW = bw; this.bgH = bh;
+      this.bgW = bw;
+      this.bgH = bh;
       gl.bindTexture(gl.TEXTURE_2D, this.bgTex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, bw, bh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.bgFbo);
@@ -199,23 +225,36 @@ export class Renderer {
 
   texture(key, image) {
     if (this.tex[key]) return this.tex[key];
-    const gl = this.gl, t = gl.createTexture();
+    const gl = this.gl,
+      t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.tex[key] = t; return t;
+    this.tex[key] = t;
+    return t;
   }
 
   // A 1x1 solid-colour texture (the trail shaders' `uImage` when no trail image
   // is configured; uHasImage=0 makes the mix a no-op, but a bound texture is
   // still required by the sampler).
   _solidTex(rgba) {
-    const gl = this.gl, t = gl.createTexture();
+    const gl = this.gl,
+      t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(rgba));
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      1,
+      1,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      new Uint8Array(rgba),
+    );
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -229,7 +268,12 @@ export class Renderer {
   }
 
   _rect(x0, y0, x1, y1) {
-    return [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x0, y: y1 }, { x: x1, y: y1 }];
+    return [
+      { x: x0, y: y0 },
+      { x: x1, y: y0 },
+      { x: x0, y: y1 },
+      { x: x1, y: y1 },
+    ];
   }
 
   // Upload a quad (tl,tr,bl,br screen px) and return the buffer for _bindPos.
@@ -239,11 +283,32 @@ export class Renderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vbuf);
     const data = withUV
       ? new Float32Array([
-          c0.x, c0.y, 0, 0, c1.x, c1.y, 1, 0, c2.x, c2.y, 0, 1,
-          c2.x, c2.y, 0, 1, c1.x, c1.y, 1, 0, c3.x, c3.y, 1, 1])
-      : new Float32Array([
-          c0.x, c0.y, c1.x, c1.y, c2.x, c2.y,
-          c2.x, c2.y, c1.x, c1.y, c3.x, c3.y]);
+          c0.x,
+          c0.y,
+          0,
+          0,
+          c1.x,
+          c1.y,
+          1,
+          0,
+          c2.x,
+          c2.y,
+          0,
+          1,
+          c2.x,
+          c2.y,
+          0,
+          1,
+          c1.x,
+          c1.y,
+          1,
+          0,
+          c3.x,
+          c3.y,
+          1,
+          1,
+        ])
+      : new Float32Array([c0.x, c0.y, c1.x, c1.y, c2.x, c2.y, c2.x, c2.y, c1.x, c1.y, c3.x, c3.y]);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
   }
 
@@ -260,7 +325,8 @@ export class Renderer {
   }
 
   _identityTilt(prog) {
-    const gl = this.gl, u = prog.u;
+    const gl = this.gl,
+      u = prog.u;
     if (u.uTilt) gl.uniform1f(u.uTilt, 0);
     if (u.uInvCol0) gl.uniform3fv(u.uInvCol0, IDENT3.slice(0, 3));
     if (u.uInvCol1) gl.uniform3fv(u.uInvCol1, IDENT3.slice(3, 6));
@@ -271,7 +337,8 @@ export class Renderer {
   //   vX = dot(p, uBasisX) = across / halfWidth   (in [-1,1])
   //   vY = dot(p, uBasisY) = along  / length      (in [0,1])
   _thrustBasis(dx, dy, length, halfWidth) {
-    const px = -dy, py = dx;
+    const px = -dy,
+      py = dx;
     return {
       bx: [px / Math.max(halfWidth, 1e-3), py / Math.max(halfWidth, 1e-3)],
       by: [dx / Math.max(length, 1e-3), dy / Math.max(length, 1e-3)],
@@ -281,7 +348,8 @@ export class Renderer {
   begin(W, H, t, bgVariant, cam) {
     const gl = this.gl;
     const prog = this.bg[bgVariant];
-    const bw = this.bgW, bh = this.bgH;
+    const bw = this.bgW,
+      bh = this.bgH;
     const invDiv = 1 / (this.bgDiv || 2);
 
     // Pass A: the full-screen procedural background at half resolution, into the
@@ -303,9 +371,12 @@ export class Renderer {
       if (u.uTime) gl.uniform1f(u.uTime, t);
       if (u.uGridScale) gl.uniform1f(u.uGridScale, 1.0);
       if (u.uProjectionMode) gl.uniform1f(u.uProjectionMode, 0.0);
-      if (u.uSquaresUpperBoundsAndMode) gl.uniform3f(u.uSquaresUpperBoundsAndMode, 0.6667, 0.6667, 0.0);
-      if (u.uSquaresLayer0ColorAndLower) gl.uniform4f(u.uSquaresLayer0ColorAndLower, 1, 1, 1, 0.3333);
-      if (u.uSquaresLayer1ColorAndLower) gl.uniform4f(u.uSquaresLayer1ColorAndLower, 1, 1, 1, 0.3333);
+      if (u.uSquaresUpperBoundsAndMode)
+        gl.uniform3f(u.uSquaresUpperBoundsAndMode, 0.6667, 0.6667, 0.0);
+      if (u.uSquaresLayer0ColorAndLower)
+        gl.uniform4f(u.uSquaresLayer0ColorAndLower, 1, 1, 1, 0.3333);
+      if (u.uSquaresLayer1ColorAndLower)
+        gl.uniform4f(u.uSquaresLayer1ColorAndLower, 1, 1, 1, 0.3333);
       this._quad(this._rect(0, 0, bw, bh));
       this._bindPos(prog);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -344,7 +415,8 @@ export class Renderer {
 
   drawPoly(W, H, pts, r, g, b, a) {
     if (pts.length < 3) return;
-    const gl = this.gl, p = this.flat;
+    const gl = this.gl,
+      p = this.flat;
     this._use(p);
     gl.uniform4f(p.u.uColor, r, g, b, a);
     if (!this.polyBuf) this.polyBuf = gl.createBuffer();
@@ -356,13 +428,15 @@ export class Renderer {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(tri), gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(p.a.aPos);
     gl.vertexAttribPointer(p.a.aPos, 2, gl.FLOAT, false, 0, 0);
-    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLES, 0, tri.length / 2);
   }
 
   // Circle in screen px. line=0 -> filled disc; line>0 -> ring of that width.
   drawCircle(W, H, cx, cy, radius, r, g, b, a, line = 0) {
-    const gl = this.gl, p = this.circle;
+    const gl = this.gl,
+      p = this.circle;
     const pad = radius + line + 2;
     this._use(p);
     gl.uniform2f(p.u.uCenter, cx, cy);
@@ -371,7 +445,8 @@ export class Renderer {
     gl.uniform4f(p.u.uColor, r, g, b, a);
     this._quad(this._rect(cx - pad, cy - pad, cx + pad, cy + pad));
     this._bindPos(p);
-    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
@@ -388,22 +463,32 @@ export class Renderer {
   // The shader rounds the ends (round cap), so corners meet as round joins.
   drawWall(W, H, A, B, half, color) {
     const gl = this.gl;
-    const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len;
+    const dx = B.x - A.x,
+      dy = B.y - A.y,
+      len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len,
+      uy = dy / len;
     const pad = half + 2;
-    const ex = ux * pad, ey = uy * pad;          // along the segment (round caps)
-    const nx = -uy * pad, ny = ux * pad;         // across the segment
+    const ex = ux * pad,
+      ey = uy * pad; // along the segment (round caps)
+    const nx = -uy * pad,
+      ny = ux * pad; // across the segment
     const xs = [A.x - ex + nx, A.x - ex - nx, B.x + ex + nx, B.x + ex - nx];
     const ys = [A.y - ey + ny, A.y - ey - ny, B.y + ey + ny, B.y + ey - ny];
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     this._use(this.wall);
     const u = this.wall.u;
-    gl.uniform1f(u.uCenterX, A.x); gl.uniform1f(u.uCenterY, A.y);
-    gl.uniform1f(u.uDirX, ux); gl.uniform1f(u.uDirY, uy);
+    gl.uniform1f(u.uCenterX, A.x);
+    gl.uniform1f(u.uCenterY, A.y);
+    gl.uniform1f(u.uDirX, ux);
+    gl.uniform1f(u.uDirY, uy);
     gl.uniform1f(u.uSideSign, 1);
-    gl.uniform1f(u.uLength, len); gl.uniform1f(u.uHalfWidth, half);
-    gl.uniform1f(u.uColorR, color[0]); gl.uniform1f(u.uColorG, color[1]); gl.uniform1f(u.uColorB, color[2]);
+    gl.uniform1f(u.uLength, len);
+    gl.uniform1f(u.uHalfWidth, half);
+    gl.uniform1f(u.uColorR, color[0]);
+    gl.uniform1f(u.uColorG, color[1]);
+    gl.uniform1f(u.uColorB, color[2]);
     this._quad(this._rect(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)));
     this._bindPos(this.wall);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -412,9 +497,13 @@ export class Renderer {
   // wall_contact overlay: A,B screen px centre line, intensity 0..1, wall colour.
   drawWallContact(W, H, t, A, B, half, color, intensity) {
     const gl = this.gl;
-    const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len;
-    const px = -uy * half, py = ux * half;
+    const dx = B.x - A.x,
+      dy = B.y - A.y,
+      len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len,
+      uy = dy / len;
+    const px = -uy * half,
+      py = ux * half;
     const b = this._bandBounds(A, B, px, py);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -422,10 +511,13 @@ export class Renderer {
       this._use(this.contact);
       this._identityTilt(this.contact);
       const u = this.contact.u;
-      gl.uniform1f(u.uCenterX, A.x); gl.uniform1f(u.uCenterY, A.y);
-      gl.uniform1f(u.uDirX, ux); gl.uniform1f(u.uDirY, uy);
+      gl.uniform1f(u.uCenterX, A.x);
+      gl.uniform1f(u.uCenterY, A.y);
+      gl.uniform1f(u.uDirX, ux);
+      gl.uniform1f(u.uDirY, uy);
       gl.uniform1f(u.uSideSign, side);
-      gl.uniform1f(u.uLength, len); gl.uniform1f(u.uHalfWidth, half);
+      gl.uniform1f(u.uLength, len);
+      gl.uniform1f(u.uHalfWidth, half);
       gl.uniform1f(u.uTime, t);
       gl.uniform1f(u.uColorR, color[0] * intensity);
       gl.uniform1f(u.uColorG, color[1] * intensity);
@@ -441,9 +533,13 @@ export class Renderer {
   // finish_line_grid.frag uses a floor(l/8.0) grid) rather than 8 screen px.
   drawFinish(W, H, t, A, B, half, zoom = 1) {
     const gl = this.gl;
-    const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len;
-    const px = -uy * half, py = ux * half;
+    const dx = B.x - A.x,
+      dy = B.y - A.y,
+      len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len,
+      uy = dy / len;
+    const px = -uy * half,
+      py = ux * half;
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     this._use(this.finish);
@@ -453,8 +549,11 @@ export class Renderer {
     // (older ones hardcoded 0.95); keep the same look.
     if (this.finish.u.uBrightness) gl.uniform1f(this.finish.u.uBrightness, 0.95);
     this._quad([
-      { x: A.x + px, y: A.y + py }, { x: B.x + px, y: B.y + py },
-      { x: A.x - px, y: A.y - py }, { x: B.x - px, y: B.y - py }]);
+      { x: A.x + px, y: A.y + py },
+      { x: B.x + px, y: B.y + py },
+      { x: A.x - px, y: A.y - py },
+      { x: B.x - px, y: B.y - py },
+    ]);
     this._bindPos(this.finish);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
@@ -462,9 +561,13 @@ export class Renderer {
   // Portal particle band: A,B screen px along the segment.
   drawPortal(W, H, t, A, B, camZoom, halfWidthWorld, colorA, colorB, seed) {
     const gl = this.gl;
-    const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy) || 1;
-    const ax = dx / len, ay = dy / len;         // along basis
-    const px = -ay, py = ax;                     // across basis
+    const dx = B.x - A.x,
+      dy = B.y - A.y,
+      len = Math.hypot(dx, dy) || 1;
+    const ax = dx / len,
+      ay = dy / len; // along basis
+    const px = -ay,
+      py = ax; // across basis
     const hw = halfWidthWorld * camZoom;
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -478,11 +581,18 @@ export class Renderer {
     gl.uniform1f(u.uHalfWidth, halfWidthWorld);
     gl.uniform1f(u.uLength, len / camZoom);
     gl.uniform1f(u.uSeed, seed);
-    gl.uniform1f(u.uColorAR, colorA[0]); gl.uniform1f(u.uColorAG, colorA[1]); gl.uniform1f(u.uColorAB, colorA[2]);
-    gl.uniform1f(u.uColorBR, colorB[0]); gl.uniform1f(u.uColorBG, colorB[1]); gl.uniform1f(u.uColorBB, colorB[2]);
+    gl.uniform1f(u.uColorAR, colorA[0]);
+    gl.uniform1f(u.uColorAG, colorA[1]);
+    gl.uniform1f(u.uColorAB, colorA[2]);
+    gl.uniform1f(u.uColorBR, colorB[0]);
+    gl.uniform1f(u.uColorBG, colorB[1]);
+    gl.uniform1f(u.uColorBB, colorB[2]);
     this._quad([
-      { x: A.x - px * hw, y: A.y - py * hw }, { x: B.x - px * hw, y: B.y - py * hw },
-      { x: A.x + px * hw, y: A.y + py * hw }, { x: B.x + px * hw, y: B.y + py * hw }]);
+      { x: A.x - px * hw, y: A.y - py * hw },
+      { x: B.x - px * hw, y: B.y - py * hw },
+      { x: A.x + px * hw, y: A.y + py * hw },
+      { x: B.x + px * hw, y: B.y + py * hw },
+    ]);
     this._bindPos(this.portal);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
@@ -491,8 +601,10 @@ export class Renderer {
   drawThrust(W, H, t, skin, ox, oy, dx, dy, length, halfWidth, color, alpha) {
     const gl = this.gl;
     const prog = this.thrust[skin] || this.thrust.default;
-    const ex = ox + dx * length, ey = oy + dy * length;
-    const px = -dy * halfWidth, py = dx * halfWidth;
+    const ex = ox + dx * length,
+      ey = oy + dy * length;
+    const px = -dy * halfWidth,
+      py = dx * halfWidth;
     const { bx, by } = this._thrustBasis(dx, dy, length, halfWidth);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -503,35 +615,52 @@ export class Renderer {
     gl.uniform2f(u.uBasisX, bx[0], bx[1]);
     gl.uniform2f(u.uBasisY, by[0], by[1]);
     gl.uniform1f(u.uTime, t);
-    gl.uniform1f(u.uThrustColorR, color[0]); gl.uniform1f(u.uThrustColorG, color[1]); gl.uniform1f(u.uThrustColorB, color[2]);
+    gl.uniform1f(u.uThrustColorR, color[0]);
+    gl.uniform1f(u.uThrustColorG, color[1]);
+    gl.uniform1f(u.uThrustColorB, color[2]);
     gl.uniform1f(u.uAlphaMultiplier, alpha);
     if (u.uHasImage) gl.uniform1f(u.uHasImage, 0);
     if (u.uImage) {
-      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.blank);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.blank);
       gl.uniform1i(u.uImage, 0);
     }
     this._quad([
-      { x: ox - px, y: oy - py }, { x: ex - px, y: ey - py },
-      { x: ox + px, y: oy + py }, { x: ex + px, y: ey + py }]);
+      { x: ox - px, y: oy - py },
+      { x: ex - px, y: ey - py },
+      { x: ox + px, y: oy + py },
+      { x: ex + px, y: ey + py },
+    ]);
     this._bindPos(prog);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
   drawSprite(key, image, W, H, cx, cy, half, angle = 0, alpha = 1, tint = [1, 1, 1]) {
-    const gl = this.gl; const tex = this.texture(key, image);
+    const gl = this.gl;
+    const tex = this.texture(key, image);
     const p = this.sprite;
     this._use(p);
     gl.uniform1f(p.u.uAlpha, alpha);
     gl.uniform3f(p.u.uTint, tint[0], tint[1], tint[2]);
     gl.uniform4f(p.u.uRot, Math.cos(angle), Math.sin(angle), cx, cy);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.uniform1i(p.u.uTex, 0);
-    this._quad([
-      { x: cx - half, y: cy - half }, { x: cx + half, y: cy - half },
-      { x: cx - half, y: cy + half }, { x: cx + half, y: cy + half }], true);
-    gl.enableVertexAttribArray(p.a.aPos); gl.vertexAttribPointer(p.a.aPos, 2, gl.FLOAT, false, 16, 0);
-    gl.enableVertexAttribArray(p.a.aUV); gl.vertexAttribPointer(p.a.aUV, 2, gl.FLOAT, false, 16, 8);
-    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    this._quad(
+      [
+        { x: cx - half, y: cy - half },
+        { x: cx + half, y: cy - half },
+        { x: cx - half, y: cy + half },
+        { x: cx + half, y: cy + half },
+      ],
+      true,
+    );
+    gl.enableVertexAttribArray(p.a.aPos);
+    gl.vertexAttribPointer(p.a.aPos, 2, gl.FLOAT, false, 16, 0);
+    gl.enableVertexAttribArray(p.a.aUV);
+    gl.vertexAttribPointer(p.a.aUV, 2, gl.FLOAT, false, 16, 8);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
@@ -563,41 +692,75 @@ export class Renderer {
     const verts = new Float32Array(n * 4 * 5);
     let o = 0;
     for (let i = 0; i < n; i++) {
-      const prev = pts[i - 1] || pts[i], next = pts[i + 1] || pts[i];
-      let dx = next.x - prev.x, dy = next.y - prev.y;
-      const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
-      const nx = -dy, ny = dx;                       // left normal
-      const x = pts[i].x, y = pts[i].y, a = along[i];
+      const prev = pts[i - 1] || pts[i],
+        next = pts[i + 1] || pts[i];
+      let dx = next.x - prev.x,
+        dy = next.y - prev.y;
+      const dl = Math.hypot(dx, dy) || 1;
+      dx /= dl;
+      dy /= dl;
+      const nx = -dy,
+        ny = dx; // left normal
+      const x = pts[i].x,
+        y = pts[i].y,
+        a = along[i];
       // triangle strip (2 verts per sample, drawn as triangles below)
-      verts[o++] = x - nx * hw; verts[o++] = y - ny * hw; verts[o++] = 0; verts[o++] = a; verts[o++] = -hw;
-      verts[o++] = x + nx * hw; verts[o++] = y + ny * hw; verts[o++] = 0; verts[o++] = a; verts[o++] = hw;
+      verts[o++] = x - nx * hw;
+      verts[o++] = y - ny * hw;
+      verts[o++] = 0;
+      verts[o++] = a;
+      verts[o++] = -hw;
+      verts[o++] = x + nx * hw;
+      verts[o++] = y + ny * hw;
+      verts[o++] = 0;
+      verts[o++] = a;
+      verts[o++] = hw;
     }
     // Expand the strip into triangles.
     const tris = new Float32Array((n - 1) * 6 * 5);
     let p = 0;
     for (let i = 0; i < n - 1; i++) {
-      const b0 = i * 10, b1 = (i + 1) * 10;
-      tris.set(verts.subarray(b0, b0 + 5), p); p += 5;
-      tris.set(verts.subarray(b1, b1 + 5), p); p += 5;
-      tris.set(verts.subarray(b0 + 5, b0 + 10), p); p += 5;
-      tris.set(verts.subarray(b0 + 5, b0 + 10), p); p += 5;
-      tris.set(verts.subarray(b1, b1 + 5), p); p += 5;
-      tris.set(verts.subarray(b1 + 5, b1 + 10), p); p += 5;
+      const b0 = i * 10,
+        b1 = (i + 1) * 10;
+      tris.set(verts.subarray(b0, b0 + 5), p);
+      p += 5;
+      tris.set(verts.subarray(b1, b1 + 5), p);
+      p += 5;
+      tris.set(verts.subarray(b0 + 5, b0 + 10), p);
+      p += 5;
+      tris.set(verts.subarray(b0 + 5, b0 + 10), p);
+      p += 5;
+      tris.set(verts.subarray(b1, b1 + 5), p);
+      p += 5;
+      tris.set(verts.subarray(b1 + 5, b1 + 10), p);
+      p += 5;
     }
 
     // MVP: world -> screen (top-left, y down) -> clip (y up). Matches `project`.
     const z = cam.zoom;
     const mvp = new Float32Array([
-      z / W * 2, 0, 0, 0,
-      0, -z / H * 2, 0, 0,
-      0, 0, 1, 0,
-      -cam.x * z / W * 2, cam.y * z / H * 2, 0, 1,
+      (z / W) * 2,
+      0,
+      0,
+      0,
+      0,
+      (-z / H) * 2,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      ((-cam.x * z) / W) * 2,
+      ((cam.y * z) / H) * 2,
+      0,
+      1,
     ]);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.disable(gl.DEPTH_TEST);
-    gl.depthMask(false);           // the styles write gl_FragDepth; keep it out of the buffer
+    gl.depthMask(false); // the styles write gl_FragDepth; keep it out of the buffer
     gl.useProgram(prog.p);
     gl.uniformMatrix4fv(prog.u.uMvp, false, mvp);
     if (prog.u.uRes) gl.uniform2f(prog.u.uRes, W, H);
@@ -606,7 +769,8 @@ export class Renderer {
     gl.uniform4f(prog.u.uAppearance, alpha, 0, 0, 0);
     gl.uniform4f(prog.u.uArrow, arrow ? arrow.x : 0, arrow ? arrow.y : 0, arrow ? 1 : 0, 0);
     if (prog.u.uImage) {
-      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.trailWhite);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.trailWhite);
       gl.uniform1i(prog.u.uImage, 0);
     }
 
@@ -620,4 +784,4 @@ export class Renderer {
   }
 }
 
-export const BACKGROUNDS = ['grid', 'dots', 'circles', 'squares', 'none'];
+export const BACKGROUNDS = ["grid", "dots", "circles", "squares", "none"];

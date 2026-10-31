@@ -34,6 +34,12 @@ interface Props {
   formatTime: (seconds: number) => string;
   onLevelClick?: (levelId: string) => void;
   onPlayerClick?: (username: string) => void;
+  /**
+   * Rendered inside another view (the TAS leaderboard's "All levels" tab), so
+   * the page-level title is dropped and only the controls, summary and table
+   * remain.
+   */
+  embedded?: boolean;
 }
 
 const ARROW_FILTERS: { value: ArrowKind | "all"; label: string }[] = [
@@ -73,6 +79,7 @@ export function TasVsHumanView({
   formatTime,
   onLevelClick,
   onPlayerClick,
+  embedded = false,
 }: Props) {
   const [arrow, setArrow] = React.useState<ArrowKind | "all">("all");
   const [sortBy, setSortBy] = React.useState<"gap" | "level">("gap");
@@ -104,31 +111,33 @@ export function TasVsHumanView({
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-[var(--app-accent)]" /> TAS vs human
-          </h2>
-          <p className="text-slate-500 text-sm">
-            Every level's fastest human run next to the fastest tool-assisted run, with the gap
-            between them — a negative gap means the TAS is ahead.
-            {summary.compared > 0 && (
-              <>
-                {" "}
-                The TAS leads {summary.tasAhead} of the {summary.compared} compared level
-                {summary.compared === 1 ? "" : "s"}, a net{" "}
-                <span
-                  className={cn(
-                    "font-mono",
-                    summary.totalGap <= 0 ? "text-[#22c55e]" : "text-yellow-400",
-                  )}
-                >
-                  {formatGap(summary.totalGap)}
-                </span>
-                .
-              </>
-            )}
-          </p>
-        </div>
+        {!embedded && (
+          <div>
+            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-[var(--app-accent)]" /> TAS vs human
+            </h2>
+            <p className="text-slate-500 text-sm">
+              Every level's fastest human run next to the fastest tool-assisted run, with the gap
+              between them — a negative gap means the TAS is ahead.
+              {summary.compared > 0 && (
+                <>
+                  {" "}
+                  The TAS leads {summary.tasAhead} of the {summary.compared} compared level
+                  {summary.compared === 1 ? "" : "s"}, a net{" "}
+                  <span
+                    className={cn(
+                      "font-mono",
+                      summary.totalGap <= 0 ? "text-[#22c55e]" : "text-yellow-400",
+                    )}
+                  >
+                    {formatGap(summary.totalGap)}
+                  </span>
+                  .
+                </>
+              )}
+            </p>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <div className="flex bg-white/5 border border-white/10 rounded-lg p-1">
             {ARROW_FILTERS.map((option) => (

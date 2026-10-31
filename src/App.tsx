@@ -963,7 +963,7 @@ export default function App() {
   // the ref keeps it to a single request either way.
   const tasBoardsRequested = React.useRef(false);
   useEffect(() => {
-    const wanted = view === "home" || view === "tas-human";
+    const wanted = view === "home" || view === "tas-human" || view === "tas-board";
     if (!wanted || tasBoardsRequested.current) return;
     tasBoardsRequested.current = true;
     setTasBoardsLoading(true);
@@ -3150,6 +3150,17 @@ export default function App() {
             isAdmin={isAdmin}
             levelId={tasBoardLevelId}
             onLevelChange={setTasBoardLevelId}
+            levels={sortedLevels.filter((l) => l.packId !== "custom")}
+            data={processedAllLevelsData}
+            tasBoards={allTasBoards}
+            tasLoading={tasBoardsLoading}
+            profiles={playerProfiles}
+            formatTime={(seconds) => formatTime(seconds)}
+            onLevelClick={(levelId) => {
+              setSelectedLevel(levelId);
+              setView("leaderboard");
+            }}
+            onPlayerClick={handlePlayerClick}
             onLoadRun={(request) => {
               setTasLoad(request);
               navigateView("tas");

@@ -17,14 +17,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { LEVELS } from "@/constants";
-import { fetchTasBoard, removeTasRun, renameTasRun, type TasEntry } from "@/lib/tas-leaderboard";
+import {
+  fetchTasBoard,
+  removeTasRun,
+  renameTasRun,
+  type TasEntry,
+  type TasSummary,
+} from "@/lib/tas-leaderboard";
 import { TasReplayViewer } from "@/components/ReplayViewer";
+import { TasVsHumanView } from "@/components/TasVsHumanView";
 import { LevelPicker } from "@/components/LevelPicker";
 import { ArrowIcon } from "@/components/ArrowIcon";
 import { arrowKind, type ArrowKind } from "@/lib/arrow-sprites";
+import { displayNameFor, type ProfileDirectory } from "@/lib/display-name";
 import { fetchLeaderboard } from "@/services/api";
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
-import type { LeaderboardEntry } from "@/types";
+import type { LeaderboardEntry, LevelInfo } from "@/types";
 
 /** A TAS entry handed to the editor so it can be edited like any other run. */
 export interface TasLoadRequest {
@@ -42,6 +50,18 @@ interface TasLeaderboardViewProps {
   /** Selected level, controlled by the app so it survives Tools tab switches. */
   levelId: string;
   onLevelChange: (id: string) => void;
+  /**
+   * The "All levels" subtab compares every level's human WR against its TAS
+   * time, so it needs the whole level list and both boards.
+   */
+  levels?: LevelInfo[];
+  data?: Record<string, LeaderboardEntry[]>;
+  tasBoards?: Record<string, TasSummary[]>;
+  tasLoading?: boolean;
+  profiles?: ProfileDirectory;
+  formatTime?: (seconds: number) => string;
+  onLevelClick?: (levelId: string) => void;
+  onPlayerClick?: (username: string) => void;
 }
 
 /** A practice checkpoint request handed up from a watched TAS run. */
@@ -70,12 +90,22 @@ export function TasLeaderboardView({
   onMakeCheckpoint,
   levelId,
   onLevelChange,
+  levels,
+  data,
+  tasBoards,
+  tasLoading,
+  profiles,
+  formatTime,
+  onLevelClick,
+  onPlayerClick,
 }: TasLeaderboardViewProps) {
   const [entries, setEntries] = React.useState<TasEntry[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [removingId, setRemovingId] = React.useState<string | null>(null);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
+  /** "board" is one level's per-arrow boards; "all" is the whole-level comparison. */
+  const [tab, setTab] = React.useState<"board" | "all">("board");
   /** Player-name filter, applied to every arrow board at once. */
   const [query, setQuery] = React.useState("");
   /** Newest-first ordering, for "what changed lately" rather than "who leads". */
@@ -443,106 +473,146 @@ export function TasLeaderboardView({
             separate from the real game leaderboard.
           </p>
         </div>
-        <div className="flex items-end gap-2 flex-wrap">
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-              Level
-            </label>
-            <div className="flex items-center gap-1">
-              <Button
-                size="icon"
-                variant="outline"
-                className="h-9 w-9 shrink-0"
-                title="Previous level"
-                disabled={levelIndex <= 0}
-                onClick={() => gotoLevel(-1)}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <LevelPicker value={levelId} onChange={(l) => onLevelChange(l.id)} className="w-44" />
-              <Button
-                size="icon"
-                variant="outline"
-                className="h-9 w-9 shrink-0"
-                title="Next level"
-                disabled={levelIndex < 0 || levelIndex >= LEVELS.length - 1}
-                onClick={() => gotoLevel(1)}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-              Player
-            </label>
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Filter by name"
-                className="bg-white/5 border-white/10 h-9 w-44 text-xs pl-8"
-              />
-              {query && (
-                <button
-                  onClick={() => setQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                  aria-label="Clear player filter"
+        {tab === "board" && (
+          <div className="flex items-end gap-2 flex-wrap">
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                Level
+              </label>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-9 w-9 shrink-0"
+                  title="Previous level"
+                  disabled={levelIndex <= 0}
+                  onClick={() => gotoLevel(-1)}
                 >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <LevelPicker
+                  value={levelId}
+                  onChange={(l) => onLevelChange(l.id)}
+                  className="w-44"
+                />
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-9 w-9 shrink-0"
+                  title="Next level"
+                  disabled={levelIndex < 0 || levelIndex >= LEVELS.length - 1}
+                  onClick={() => gotoLevel(1)}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                Player
+              </label>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Filter by name"
+                  className="bg-white/5 border-white/10 h-9 w-44 text-xs pl-8"
+                />
+                {query && (
+                  <button
+                    onClick={() => setQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    aria-label="Clear player filter"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                Sort
+              </label>
+              <div className="inline-flex rounded-md border border-white/10 overflow-hidden h-9">
+                {(["time", "date"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setSortBy(mode)}
+                    className={cn(
+                      "px-3 text-[10px] font-bold uppercase tracking-wider",
+                      sortBy === mode
+                        ? "bg-[var(--app-accent)]/20 text-[var(--app-accent)]"
+                        : "text-slate-500 hover:text-slate-300",
+                    )}
+                  >
+                    {mode === "time" ? "Fastest" : "Newest"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 text-xs"
+              onClick={() => void copyBoard()}
+              title="Copy every board on this level as TSV"
+            >
+              <ClipboardCopy className="w-3.5 h-3.5 mr-1" /> Copy
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 text-xs"
+              onClick={() => void load(levelId, true)}
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5 mr-1" />
               )}
-            </div>
+              Refresh
+            </Button>
           </div>
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-              Sort
-            </label>
-            <div className="inline-flex rounded-md border border-white/10 overflow-hidden h-9">
-              {(["time", "date"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setSortBy(mode)}
-                  className={cn(
-                    "px-3 text-[10px] font-bold uppercase tracking-wider",
-                    sortBy === mode
-                      ? "bg-[var(--app-accent)]/20 text-[var(--app-accent)]"
-                      : "text-slate-500 hover:text-slate-300",
-                  )}
-                >
-                  {mode === "time" ? "Fastest" : "Newest"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-9 text-xs"
-            onClick={() => void copyBoard()}
-            title="Copy every board on this level as TSV"
-          >
-            <ClipboardCopy className="w-3.5 h-3.5 mr-1" /> Copy
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-9 text-xs"
-            onClick={() => void load(levelId, true)}
-            disabled={loading}
-          >
-            {loading ? (
-              <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-            ) : (
-              <RefreshCw className="w-3.5 h-3.5 mr-1" />
-            )}
-            Refresh
-          </Button>
-        </div>
+        )}
       </div>
 
-      {loading && entries.length === 0 ? (
+      <div className="flex bg-white/5 border border-white/10 rounded-lg p-1 w-fit">
+        {(
+          [
+            ["board", "This level"],
+            ["all", "All levels"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={cn(
+              "h-7 px-3 text-[11px] font-bold rounded-md",
+              tab === id
+                ? "bg-[var(--app-accent)] text-slate-950"
+                : "text-slate-400 hover:text-white",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "all" ? (
+        <TasVsHumanView
+          embedded
+          levels={levels ?? []}
+          data={data ?? {}}
+          tasBoards={tasBoards ?? {}}
+          tasLoading={tasLoading}
+          profiles={profiles}
+          formatTime={formatTime ?? ((s) => `${s.toFixed(3)}s`)}
+          onLevelClick={onLevelClick}
+          onPlayerClick={onPlayerClick}
+        />
+      ) : loading && entries.length === 0 ? (
         <div className="flex items-center justify-center py-16 text-slate-500 text-sm gap-2">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading TAS boards…
         </div>
