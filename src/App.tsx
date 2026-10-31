@@ -137,6 +137,12 @@ import { useAdminAuth } from "./hooks/useAdminAuth";
 import { useRemovedRuns, removeRun } from "./hooks/useRemovedRuns";
 import { removedRunKey } from "./lib/removedRuns";
 import { computeMedals } from "./lib/medals";
+import {
+  resolveOverallRank,
+  sortAverageRows,
+  timeToNextRank,
+  type AverageSort,
+} from "./lib/average-ranking";
 import { useAppSettings, formatWithSettings } from "./hooks/useAppSettings";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { InstallAppBanner } from "./components/InstallAppBanner";
@@ -193,6 +199,10 @@ export default function App() {
   const [selectedPack, setSelectedPack] = useState<string>("all");
   const [selectedAveragePack, setSelectedAveragePack] = useState<string>("all");
   const [averageSearchQuery, setAverageSearchQuery] = useState<string>("");
+  // The nav labels this view "Total time & average", so total time is the default
+  // ordering; average position is one click away. They genuinely disagree, because
+  // playing more maps adds time but can improve the average position.
+  const [averageSort, setAverageSort] = useState<AverageSort>("total");
 
   const [selectedCustomLevelId, setSelectedCustomLevelId] = useState<string | null>(null);
   const [fetchedLevelDetails, setFetchedLevelDetails] = useState<
@@ -1235,7 +1245,18 @@ export default function App() {
 
     const players: Record<
       string,
-      { username: string; totalPosition: number; count: number; totalTime: number }
+      {
+        username: string;
+        totalPosition: number;
+        count: number;
+        totalTime: number;
+        /**
+         * Per-rank cutoff summed over *only the levels this player played*.
+         * The global cutoff is the sum over every level, so comparing a partial
+         * total against it makes anyone with a few fast maps look like Champion.
+         */
+        cutoffByRank: Record<string, number>;
+      }
     > = {};
 
     allUsernames.forEach((username) => {
@@ -1247,11 +1268,28 @@ export default function App() {
           const entry = levelData[entryIndex];
 
           if (!players[username]) {
-            players[username] = { username, totalPosition: 0, count: 0, totalTime: 0 };
+            players[username] = {
+              username,
+              totalPosition: 0,
+              count: 0,
+              totalTime: 0,
+              cutoffByRank: {},
+            };
           }
           players[username].totalPosition += entryIndex + 1;
           players[username].count += 1;
           players[username].totalTime += entry.completion_time;
+
+          const levelRanks = allRankConfigs[level.id]?.ranks;
+          if (levelRanks) {
+            for (const rankId of RANK_ORDER) {
+              const cutoff = Number(levelRanks[rankId]?.timeCutoff ?? 0);
+              if (cutoff > 0) {
+                players[username].cutoffByRank[rankId] =
+                  (players[username].cutoffByRank[rankId] ?? 0) + cutoff;
+              }
+            }
+          }
         }
       });
     });
@@ -1266,29 +1304,32 @@ export default function App() {
       result = result.filter((p) => p.count === packLevels.length);
     }
 
-    result.sort((a, b) => a.avgPosition - b.avgPosition || a.avgTime - b.avgTime);
+    // Order by the selected metric. A lower total time does not imply a better
+    // average position (playing more levels adds time but can improve the
+    // average), so the two orderings are genuinely different and both are offered.
+    result = sortAverageRows(result, averageSort);
 
     const scaleFactor = packLevels.length / (dynamicLevels.length || 1);
 
+    // Resolve each row's overall rank against the cutoffs for the levels that row
+    // actually played. Using the full-map cutoff here would rate a 6-map total
+    // against a 72-map bar, which puts everyone in the top rank.
     return result.map((p) => {
-      const getScaledOverallRank = (totalTime: number) => {
-        const safeOrder = RANK_ORDER || [];
-        const safeConfig = effectiveOverallRankConfig || DEFAULT_OVERALL_RANKS || {};
-        for (const rankId of safeOrder) {
-          const rank = safeConfig[rankId];
-          if (rank) {
-            const cutoff = rank.timeCutoff * scaleFactor;
-            if (totalTime <= cutoff) {
-              return rankId;
-            }
-          }
-        }
-        return safeOrder[safeOrder.length - 1] || "Beginner";
-      };
-
+      const config: Record<string, RankInfo> = {};
+      for (const rankId of RANK_ORDER) {
+        const base = effectiveOverallRankConfig[rankId] || DEFAULT_OVERALL_RANKS[rankId];
+        if (!base) continue;
+        config[rankId] = { ...base, timeCutoff: p.cutoffByRank[rankId] ?? 0 };
+      }
+      const rank = resolveOverallRank(p.totalTime, RANK_ORDER, config, 1);
       return {
         ...p,
-        overallRankId: getScaledOverallRank(p.totalTime),
+        overallRankId: rank.rankId,
+        nextRankId: rank.nextRankId,
+        nextRankCutoff: rank.nextCutoff,
+        /** True once the player has run every map in the current filter. */
+        complete: p.count === packLevels.length,
+        scaleFactor,
       };
     });
   }, [
@@ -1298,6 +1339,8 @@ export default function App() {
     effectiveOverallRankConfig,
     dynamicLevels,
     selectedAveragePack,
+    averageSort,
+    allRankConfigs,
   ]);
 
   const selectedPlayerMedals = useMemo(() => {
@@ -1935,7 +1978,9 @@ export default function App() {
                   Average Rankings
                 </h2>
                 <p className="text-slate-500 text-sm">
-                  Overall performance based on average leaderboard position and rank.
+                  Overall performance based on average leaderboard position and rank. Use the
+                  ordering toggle to rank by total time instead — the two disagree, because playing
+                  more maps adds time but can improve the average.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
@@ -1993,6 +2038,33 @@ export default function App() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => setAverageSort("position")}
+                    className={cn(
+                      "text-[10px] uppercase tracking-widest h-8 px-3",
+                      averageSort === "position" ? "bg-white/10 text-white" : "text-slate-400",
+                    )}
+                  >
+                    By Avg Pos
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setAverageSort("total")}
+                    className={cn(
+                      "text-[10px] uppercase tracking-widest h-8 px-3",
+                      averageSort === "total"
+                        ? "bg-[var(--app-accent)] text-slate-950 font-bold"
+                        : "text-slate-400",
+                    )}
+                  >
+                    By Total Time
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg p-1 self-start">
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setAllMapsPlayedFilter(false)}
                     className={cn(
                       "text-[10px] uppercase tracking-widest h-8 px-3",
@@ -2042,7 +2114,7 @@ export default function App() {
                   label: "Top Average Pos",
                   value:
                     averageLeaderboard.length > 0
-                      ? `#${averageLeaderboard[0].avgPosition.toFixed(1)}`
+                      ? `#${Math.min(...averageLeaderboard.map((p) => p.avgPosition)).toFixed(1)}`
                       : "N/A",
                   icon: Trophy,
                   imgSrc: "https://play.narrowarrow.xyz/assets/assets/images/trophy.svg",
@@ -2096,6 +2168,9 @@ export default function App() {
                         Total Time
                       </TableHead>
                       <TableHead className="text-center font-mono text-[10px] uppercase tracking-widest text-slate-500 whitespace-nowrap">
+                        Next Rank
+                      </TableHead>
+                      <TableHead className="text-center font-mono text-[10px] uppercase tracking-widest text-slate-500 whitespace-nowrap">
                         Overall Rank
                       </TableHead>
                       <TableHead className="text-right font-mono text-[10px] uppercase tracking-widest text-slate-500 whitespace-nowrap">
@@ -2115,7 +2190,7 @@ export default function App() {
                         return (
                           <TableRow>
                             <TableCell
-                              colSpan={7}
+                              colSpan={8}
                               className="text-center py-8 text-slate-500 font-mono text-xs"
                             >
                               No players found matching "{averageSearchQuery}"
@@ -2151,6 +2226,41 @@ export default function App() {
                             <TableCell className="text-center font-mono text-[#6366F1] whitespace-nowrap">
                               {formatTime(p.totalTime, "minutes")}
                             </TableCell>
+                            <TableCell className="text-center whitespace-nowrap">
+                              {p.nextRankId && p.nextRankCutoff != null ? (
+                                <span
+                                  className="font-mono text-[11px] text-slate-400"
+                                  title={`Beat ${formatTime(p.nextRankCutoff, "minutes")} total to reach ${p.nextRankId}`}
+                                >
+                                  {(() => {
+                                    const rInfo =
+                                      effectiveOverallRankConfig[p.nextRankId] ||
+                                      DEFAULT_OVERALL_RANKS[p.nextRankId];
+                                    return (
+                                      <span className={cn("font-bold", rInfo.color)}>
+                                        {rInfo.name}
+                                      </span>
+                                    );
+                                  })()}
+                                  <span className="text-slate-500">
+                                    {" "}
+                                    −
+                                    {formatTime(
+                                      timeToNextRank(p.totalTime, {
+                                        rankId: p.overallRankId,
+                                        nextRankId: p.nextRankId,
+                                        nextCutoff: p.nextRankCutoff,
+                                      }) ?? 0,
+                                      "minutes",
+                                    )}
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="font-mono text-[11px] text-slate-600">
+                                  {p.overallRankId === "Champion" ? "Top rank" : "—"}
+                                </span>
+                              )}
+                            </TableCell>
                             <TableCell className="text-center">
                               {(() => {
                                 const rankInfo =
@@ -2159,14 +2269,21 @@ export default function App() {
                                 return (
                                   <Badge
                                     variant="outline"
+                                    title={
+                                      p.complete
+                                        ? `All ${maxLevelsInFilter} maps played`
+                                        : `Provisional — rated over the ${p.count} map${p.count === 1 ? "" : "s"} played`
+                                    }
                                     className={cn(
                                       "text-[10px] font-bold uppercase whitespace-nowrap",
                                       rankInfo.color,
                                       rankInfo.bgColor,
                                       rankInfo.borderColor,
+                                      !p.complete && "opacity-60",
                                     )}
                                   >
                                     {rankInfo.name}
+                                    {!p.complete && <span className="ml-1">*</span>}
                                   </Badge>
                                 );
                               })()}
@@ -2184,6 +2301,48 @@ export default function App() {
                   </TableBody>
                 </Table>
               </div>
+            </Card>
+
+            {/* Rank thresholds — the totals behind each overall rank, so a player
+                can see exactly how much time separates them from the next one. */}
+            <Card className="bg-white/5 border-white/10">
+              <CardHeader className="border-b border-white/10 py-3">
+                <CardTitle className="text-base text-white flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-[var(--app-accent)]" /> Total time per overall
+                  rank
+                </CardTitle>
+                <p className="text-slate-500 text-xs mt-1">
+                  Summed across all {dynamicLevels.length} maps. Beat a cutoff to earn that rank;
+                  the map-scope selector above scales these to the selected pack.
+                </p>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-x divide-y divide-white/5">
+                  {(Array.isArray(RANK_ORDER) ? RANK_ORDER : []).map((rankId) => {
+                    const r = effectiveOverallRankConfig[rankId] || DEFAULT_OVERALL_RANKS[rankId];
+                    if (!r) return null;
+                    const uncapped = r.timeCutoff >= 9999;
+                    return (
+                      <div key={rankId} className="p-3">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[10px] font-bold uppercase mb-1.5",
+                            r.color,
+                            r.bgColor,
+                            r.borderColor,
+                          )}
+                        >
+                          {r.name}
+                        </Badge>
+                        <div className="font-mono text-sm text-white">
+                          {uncapped ? "No limit" : `≤ ${formatTime(r.timeCutoff, "minutes")}`}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
             </Card>
           </div>
         ) : view === "wrs" ? (
