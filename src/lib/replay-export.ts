@@ -35,7 +35,9 @@ import {
   type PaintCtx,
   type RenderMode,
 } from "@/lib/replay-paint";
-import { SIM_TICK_MS, hasSiteMechanics, type SimGeometry, type SimResult } from "@/lib/replay-sim";
+import { SIM_TICK_MS, hasSiteMechanics, type RawLevelData, type SimGeometry, type SimResult } from "@/lib/replay-sim";
+import type { WebGLFrameSource } from "@/lib/replay-export-webgl";
+import type { GameBackground } from "@/lib/game-renderer";
 import { darken, withAlpha } from "@/lib/replay-visuals";
 import {
   DEFAULT_BACKGROUND,
@@ -121,6 +123,26 @@ export interface ExportOptions {
    */
   showTouch?: boolean;
   ghosts?: ExportGhost[];
+  /**
+   * Draw the scene with the game's own WebGL renderer (the same one the
+   * interactive viewer's "Game" mode uses) instead of the 2D painters. The GL
+   * scene is blitted under the same 2D overlays, so the HUD is identical in both
+   * modes. Needs `levelData` + `inputs`; when either is missing the 2D painters
+   * are used, so an export never fails for want of the WebGL source.
+   */
+  webgl?: boolean;
+  /** The level payload the engine needs to drive the WebGL renderer. */
+  levelData?: RawLevelData;
+  /** The run's input string, for the WebGL frame source. */
+  inputs?: string;
+  /** How many symbols of `inputs` to use. */
+  inputCount?: number;
+  /** The run's arrow name, so the WebGL source picks the right physics. */
+  arrowName?: string | null;
+  /** The game background shader, in WebGL mode. */
+  webglBackground?: GameBackground;
+  /** Draw the collision hitbox in WebGL mode (on by default). */
+  showHitbox?: boolean;
   /** Reports 0..1 as the clip records. */
   onProgress?: (fraction: number) => void;
 }
@@ -477,6 +499,135 @@ const EXPORT_FIELD_PARTICLES: FieldParticle[] = (() => {
  * and the render mode. Shared by every exported frame so the whole clip is
  * consistent, and it mirrors the interactive stage's own draw order.
  */
+/**
+ * The 2D overlays that sit above the scene in both render modes: ghost trails
+ * and arrows, then the run's own trail and arrow. In WebGL mode the scene and
+ * the primary arrow come from the game's renderer, so the primary arrow is only
+ * drawn here in 2D mode.
+ */
+function drawSceneOverlays(
+  ctx: CanvasRenderingContext2D,
+  frame: number,
+  opts: ExportOptions,
+  pc: PaintCtx,
+  clip: { w: number; h: number } | undefined,
+  tx: (x: number) => number,
+  ty: (y: number) => number,
+  scale: number,
+  drawPrimary: boolean,
+) {
+  const { sim, mode } = opts;
+  const upto = Math.max(0, Math.min(Math.floor(frame), sim.path.length - 1));
+
+  for (const g of opts.ghosts ?? []) {
+    const gp = g.sim.path;
+    if (gp.length < 2) continue;
+    const gUpto = Math.max(0, Math.min(upto, gp.length - 1));
+    const p = gp[gUpto];
+    const gx = tx(p.x);
+    const gy = ty(p.y);
+    // Skip a ghost that is entirely off-screen in follow mode; its arrow would
+    // never be visible anyway, and skipping saves a full trail stroke.
+    if (clip && (gx < -clip.w || gx > clip.w * 2 || gy < -clip.h || gy > clip.h * 2)) continue;
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    strokeTrail(ctx, gp, gUpto, g.color, false, pc, clip);
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    drawSprite(ctx, g.arrow, gx, gy, p.rot, scale, g.arrowRadius, g.color, g.color);
+    ctx.restore();
+    if (g.label) {
+      ctx.font = "bold 10px ui-monospace, monospace";
+      ctx.fillStyle = g.color;
+      ctx.fillText(g.label, gx + 9, gy - 9);
+    }
+  }
+
+  if (!drawPrimary) return;
+  strokeTrail(ctx, sim.path, upto, opts.trail, mode === "game", pc, clip);
+  const point = sim.path[upto];
+  if (point) {
+    if ((point.thrustPower ?? 0) > 0.05) {
+      drawGameThrust(
+        ctx,
+        opts.arrow,
+        point.x,
+        point.y,
+        point.rot,
+        opts.arrowRadius,
+        scale,
+        tx,
+        ty,
+        point.thrustPower ?? 1,
+      );
+    }
+    if (mode === "game") {
+      drawCollisionCircle(ctx, point.x, point.y, opts.arrowRadius, scale, tx, ty);
+    }
+    drawSprite(
+      ctx,
+      opts.arrow,
+      tx(point.x),
+      ty(point.y),
+      point.rot,
+      scale,
+      opts.arrowRadius,
+      opts.bodyColor,
+      opts.thrust,
+    );
+  }
+}
+
+/**
+ * Blit the WebGL scene onto the export canvas and lay the shared 2D HUD over it.
+ * The GL renderer draws the level, walls, portals, the trail ribbon and the
+ * arrow; everything else (ghosts, info card, timer, input dots) is the same 2D
+ * code as the schematic mode, so the two exports only differ in the scene.
+ */
+function renderWebGLScene(
+  ctx: CanvasRenderingContext2D,
+  frame: number,
+  opts: ExportOptions,
+  source: WebGLFrameSource,
+  dpr: number,
+  width: number,
+  height: number,
+) {
+  const { sim, geometry } = opts;
+  const upto = Math.max(0, Math.min(Math.floor(frame), sim.path.length - 1));
+
+  // The GL canvas is exactly the encode size in device px, so it blits 1:1 in
+  // device space and the overlays are then drawn in CSS px under the dpr
+  // transform, exactly as in the schematic path.
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  source.render(upto);
+  ctx.drawImage(source.canvas, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Overlays use the game camera's own world→screen mapping so the ghosts and
+  // labels sit exactly where the GL scene drew the arrow. This mirrors
+  // `GameRenderer`'s projection (`gl.project`): centre + (world − cam) · zoom.
+  const gl = source.camera;
+  const scale = gl.zoom;
+  const tx = (x: number) => width / 2 + (x - gl.x) * scale;
+  const ty = (y: number) => height / 2 + (y - gl.y) * scale;
+  const pc: PaintCtx = { tx, ty, scale, mode: "game", motions: geometry.movingBlocks };
+  const clip = { w: width, h: height };
+
+  drawSceneOverlays(ctx, upto, opts, pc, clip, tx, ty, scale, false);
+
+  if (sim.finishTick !== null && upto >= sim.finishTick) {
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 11px ui-monospace, monospace";
+    ctx.fillText("FINISH", 10, 18);
+  }
+  if (opts.infoCard) drawInfoCard(ctx, opts.infoCard, width, height, opts.showInputs ? 52 : 18);
+  if (opts.showTimer) drawTimer(ctx, upto * (SIM_TICK_MS / 1000), width);
+  if (opts.showInputs) drawInputIndicator(ctx, sim.path[upto]?.input, width, height);
+  if (opts.showTouch) drawTouchOverlay(ctx, sim.path[upto]?.input, width, height);
+}
+
 function renderScene(
   ctx: CanvasRenderingContext2D,
   frame: number,
@@ -544,63 +695,7 @@ function renderScene(
     paintSiteMechanics(ctx, geometry, upto, pc, opts.sim.timeline, sim.path[upto]);
   }
 
-  for (const g of opts.ghosts ?? []) {
-    const gp = g.sim.path;
-    if (gp.length < 2) continue;
-    const gUpto = Math.max(0, Math.min(upto, gp.length - 1));
-    const p = gp[gUpto];
-    const gx = tx(p.x);
-    const gy = ty(p.y);
-    // Skip a ghost that is entirely off-screen in follow mode; its arrow would
-    // never be visible anyway, and skipping saves a full trail stroke.
-    if (clip && (gx < -clip.w || gx > clip.w * 2 || gy < -clip.h || gy > clip.h * 2)) continue;
-    ctx.save();
-    ctx.globalAlpha = 0.5;
-    strokeTrail(ctx, gp, gUpto, g.color, false, pc, clip);
-    ctx.restore();
-    ctx.save();
-    ctx.globalAlpha = 0.6;
-    drawSprite(ctx, g.arrow, gx, gy, p.rot, scale, g.arrowRadius, g.color, g.color);
-    ctx.restore();
-    if (g.label) {
-      ctx.font = "bold 10px ui-monospace, monospace";
-      ctx.fillStyle = g.color;
-      ctx.fillText(g.label, gx + 9, gy - 9);
-    }
-  }
-
-  strokeTrail(ctx, sim.path, upto, opts.trail, mode === "game", pc, clip);
-  const point = sim.path[upto];
-  if (point) {
-    if ((point.thrustPower ?? 0) > 0.05) {
-      drawGameThrust(
-        ctx,
-        opts.arrow,
-        point.x,
-        point.y,
-        point.rot,
-        opts.arrowRadius,
-        scale,
-        tx,
-        ty,
-        point.thrustPower ?? 1,
-      );
-    }
-    if (mode === "game") {
-      drawCollisionCircle(ctx, point.x, point.y, opts.arrowRadius, scale, tx, ty);
-    }
-    drawSprite(
-      ctx,
-      opts.arrow,
-      tx(point.x),
-      ty(point.y),
-      point.rot,
-      scale,
-      opts.arrowRadius,
-      opts.bodyColor,
-      opts.thrust,
-    );
-  }
+  drawSceneOverlays(ctx, upto, opts, pc, clip, tx, ty, scale, true);
 
   if (sim.finishTick !== null && upto >= sim.finishTick) {
     ctx.fillStyle = "#ffffff";
@@ -617,10 +712,10 @@ function renderScene(
   if (opts.showInputs) {
     // The indicator is drawn in CSS px like the rest of the scene (the base
     // transform already carries `dpr`), so its size is resolution-independent.
-    drawInputIndicator(ctx, point?.input, width, height);
+    drawInputIndicator(ctx, sim.path[upto]?.input, width, height);
   }
 
-  if (opts.showTouch) drawTouchOverlay(ctx, point?.input, width, height);
+  if (opts.showTouch) drawTouchOverlay(ctx, sim.path[upto]?.input, width, height);
 }
 
 /** A readable filename stem for the download, e.g. `Red-Velocity-speedy`. */
@@ -826,6 +921,30 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
   const dt = (tickStep * SIM_TICK_MS) / 1000;
   const bounds = computeBounds(opts);
 
+  // "Game" mode uses the game's own WebGL renderer when the level data is on
+  // hand, so an exported clip matches the interactive viewer. A failure here
+  // (no WebGL2, no level data) just falls back to the 2D painters below.
+  let webgl: WebGLFrameSource | null = null;
+  if (opts.mode === "game" && opts.webgl && opts.levelData && opts.inputs) {
+    try {
+      const { createWebGLFrameSource } = await import("@/lib/replay-export-webgl");
+      webgl = await createWebGLFrameSource({
+        levelData: opts.levelData,
+        inputs: opts.inputs,
+        inputCount: opts.inputCount,
+        arrowName: opts.arrowName,
+        width: canvas.width,
+        height: canvas.height,
+        background: opts.webglBackground,
+        showHitbox: opts.showHitbox,
+        camera: opts.camera,
+        trail: opts.sim.path.map((p) => ({ x: p.x, y: p.y })),
+      });
+    } catch {
+      webgl = null;
+    }
+  }
+
   const stepCamera = (frame: number) => {
     if (!camera) return;
     const upto = Math.max(0, Math.min(Math.floor(frame), opts.sim.path.length - 1));
@@ -912,7 +1031,8 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
     for (let f = 0; f < frameCount; f++) {
       const tick = frameToTick(f);
       stepCamera(tick);
-      renderScene(ctx, tick, opts, camera, dpr, bounds);
+      if (webgl) renderWebGLScene(ctx, tick, opts, webgl, dpr, opts.width, opts.height);
+      else renderScene(ctx, tick, opts, camera, dpr, bounds);
       const frame = new VideoFrame(canvas, {
         timestamp: Math.round(frameToMs(f) * 1000),
         duration: Math.round(1e6 / opts.fps),
@@ -953,9 +1073,11 @@ async function tryExportOffline(opts: ExportOptions, forceWebm = false): Promise
     } catch {
       /* already closed */
     }
+    webgl?.dispose();
     return null;
   }
   encoder.close();
+  webgl?.dispose();
   // `writer` is assigned inside the encoder's output callback, which TypeScript's
   // flow analysis cannot see, so widen it before the null check.
   const muxed = writer as Mp4Writer | WebMWriter | null;
@@ -1025,6 +1147,29 @@ async function exportWithMediaRecorder(opts: ExportOptions): Promise<Blob> {
     camera.reset(p0?.x ?? 0, p0?.y ?? 0);
   }
 
+  // "Game" mode draws with the game's own WebGL renderer when possible, exactly
+  // as the offline path does; otherwise the 2D painters are used.
+  let webgl: WebGLFrameSource | null = null;
+  if (opts.mode === "game" && opts.webgl && opts.levelData && opts.inputs) {
+    try {
+      const { createWebGLFrameSource } = await import("@/lib/replay-export-webgl");
+      webgl = await createWebGLFrameSource({
+        levelData: opts.levelData,
+        inputs: opts.inputs,
+        inputCount: opts.inputCount,
+        arrowName: opts.arrowName,
+        width: canvas.width,
+        height: canvas.height,
+        background: opts.webglBackground,
+        showHitbox: opts.showHitbox,
+        camera: opts.camera,
+        trail: opts.sim.path.map((p) => ({ x: p.x, y: p.y })),
+      });
+    } catch {
+      webgl = null;
+    }
+  }
+
   // Trim to the tick the run actually finished on, so inputs past the finish
   // (common in TAS/optimizer strings) do not play as a frozen tail. See
   // `tryExportOffline`.
@@ -1065,7 +1210,8 @@ async function exportWithMediaRecorder(opts: ExportOptions): Promise<Blob> {
   /** Draw one frame at tick `frame` (may be fractional between 240Hz samples). */
   const renderFrame = (frame: number) => {
     stepCamera(frame);
-    renderScene(ctx, frame, opts, camera, dpr, bounds);
+    if (webgl) renderWebGLScene(ctx, frame, opts, webgl, dpr, opts.width, opts.height);
+    else renderScene(ctx, frame, opts, camera, dpr, bounds);
   };
 
   // Progress is throttled to whole percents: calling back on every animation
@@ -1121,6 +1267,7 @@ async function exportWithMediaRecorder(opts: ExportOptions): Promise<Blob> {
   recorder.stop();
   await stopped;
   stream.getTracks().forEach((t) => t.stop());
+  webgl?.dispose();
   opts.onProgress?.(1);
   return new Blob(chunks, { type: mimeType });
 }

@@ -43,7 +43,7 @@ import {
 import { BACKGROUNDS, DEFAULT_BACKGROUND, type BackgroundTheme } from "@/lib/replay-background";
 import type { RenderMode } from "@/lib/replay-paint";
 import type { ArrowKind } from "@/lib/arrow-sprites";
-import type { SimGeometry, SimResult } from "@/lib/replay-sim";
+import type { RawLevelData, SimGeometry, SimResult } from "@/lib/replay-sim";
 
 /** Output presets, sized for the usual places a clip gets shared. */
 const SIZE_PRESETS = [
@@ -68,6 +68,13 @@ interface ExportDialogProps {
   levelName?: string;
   /** Prefills the run-info card (player, time, date, delta). */
   defaultInfo?: Partial<ExportInfoCard>;
+  /** The level payload, so "Game" mode can render with the game's WebGL engine. */
+  levelData?: RawLevelData | null;
+  /** The run's inputs + count, for the WebGL frame source. */
+  inputs?: string;
+  inputCount?: number;
+  /** The run's arrow name, so the WebGL source picks the right physics. */
+  arrowName?: string | null;
   /** Pre-simulated runs offered as side-by-side ghosts. */
   ghostCandidates?: {
     id: string;
@@ -88,11 +95,21 @@ export function ReplayExportDialog({
   defaultColors,
   levelName,
   defaultInfo,
+  levelData,
+  inputs,
+  inputCount,
+  arrowName,
   ghostCandidates = [],
   trigger,
 }: ExportDialogProps) {
   const [open, setOpen] = React.useState(false);
   const [mode, setMode] = React.useState<RenderMode>("game");
+  // In "Game" mode, draw the scene with the game's own WebGL renderer (the same
+  // one the viewer uses) when the level data is available. It is the default so
+  // an export matches what the viewer shows; unchecking it falls back to the 2D
+  // painters, which is the only option without level data.
+  const [webgl, setWebgl] = React.useState(true);
+  const canWebGL = Boolean(levelData && inputs);
   const [cameraMode, setCameraMode] = React.useState<ExportCameraMode>("follow");
   const [camera, setCamera] = React.useState<CameraSettings>(cameraPreset("normal"));
   const [sizeIdx, setSizeIdx] = React.useState(0);
@@ -216,6 +233,11 @@ export function ReplayExportDialog({
         showTouch,
         showTimer,
         ghosts,
+        webgl: webgl && canWebGL,
+        levelData: levelData ?? undefined,
+        inputs,
+        inputCount,
+        arrowName,
         onProgress: setProgress,
       });
       const name = `${exportFileName(levelName, arrow)}.${blob.type.includes("mp4") ? "mp4" : "webm"}`;
@@ -279,6 +301,23 @@ export function ReplayExportDialog({
               ))}
             </div>
           </div>
+
+          {/* The game render can use the real WebGL renderer (as the viewer does)
+              or the 2D painters. Only offered when the level data is on hand. */}
+          {mode === "game" && canWebGL && (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="w-24 text-[11px] text-slate-400">Engine</span>
+              <label className="flex items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={webgl}
+                  onChange={(e) => setWebgl(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-[var(--app-accent)]"
+                />
+                WebGL renderer (matches the viewer)
+              </label>
+            </div>
+          )}
 
           {/* Background */}
           <div className="flex flex-wrap items-center gap-3">
@@ -447,7 +486,9 @@ export function ReplayExportDialog({
                     value={infoDelta}
                     onChange={(e) => setInfoDelta(e.target.value)}
                     placeholder="-0.031"
-                    inputMode="decimal"
+                    // Deliberately not `inputMode="decimal"`: the mobile decimal
+                    // and numeric keypads have no minus key, so a signed delta
+                    // could not be typed. The plain keyboard can.
                     className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] font-mono text-slate-200"
                   />
                 </label>

@@ -23,6 +23,7 @@ import {
   type SimGeometry,
   type SimPoint,
   type SiteTimeline,
+  type EnginePlayerState,
 } from "./replay-sim";
 
 export type PlayPhase = "idle" | "countdown" | "running" | "paused" | "finished" | "dead";
@@ -336,6 +337,17 @@ export class PlayGame {
   /** The latest sampled pose, or null before the first advance. */
   get current(): SimPoint | null {
     return this.latest;
+  }
+
+  /**
+   * The engine's full live state — pose, the obstacle list with rotations
+   * applied, and this tick's effects — for a renderer that draws the map the
+   * physics actually used (the WebGL game renderer). This parses the whole
+   * state string, so read it once per *rendered frame*, never per tick; that is
+   * why the plain 2D canvas (which only needs the pose) does not call it.
+   */
+  liveState(): EnginePlayerState | null {
+    return this.engine?.readFull() ?? null;
   }
 
   /** The physics tick the latest sampled pose is at (0 at spawn). */

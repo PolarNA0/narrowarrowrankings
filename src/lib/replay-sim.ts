@@ -1100,7 +1100,7 @@ export function forceAt(fields: ForceField[], x: number, y: number): { x: number
 }
 
 /** Minimal shape of the engine state the replay reads. */
-interface EnginePlayerState {
+export interface EnginePlayerState {
   player: {
     translation: { x: number; y: number };
     rotation: number;

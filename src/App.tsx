@@ -179,7 +179,7 @@ import { readUrlState, writeUrlState, shareUrl, type UrlState } from "@/lib/url-
 import type { CompareCandidate } from "@/hooks/useCompareGhosts";
 import { useInGameMedals } from "@/hooks/useInGameMedals";
 import { mergeLeaderboardUpdates } from "@/lib/leaderboard-state";
-import { avatarFor, displayNameFor, matchesPlayerSearch } from "@/lib/display-name";
+import { displayNameFor, matchesPlayerSearch } from "@/lib/display-name";
 
 /** Every top-level view the shell can show. Most are nav items; `home` is the
  * landing page and `profile`/`compare` are reached from a player instead. */
@@ -3754,23 +3754,19 @@ export default function App() {
                                         )}
                                       />
                                       <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                                        {settings.showAvatars &&
-                                        avatarFor(playerProfiles, entry.username) ? (
-                                          <img
-                                            src={avatarFor(playerProfiles, entry.username)}
-                                            alt=""
-                                            className="w-5 h-5 sm:w-6 sm:h-6 rounded-md object-cover shrink-0 ring-1 ring-white/10"
-                                          />
-                                        ) : (
-                                          <img
-                                            src="https://play.narrowarrow.xyz/assets/assets/images/account.svg"
-                                            alt=""
-                                            className="w-3 h-3 sm:w-3.5 sm:h-3.5 object-contain opacity-50 group-hover:opacity-100 transition-opacity shrink-0"
-                                            onError={(e) => {
-                                              e.currentTarget.style.display = "none";
-                                            }}
-                                          />
-                                        )}
+                                        {/* A fixed-size account glyph, never a
+                                            player's avatar: an avatar image is
+                                            a different size from the glyph, so
+                                            rows with one shifted their name
+                                            column and the board looked ragged. */}
+                                        <img
+                                          src="https://play.narrowarrow.xyz/assets/assets/images/account.svg"
+                                          alt=""
+                                          className="w-3 h-3 sm:w-3.5 sm:h-3.5 object-contain opacity-50 group-hover:opacity-100 transition-opacity shrink-0"
+                                          onError={(e) => {
+                                            e.currentTarget.style.display = "none";
+                                          }}
+                                        />
                                         <span className="font-bold text-slate-200 group-hover:text-[var(--app-accent)] transition-colors text-xs sm:text-sm truncate">
                                           {displayNameFor(playerProfiles, entry.username)}
                                         </span>

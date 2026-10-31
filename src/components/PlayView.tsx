@@ -51,8 +51,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PlayCanvas, type PlayCanvasHandle } from "@/components/PlayCanvas";
+import { PlayWebGL } from "@/components/PlayWebGL";
 import { CameraSettingsPanel } from "@/components/CameraSettingsPanel";
 import { DEFAULT_GAME_CAMERA, type CameraSettings } from "@/lib/replay-render";
+import {
+  loadPlayRenderMode,
+  savePlayRenderMode,
+  type PlayRenderMode,
+} from "@/lib/play-render-mode";
 import { LevelPicker, siteIdOf } from "@/components/LevelPicker";
 import { TasSubmitDialog } from "@/components/TasSubmitDialog";
 import { nalvlToRawLevelData, type NalvlLevel } from "@/lib/nalvl";
@@ -136,6 +142,13 @@ const bestKey = (levelId: string, arrow: string) => `naPlayBest:${levelId}:${arr
 
 /** The pseudo-level id used when playing a level authored in the editor. */
 const SITE_LEVEL_ID = "__site__";
+
+/**
+ * How many trailing path points the WebGL trail keeps. The game's ribbon is
+ * restroked from scratch every frame, so an unbounded trail would make a long
+ * run's frame cost grow with its length; the visible tail is all that shows.
+ */
+const WEBGL_TRAIL_MAX = 2000;
 
 /**
  * Site-level handoffs already auto-selected. Module-level so a later visit to
@@ -240,6 +253,13 @@ export function PlayView({
   // Fullscreen play: an immersive overlay with a big canvas, a top-centre clock,
   // a pause button whose popover carries the camera settings, and an exit button.
   const [fullscreen, setFullscreen] = React.useState(false);
+  // The stage render: "webgl" is the game's own renderer (the default), "game"
+  // and "lines" are the site's 2D canvas. Persisted so the choice sticks.
+  const [renderMode, setRenderMode] = React.useState<PlayRenderMode>(() => loadPlayRenderMode());
+  const changeRenderMode = (next: PlayRenderMode) => {
+    setRenderMode(next);
+    savePlayRenderMode(next);
+  };
   const [cameraSettings, setCameraSettings] = React.useState<CameraSettings>(DEFAULT_GAME_CAMERA);
   const [cameraOpen, setCameraOpen] = React.useState(false);
   // True while a "press a key" capture is armed, so Escape hands the key to the
@@ -1077,6 +1097,22 @@ export function PlayView({
     [],
   );
 
+  // The WebGL stage draws from the engine's live state, not the sampled path —
+  // the renderer needs the map the physics actually used (rotating walls,
+  // portals) and this tick's effects, which only `readFull` carries.
+  const getWebGLState = React.useCallback(() => gameRef.current?.liveState() ?? null, []);
+  // The trail, in world units. The game's ribbon is a stroke over the polyline,
+  // so the frame-sampled path is exactly what it wants (no resampling needed).
+  // Bounded to the last few hundred points: the ribbon is restroked every frame,
+  // so an unbounded trail would make a long run's frame cost grow with its
+  // length (the same reason `GameCanvas` caps its trail).
+  const getWebGLTrail = React.useCallback(() => {
+    const path = gameRef.current?.path ?? [];
+    return path.length > WEBGL_TRAIL_MAX
+      ? path.slice(path.length - WEBGL_TRAIL_MAX).map((p) => ({ x: p.x, y: p.y }))
+      : path.map((p) => ({ x: p.x, y: p.y }));
+  }, []);
+
   const runTimeMs = tick * SIM_TICK_MS;
   const deltaMs = ghost ? runTimeMs - ghost.timeMs : null;
   const finishedResult = result?.finished ? result : null;
@@ -1139,20 +1175,33 @@ export function PlayView({
   // overlay). Only one exists at a time, so both share this single ref.
   const stage = (
     <>
-      <PlayCanvas
-        ref={canvasRef}
-        geometry={geometryRef.current}
-        getFrame={getFrame}
-        arrow={arrow}
-        arrowRadius={arrowRadius}
-        bodyColor={skinColors.body}
-        tailColor={skinColors.tail}
-        trailColor={skinColors.trail}
-        ghostColor="rgba(148,163,184,0.55)"
-        cameraSettings={cameraSettings}
-        height={440}
-        fill={fullscreen}
-      />
+      {renderMode === "webgl" ? (
+        <PlayWebGL
+          ref={canvasRef}
+          getState={getWebGLState}
+          getTrail={getWebGLTrail}
+          arrow={arrow}
+          cameraSettings={cameraSettings}
+          height={440}
+          fill={fullscreen}
+        />
+      ) : (
+        <PlayCanvas
+          ref={canvasRef}
+          geometry={geometryRef.current}
+          getFrame={getFrame}
+          arrow={arrow}
+          arrowRadius={arrowRadius}
+          bodyColor={skinColors.body}
+          tailColor={skinColors.tail}
+          trailColor={skinColors.trail}
+          ghostColor="rgba(148,163,184,0.55)"
+          mode={renderMode}
+          cameraSettings={cameraSettings}
+          height={440}
+          fill={fullscreen}
+        />
+      )}
       {loading && (
         <div className="absolute inset-0 grid place-items-center rounded-lg bg-black/60">
           <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
@@ -1342,6 +1391,31 @@ export function PlayView({
                       {s}×
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-1.5" title="How the stage is drawn">
+              <span className="text-[10px] uppercase tracking-wide text-slate-500">Render</span>
+              <Select
+                value={renderMode}
+                onValueChange={(v) => changeRenderMode(v as PlayRenderMode)}
+              >
+                <SelectTrigger
+                  className="h-8 w-[120px] bg-black/30 border-white/10 text-xs"
+                  aria-label="Render mode"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0d0d10] border-white/10 text-slate-200">
+                  <SelectItem value="webgl" className="text-xs">
+                    Game (WebGL)
+                  </SelectItem>
+                  <SelectItem value="game" className="text-xs">
+                    Game (2D)
+                  </SelectItem>
+                  <SelectItem value="lines" className="text-xs">
+                    Simple lines
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>

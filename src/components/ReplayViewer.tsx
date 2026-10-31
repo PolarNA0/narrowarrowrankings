@@ -414,6 +414,10 @@ export function ReplayViewer({
                   arrowRadius={arrowRadius}
                   defaultColors={{ body: bodyColor, trail, thrust }}
                   levelName={meta?.mapName ?? String(runId)}
+                  levelData={levelData}
+                  inputs={meta?.inputs ?? ""}
+                  inputCount={meta?.input_count}
+                  arrowName={meta?.arrow_name}
                   defaultInfo={{
                     player: username ?? "Anonymous",
                     seconds: summary.durationMs / 1000,
@@ -1999,6 +2003,10 @@ export function TasReplayViewer({
                     thrust: thrustColor(null),
                   }}
                   levelName={levelName ?? levelId}
+                  levelData={levelData}
+                  inputs={inputs}
+                  inputCount={inputCount}
+                  arrowName={arrowName}
                   defaultInfo={{
                     player: username ?? "Anonymous",
                     seconds: (timeMs ?? summary.durationMs) / 1000,

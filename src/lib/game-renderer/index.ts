@@ -53,6 +53,18 @@ export interface RendererFrame {
   arrowType: GameArrowType;
   /** Background shader; `none` fills black. */
   background?: GameBackground;
+  /**
+   * Draw the collision hitbox (translucent disc + ring at the physics radius).
+   * The game itself always draws it, and the 2D "game" render does too, so this
+   * defaults to on; pass `false` only for a clean capture.
+   */
+  showHitbox?: boolean;
+  /**
+   * Land the camera on the arrow this frame instead of easing to it. Set on a
+   * rewind (a restart or a checkpoint restore), where the pose jumps and an
+   * eased pan would look like the arrow sliding across the level.
+   */
+  snap?: boolean;
 }
 
 const ARROW_KINDS: GameArrowType[] = ["narrow", "speedy", "energy"];
@@ -128,12 +140,19 @@ export class GameRenderer {
     const player = frame.player;
 
     // Follow before drawing so the first frame is already framed on the arrow,
-    // rather than easing in from the origin.
+    // rather than easing in from the origin. `snap` (a rewind) lands the camera
+    // at once instead of panning across the level.
     this.camera.follow({
       translation: player.translation,
       velocity: player.velocity ?? { x: 0, y: 0 },
     });
-    this.camera.update(dt || 1 / 60);
+    if (frame.snap) {
+      // A huge dt makes the easing factors reach 1, so the camera lands exactly
+      // on the target rather than panning there.
+      this.camera.update(1e6);
+    } else {
+      this.camera.update(dt || 1 / 60);
+    }
 
     drawLevel(this.renderer, frame.map, this.camera, W, H, t, frame.background ?? "grid");
 
@@ -161,7 +180,7 @@ export class GameRenderer {
       1,
       effects,
       skin,
-      false,
+      frame.showHitbox !== false,
     );
   }
 
