@@ -33,6 +33,11 @@ const win = {
     },
   },
   history: {
+    // `writeUrlState` pushes by default and replaces for non-navigations; both
+    // mutate the same href here, since the parsing is what is under test.
+    pushState(_s: unknown, _t: unknown, url: string) {
+      href = url.startsWith("http") ? url : new URL(url, href).toString();
+    },
     replaceState(_s: unknown, _t: unknown, url: string) {
       href = url.startsWith("http") ? url : new URL(url, href).toString();
     },
