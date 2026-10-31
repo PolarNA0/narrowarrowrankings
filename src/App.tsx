@@ -185,6 +185,42 @@ import { avatarFor, displayNameFor, matchesPlayerSearch } from "@/lib/display-na
  * landing page and `profile`/`compare` are reached from a player instead. */
 type AppView = NavigableView | "home" | "profile" | "compare";
 
+/**
+ * Map a URL's `view` parameter onto a real view. `profile` and `compare` are
+ * real views but live outside the nav groups (they are reached from a player),
+ * so they are listed explicitly; they also need a player to render, so a link
+ * without one falls back to the leaderboard. Unknown values fall back too, so a
+ * hand-edited URL can never leave the app on a blank view.
+ */
+function normalizeView(state: { view?: string; player?: string; site?: string }): AppView {
+  const fromUrl = state.view;
+  // A bare link (no `view`) is the landing page. A site level link opens Play
+  // even if it names no view, so the link always lands on the level rather than
+  // the home page.
+  if (!fromUrl) return state.site ? "play" : "home";
+  if (fromUrl === "home") return "home";
+  // `profile` and `compare` are real views but live outside the nav groups (they
+  // are reached from a player), so they are listed explicitly.
+  const known =
+    NAV_GROUPS.some((g) => g.items.some((i) => i.id === fromUrl)) ||
+    fromUrl === "profile" ||
+    fromUrl === "compare";
+  if (!known) return "home";
+  // `profile`/`compare` need a player to render, so a link without one falls back.
+  if ((fromUrl === "profile" || fromUrl === "compare") && !state.player) return "leaderboard";
+  return fromUrl as AppView;
+}
+
+/** The human label for a view, for the document title. */
+function viewLabel(view: AppView): string | undefined {
+  for (const group of NAV_GROUPS) {
+    for (const item of group.items) {
+      if (item.id === view) return item.label;
+    }
+  }
+  return view === "profile" ? "Player" : view === "compare" ? "Compare" : undefined;
+}
+
 export default function App() {
   // Seed the shareable bits of state from the URL once, so a pasted link opens
   // on the view/level/player it names instead of the default level.
@@ -457,25 +493,7 @@ export default function App() {
     saveMyProfile,
   } = usePlayerProfiles(adminUser?.id);
 
-  const [view, setView] = useState<AppView>(() => {
-    const fromUrl = initialUrlState.view;
-    // A bare link (no `view`) is the landing page. A site level link opens Play
-    // even if it names no view, so the link always lands on the level rather
-    // than the home page.
-    if (!fromUrl) return initialUrlState.site ? "play" : "home";
-    if (fromUrl === "home") return "home";
-    // `profile` and `compare` are real views but live outside the nav groups
-    // (they are reached from a player), so they are listed explicitly. They
-    // also need a player to render, which is why a link without one falls back.
-    const known =
-      NAV_GROUPS.some((g) => g.items.some((i) => i.id === fromUrl)) ||
-      fromUrl === "profile" ||
-      fromUrl === "compare";
-    if (!known) return "home";
-    if ((fromUrl === "profile" || fromUrl === "compare") && !initialUrlState.player)
-      return "leaderboard";
-    return fromUrl as AppView;
-  });
+  const [view, setView] = useState<AppView>(() => normalizeView(initialUrlState));
   /** A TAS entry the leaderboard asked the editor to open. */
   const [tasLoad, setTasLoad] = useState<TasLoadRequest | null>(null);
   /** A practice checkpoint a TAS viewer asked the Play tab to open. */
@@ -1656,9 +1674,72 @@ export default function App() {
 
   // Keep the URL in step with the shareable state, so the address bar is always
   // a link to what is on screen (and can be copied or bookmarked).
+  //
+  // A view change is a real navigation, so it pushes a history entry and the
+  // browser Back button walks back through the views you visited instead of
+  // leaving the site. Changing only the level, player or Play selection is not a
+  // navigation, so it replaces the current entry rather than burying the back
+  // stack under one entry per picker click.
+  const lastPushedView = React.useRef<AppView | null>(null);
+  const urlSyncMounted = React.useRef(false);
   useEffect(() => {
-    writeUrlState(shareState());
-  }, [shareState]);
+    // The first run only normalizes the URL (a pasted link may be missing
+    // parameters); pushing there would leave a bogus entry on the back stack,
+    // so Back would just strip the query string instead of leaving the site.
+    const isFirstRun = !urlSyncMounted.current;
+    urlSyncMounted.current = true;
+    const isNavigation = !isFirstRun && lastPushedView.current !== view;
+    lastPushedView.current = view;
+    writeUrlState(shareState(), { replace: !isNavigation });
+
+    // The title is set here rather than in its own effect so it is always in
+    // step with the URL: this effect already runs with the fresh view, and a
+    // separate effect raced the router's head and painted the previous view.
+    const level = view === "tas-board" ? tasBoardLevelId : selectedLevel;
+    const levelName = dynamicLevels.find((l) => l.id === level)?.name;
+    let page: string;
+    if (view === "profile" && selectedPlayer) page = selectedPlayer;
+    else if (view === "compare" && selectedPlayer) page = `${selectedPlayer} comparison`;
+    else page = viewLabel(view) ?? "Leaderboards";
+    document.title = `${view === "leaderboard" && levelName ? `${levelName} · ` : ""}${page} · Narrow Arrow Rankings`;
+  }, [view, shareState, selectedLevel, tasBoardLevelId, selectedPlayer, dynamicLevels]);
+
+  // Restore state when the user goes Back/Forward. The URL is the single source
+  // of truth here: we adopt exactly what it says, so the effect above sees no
+  // difference and does not write a redundant history entry.
+  useEffect(() => {
+    const onPopState = () => {
+      const state = readUrlState();
+      const nextView = normalizeView(state);
+      lastPushedView.current = nextView;
+      setView(nextView);
+      if (state.level) {
+        setSelectedLevel(state.level);
+        setTasBoardLevelId(state.level);
+      }
+      setSelectedPlayer(state.player ?? null);
+      // A site level link opens Play on that level; clear the focus otherwise so
+      // the Play tab does not keep a stale one after navigating away.
+      setPlayFocus(
+        state.site
+          ? {
+              levelId: `site:${state.site}`,
+              arrowName: state.arrow ?? "",
+              tick: -1,
+              key: `url:${state.site}:${state.arrow ?? ""}`,
+            }
+          : null,
+      );
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  // Landing on a new view should start at the top; without this a view change
+  // keeps the previous scroll offset and can open halfway down the page.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [view]);
 
   /** Copy the current view as a link, for sharing a level or profile. */
   const copyShareLink = async () => {
@@ -1687,7 +1768,7 @@ export default function App() {
         onSelectLevel={handleLevelClick}
         onSelectPlayer={handlePlayerClick}
         onNavigate={async (next) => {
-          setView(next as any);
+          navigateView(next as NavigableView);
           if (["average", "wrs", "score", "tracker"].includes(next)) await fetchAllLevels();
         }}
       />
