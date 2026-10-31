@@ -90,7 +90,11 @@ import {
 import { ghostColor } from "@/lib/compare-ghosts";
 import type { RenderMode } from "@/lib/replay-paint";
 import { ReplayExportDialog } from "@/components/ReplayExportDialog";
-import { GameCanvas } from "@/components/GameCanvas";
+// The game renderer is ~150KB of shaders; load it only when the WebGL mode
+// is actually selected, so the default viewer never pays for it.
+const GameCanvas = React.lazy(() =>
+  import("@/components/GameCanvas").then((m) => ({ default: m.GameCanvas })),
+);
 import { GhostPicker } from "@/components/CompareGhosts";
 import { ghostLabel, useCompareGhosts, type CompareCandidate } from "@/hooks/useCompareGhosts";
 import bounceIcon from "@/assets/game/bounce.svg";
@@ -1514,13 +1518,21 @@ export function ReplayStage({
       )}
       <div className="rounded-lg overflow-hidden border border-white/10 bg-[#07070b]">
         {mode === "webgl" ? (
-          <GameCanvas
-            data={levelData ?? null}
-            inputs={inputs ?? ""}
-            inputCount={inputCount}
-            arrowName={arrowName}
-            background="grid"
-          />
+          <React.Suspense
+            fallback={
+              <div className="flex h-[340px] items-center justify-center text-xs italic text-slate-500">
+                Loading the game renderer…
+              </div>
+            }
+          >
+            <GameCanvas
+              data={levelData ?? null}
+              inputs={inputs ?? ""}
+              inputCount={inputCount}
+              arrowName={arrowName}
+              background="grid"
+            />
+          </React.Suspense>
         ) : (
           <canvas
             ref={canvasRef}

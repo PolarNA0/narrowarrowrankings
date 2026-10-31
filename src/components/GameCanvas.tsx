@@ -106,7 +106,9 @@ export function GameCanvas({
             engine.step(symbols[cursor]);
             cursor += 1;
             acc -= TICK_MS;
-            const p = engine.read();
+            // `pose()` reads only the pose out of the state string; `read()`
+            // would JSON.parse the whole map on every 240Hz tick.
+            const p = engine.pose();
             trail.push({ x: p.x, y: p.y });
             if (trail.length > TRAIL_MAX) trail.shift();
           }
