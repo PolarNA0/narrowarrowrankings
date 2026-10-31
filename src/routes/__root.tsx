@@ -14,6 +14,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
 import { registerServiceWorker } from "../lib/pwa";
+import { PRELOAD_RECOVERY_SCRIPT } from "../lib/preload-recovery";
 import {
   CANONICAL_ORIGIN,
   OG_IMAGE,
@@ -144,6 +145,13 @@ function RootShell({ children }: { children: ReactNode }) {
     <html lang="en" className="dark" data-tone="dark">
       <head>
         <HeadContent />
+        {/*
+          Recovers from a stale-chunk deploy (a client holding the previous
+          HTML asks for content-hashed chunks that no longer exist, so a dynamic
+          import rejects before React mounts and the page is blank). It must run
+          before any module, so it is an inline script rather than an effect.
+        */}
+        <script dangerouslySetInnerHTML={{ __html: PRELOAD_RECOVERY_SCRIPT }} />
       </head>
       <body>
         {/*

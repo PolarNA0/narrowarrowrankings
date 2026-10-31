@@ -18,7 +18,7 @@
  *
  * Bump CACHE_VERSION to retire every old cache on activate.
  */
-const CACHE_VERSION = "na-rankings-v1";
+const CACHE_VERSION = "na-rankings-v2";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
