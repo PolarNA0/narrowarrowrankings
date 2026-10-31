@@ -88,7 +88,13 @@ import {
   type FieldParticle,
 } from "@/lib/replay-paint";
 import { ghostColor } from "@/lib/compare-ghosts";
+import type { RenderMode } from "@/lib/replay-paint";
 import { ReplayExportDialog } from "@/components/ReplayExportDialog";
+// The game renderer is ~150KB of shaders; load it only when the WebGL mode
+// is actually selected, so the default viewer never pays for it.
+const GameCanvas = React.lazy(() =>
+  import("@/components/GameCanvas").then((m) => ({ default: m.GameCanvas })),
+);
 import { GhostPicker } from "@/components/CompareGhosts";
 import { ghostLabel, useCompareGhosts, type CompareCandidate } from "@/hooks/useCompareGhosts";
 import bounceIcon from "@/assets/game/bounce.svg";
@@ -379,6 +385,10 @@ export function ReplayViewer({
                 onFrameCommit={setFrame}
                 overlays={overlays}
                 timeline={sim.timeline}
+                levelData={levelData}
+                inputs={meta?.inputs ?? ""}
+                inputCount={meta?.input_count}
+                arrowName={meta?.arrow_name}
               />
             ) : (
               <div className="rounded-lg border border-white/5 bg-black/30 py-10 text-center text-slate-500 text-xs italic">
@@ -659,10 +669,19 @@ interface StageProps {
    * scheme, not a record of where a finger actually landed.
    */
   allowTouch?: boolean;
+  /**
+   * The level payload and the raw inputs, needed only by the `webgl` mode: the
+   * game's own renderer drives a private engine instance, so it needs the level
+   * and the recorded input symbols rather than the sampled `sim`.
+   */
+  levelData?: RawLevelData | null;
+  inputs?: string;
+  inputCount?: number;
+  arrowName?: string | null;
 }
 
 /** "lines" is the schematic stroke look; "game" mirrors the real game's render. */
-export type ReplayRenderMode = "lines" | "game";
+export type ReplayRenderMode = "lines" | "game" | "webgl";
 
 /** Stable empty list so `overlays = []` never re-fires the draw effect. */
 const NO_OVERLAYS: ReplayOverlay[] = [];
@@ -703,6 +722,10 @@ export function ReplayStage({
   drawColor = "var(--app-accent)",
   timeline,
   allowTouch = false,
+  levelData,
+  inputs,
+  inputCount,
+  arrowName,
 }: StageProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   // How the stage draws: the schematic line look, or a render matching the game.
@@ -794,6 +817,10 @@ export function ReplayStage({
     if (!parent) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+
+    // The 2D helpers only know the schematic and game looks; "webgl" draws in
+    // its own canvas, which unmounts this one, so map it to "game" here.
+    const paintMode: RenderMode = mode === "lines" ? "lines" : "game";
 
     const HEIGHT = 340;
     let width = 0;
@@ -921,7 +948,7 @@ export function ReplayStage({
 
     /** Zones and portals, drawn under the walls in both modes. */
     const paintZonesLocal = (g: CanvasRenderingContext2D) =>
-      paintZones(g, geometry, { tx, ty, scale, mode });
+      paintZones(g, geometry, { tx, ty, scale, mode: paintMode });
 
     /** Stroke a run's trail in full at the current transform (game mode). */
     const strokeTrailLocal = (
@@ -930,7 +957,7 @@ export function ReplayStage({
       upto: number,
       color: string,
       glow: boolean,
-    ) => strokeTrail(g, path, upto, color, glow, { tx, ty, scale, mode });
+    ) => strokeTrail(g, path, upto, color, glow, { tx, ty, scale, mode: paintMode });
 
     /**
      * The game's thrust flame, anchored behind the arrow. `scale` is folded in
@@ -948,7 +975,13 @@ export function ReplayStage({
     ) => drawGameThrust(g, kind, x, y, rot, radius, scale, tx, ty, power);
 
     const paintWallsLocal = (g: CanvasRenderingContext2D, walls: SimWall[], tick: number) =>
-      paintWalls(g, walls, tick, { tx, ty, scale, mode, motions: geometry.movingBlocks });
+      paintWalls(g, walls, tick, {
+        tx,
+        ty,
+        scale,
+        mode: paintMode,
+        motions: geometry.movingBlocks,
+      });
 
     // Stable particle pool for the wind/suction field previews (levels that use
     // them are site-authored only; official levels have none).
@@ -962,20 +995,20 @@ export function ReplayStage({
         paintForceFields(
           g,
           fields,
-          { tx, ty, scale, mode },
+          { tx, ty, scale, mode: paintMode },
           fieldParticles,
           performance.now() / 1000,
         );
       }
       const grips = geometry.gripZones;
-      if (grips && grips.length > 0) paintGripZones(g, grips, { tx, ty, scale, mode });
+      if (grips && grips.length > 0) paintGripZones(g, grips, { tx, ty, scale, mode: paintMode });
     };
 
     /** Site-only accelerator wires; static, so they bake onto the base layer. */
     const paintTriggersLocal = (g: CanvasRenderingContext2D) => {
       const triggers = geometry.triggers;
       if (!triggers || triggers.length === 0) return;
-      paintTriggers(g, triggers, { tx, ty, scale, mode });
+      paintTriggers(g, triggers, { tx, ty, scale, mode: paintMode });
     };
 
     /**
@@ -989,7 +1022,7 @@ export function ReplayStage({
       arrow?: { x: number; y: number },
     ) => {
       if (!hasSiteMechanics(geometry)) return;
-      paintSiteMechanics(g, geometry, tick, { tx, ty, scale, mode }, timeline, arrow);
+      paintSiteMechanics(g, geometry, tick, { tx, ty, scale, mode: paintMode }, timeline, arrow);
     };
 
     /** Paint everything that never changes as the frame advances onto an offscreen layer. */
@@ -1443,6 +1476,9 @@ export function ReplayStage({
               <SelectItem value="game" className="text-xs">
                 Game
               </SelectItem>
+              <SelectItem value="webgl" className="text-xs">
+                Game (WebGL)
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -1481,14 +1517,32 @@ export function ReplayStage({
         <CameraSettingsPanel settings={cameraSettings} onChange={setCameraSettings} />
       )}
       <div className="rounded-lg overflow-hidden border border-white/10 bg-[#07070b]">
-        <canvas
-          ref={canvasRef}
-          onPointerDown={beginStroke}
-          onPointerMove={extendStroke}
-          onPointerUp={endStroke}
-          onPointerCancel={endStroke}
-          className={onDrawPath ? "cursor-crosshair touch-none" : undefined}
-        />
+        {mode === "webgl" ? (
+          <React.Suspense
+            fallback={
+              <div className="flex h-[340px] items-center justify-center text-xs italic text-slate-500">
+                Loading the game renderer…
+              </div>
+            }
+          >
+            <GameCanvas
+              data={levelData ?? null}
+              inputs={inputs ?? ""}
+              inputCount={inputCount}
+              arrowName={arrowName}
+              background="grid"
+            />
+          </React.Suspense>
+        ) : (
+          <canvas
+            ref={canvasRef}
+            onPointerDown={beginStroke}
+            onPointerMove={extendStroke}
+            onPointerUp={endStroke}
+            onPointerCancel={endStroke}
+            className={onDrawPath ? "cursor-crosshair touch-none" : undefined}
+          />
+        )}
       </div>
       {mode === "lines" && <ReplayLegend geometry={geometry} />}
       {!hideControls && (
@@ -1901,6 +1955,10 @@ export function TasReplayViewer({
                 onFrameCommit={setFrame}
                 overlays={overlays}
                 timeline={sim.timeline}
+                levelData={levelData}
+                inputs={inputs}
+                inputCount={inputCount}
+                arrowName={arrowName}
               />
             ) : (
               <div className="rounded-lg border border-white/5 bg-black/30 py-10 text-center text-slate-500 text-xs italic">
