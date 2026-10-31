@@ -16,6 +16,8 @@ import {
   GAME_FINISH_THICKNESS,
   GAME_PORTAL_COLORS,
   GAME_THRUST_COLORS,
+  GAME_THRUST_LENGTH_SCALE,
+  GAME_THRUST_WIDTH_SCALE,
   GAME_WALL_THICKNESS,
   checkerAt,
   gameWallColor,
@@ -857,8 +859,8 @@ export function drawGameThrust(
   const oy = y - Math.sin(rot) * back;
   const p = Math.max(0, Math.min(1, power));
   const grow = 0.4 + 0.6 * p;
-  const len = radius * 2.6 * pxScale * grow;
-  const halfW = radius * 0.7 * pxScale * grow;
+  const len = radius * 2.6 * pxScale * grow * GAME_THRUST_LENGTH_SCALE;
+  const halfW = radius * 0.7 * pxScale * grow * GAME_THRUST_WIDTH_SCALE;
   ctx.save();
   ctx.translate(tx(ox), ty(oy));
   ctx.rotate(rot + Math.PI);

@@ -25,3 +25,11 @@ export const ARROWS = {
     visual: { theme: "#22ff66", thrust: "#ff0033", thrustOffset: 8, thrustLength: 32, thrustWidth: 8 },
   },
 };
+
+/**
+ * The game's plume reads a little small on our canvas, so the WebGL renderer
+ * and the 2D "game" painter both scale it by these. They must agree, or an
+ * exported clip would not match Play. Kept small: the shape is the game's own.
+ */
+export const THRUST_LENGTH_SCALE = 1.15;
+export const THRUST_WIDTH_SCALE = 1.12;

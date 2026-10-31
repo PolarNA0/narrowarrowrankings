@@ -48,6 +48,15 @@ export const GAME_THRUST_COLORS: Record<ArrowKind, [string, string]> = {
   energy: ["#b06aff", "#f0d0ff"],
 };
 
+/**
+ * The game's plume reads a little small on our canvas, so both the 2D "game"
+ * painter and the WebGL renderer (`game-renderer/arrows.js`) scale it by these.
+ * The two must agree, or an exported clip would not match Play. Kept small: the
+ * shape is otherwise the game's own.
+ */
+export const GAME_THRUST_LENGTH_SCALE = 1.15;
+export const GAME_THRUST_WIDTH_SCALE = 1.12;
+
 /** The game draws the finish line as a black/white chequer this many world units thick. */
 export const GAME_FINISH_THICKNESS = 32;
 /** Default wall thickness when the level does not specify one. */

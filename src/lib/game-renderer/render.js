@@ -9,7 +9,7 @@
 // Walls themselves are drawn solid (a wall_contact shader is a *contact* effect,
 // not the resting wall look). Obstacles come from the engine's live map each
 // frame, so rotating walls/zones/portals animate with the physics.
-import { ARROWS } from './arrows.js';
+import { ARROWS, THRUST_LENGTH_SCALE, THRUST_WIDTH_SCALE } from './arrows.js';
 
 // Wall / zone colours, verbatim from the game (Color constructor is alpha,r,g,b).
 const WALL_COLORS = {
@@ -249,14 +249,14 @@ export function drawArrow(r, p, arrowType, cam, W, H, t, alpha = 1, effects = nu
     const ox = r.project(cam, W, H, e.position.x, e.position.y);
     const dl = Math.hypot(e.direction.x, e.direction.y) || 1;
     const dx = e.direction.x / dl, dy = e.direction.y / dl;   // world (y down)
-    const length = vis.thrustLength * zoom;
-    const halfW = (vis.thrustWidth / 2) * zoom;
+    const length = vis.thrustLength * zoom * THRUST_LENGTH_SCALE;
+    const halfW = (vis.thrustWidth / 2) * zoom * THRUST_WIDTH_SCALE;
     r.drawThrust(W, H, t, sk.thrustStyle, ox.x, ox.y, dx, dy, length, halfW, sk.thrust, 0.9);
   } else {
     const thrust = Math.max(0, Math.min(1, p.thrust_power ?? 0));
     if (thrust > 0.02 && alpha >= 1) {
-      const length = vis.thrustLength * zoom * (0.4 + 0.6 * thrust);
-      const halfW = (vis.thrustWidth / 2) * zoom;
+      const length = vis.thrustLength * zoom * (0.4 + 0.6 * thrust) * THRUST_LENGTH_SCALE;
+      const halfW = (vis.thrustWidth / 2) * zoom * THRUST_WIDTH_SCALE;
       r.drawThrust(W, H, t, sk.thrustStyle,
         c.x - fx * vis.thrustOffset * zoom, c.y - fy * vis.thrustOffset * zoom,
         -fx, -fy, length, halfW, sk.thrust, 0.55 * thrust);

@@ -140,6 +140,35 @@ for (const kind of KINDS) {
 }
 check("out-of-range power never produces NaN/Infinity", true);
 
+// ---- The 2D and WebGL renderers scale the plume identically ---------------
+// The scale factors are duplicated across the TS painter and the ported JS
+// renderer (the repo's pattern for shared game constants), so pin the pair:
+// a mismatch would make an exported clip disagree with Play.
+const paintSrcFile = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "..", "src", "lib", "replay-render.ts"),
+  "utf8",
+);
+const glArrows = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "..", "src", "lib", "game-renderer", "arrows.js"),
+  "utf8",
+);
+const grab = (src: string, name: string) =>
+  Number(new RegExp(`${name}\\s*=\\s*([0-9.]+)`).exec(src)?.[1]);
+const tsLen = grab(paintSrcFile, "GAME_THRUST_LENGTH_SCALE");
+const tsWid = grab(paintSrcFile, "GAME_THRUST_WIDTH_SCALE");
+const glLen = grab(glArrows, "THRUST_LENGTH_SCALE");
+const glWid = grab(glArrows, "THRUST_WIDTH_SCALE");
+check(
+  "the 2D and WebGL plume length scales agree",
+  Number.isFinite(tsLen) && tsLen === glLen,
+  `2D ${tsLen} vs GL ${glLen}`,
+);
+check(
+  "the 2D and WebGL plume width scales agree",
+  Number.isFinite(tsWid) && tsWid === glWid,
+  `2D ${tsWid} vs GL ${glWid}`,
+);
+
 // ---- The plume never points forward -------------------------------------
 // It is drawn after rotating by rot + PI, so the local +x is behind the arrow.
 const rotCalls = full.filter((c) => c.op === "rotate");
