@@ -971,7 +971,13 @@ export function ReplayStage({
     ) => drawGameThrust(g, kind, x, y, rot, radius, scale, tx, ty, power);
 
     const paintWallsLocal = (g: CanvasRenderingContext2D, walls: SimWall[], tick: number) =>
-      paintWalls(g, walls, tick, { tx, ty, scale, mode: paintMode, motions: geometry.movingBlocks });
+      paintWalls(g, walls, tick, {
+        tx,
+        ty,
+        scale,
+        mode: paintMode,
+        motions: geometry.movingBlocks,
+      });
 
     // Stable particle pool for the wind/suction field previews (levels that use
     // them are site-authored only; official levels have none).
