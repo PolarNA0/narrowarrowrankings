@@ -64,6 +64,7 @@ const MIN_PLAY_OPTIONS = [0, 10, 50];
 export function UnbeatenAuthorsView({ profiles, onLevelClick, onPlayerClick, formatTime }: Props) {
   const [levels, setLevels] = React.useState<CustomLevelCompact[]>([]);
   const [done, setDone] = React.useState(false);
+  const [sweptAt, setSweptAt] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [arrow, setArrow] = React.useState<ArrowKind | "all">("all");
@@ -78,6 +79,7 @@ export function UnbeatenAuthorsView({ profiles, onLevelClick, onPlayerClick, for
       const payload = await fetchCustomLevelFeed();
       setLevels(payload.levels);
       setDone(payload.done);
+      setSweptAt(payload.at);
       return payload.done;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -91,17 +93,17 @@ export function UnbeatenAuthorsView({ profiles, onLevelClick, onPlayerClick, for
     void load();
   }, [load]);
 
-  // The snapshot warms a bounded batch per request (the feed is ~300 pages and
-  // the upstream budget is ~60/min), so a cold server needs several minutes. Poll
-  // while it is incomplete and stop once the sweep is done. The interval sits
-  // just above the route's own refresh gate, so a poll is never swallowed by it.
+  // The snapshot is refreshed at most once per 4h and converges over a few
+  // bounded batches, so a poll here only continues an already-due sweep. Poll
+  // while it is still filling in, then stop; the interval sits above the route's
+  // own refresh gate so a poll is never swallowed by it.
   React.useEffect(() => {
     if (done) return;
     let cancelled = false;
     const timer = setInterval(async () => {
       const finished = await load();
       if (cancelled || finished) clearInterval(timer);
-    }, 20000);
+    }, 25 * 1000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -141,12 +143,13 @@ export function UnbeatenAuthorsView({ profiles, onLevelClick, onPlayerClick, for
           <p className="text-slate-500 text-sm">
             Community levels whose creator's own time is still the fastest anyone has recorded. A
             custom level's top-medal threshold is seeded from the author's run, so this reads the
-            author's time and checks no recorded run has gone under it. Swept from the
-            published-levels feed, so a freshly published level may take a few minutes to appear.
+            author's time and checks no recorded run has gone under it. The feed is swept every few
+            hours, so a new level or record can take a while to appear.
+            {sweptAt > 0 && <> Last swept {new Date(sweptAt).toLocaleString()}.</>}
             {!done && !loading && (
               <>
                 {" "}
-                Still warming the feed — showing {summary.levels} unbeaten time
+                Still filling in — showing {summary.levels} unbeaten time
                 {summary.levels === 1 ? "" : "s"} found so far.
               </>
             )}

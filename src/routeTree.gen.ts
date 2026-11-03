@@ -30,6 +30,7 @@ import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-d
 import { Route as ApiPacksIndexRouteImport } from './routes/api/packs.index'
 import { Route as ApiPacksSlugRouteImport } from './routes/api/packs.$slug'
 import { Route as ApiPublicCategoryWrCheckRouteImport } from './routes/api/public/category-wr-check'
+import { Route as ApiPublicCustomLevelsRefreshRouteImport } from './routes/api/public/custom-levels-refresh'
 import { Route as ApiPublicSheetsExportRouteImport } from './routes/api/public/sheets-export'
 import { Route as ApiPublicSiteWrCheckRouteImport } from './routes/api/public/site-wr-check'
 import { Route as ApiPublicTasWrCheckRouteImport } from './routes/api/public/tas-wr-check'
@@ -149,6 +150,12 @@ const ApiPublicCategoryWrCheckRoute =
     path: '/api/public/category-wr-check',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicCustomLevelsRefreshRoute =
+  ApiPublicCustomLevelsRefreshRouteImport.update({
+    id: '/api/public/custom-levels-refresh',
+    path: '/api/public/custom-levels-refresh',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicSheetsExportRoute = ApiPublicSheetsExportRouteImport.update({
   id: '/api/public/sheets-export',
   path: '/api/public/sheets-export',
@@ -231,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
+  '/api/public/custom-levels-refresh': typeof ApiPublicCustomLevelsRefreshRoute
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/site-wr-check': typeof ApiPublicSiteWrCheckRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
@@ -266,6 +274,7 @@ export interface FileRoutesByTo {
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
+  '/api/public/custom-levels-refresh': typeof ApiPublicCustomLevelsRefreshRoute
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/site-wr-check': typeof ApiPublicSiteWrCheckRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
@@ -302,6 +311,7 @@ export interface FileRoutesById {
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
   '/api/packs/$slug': typeof ApiPacksSlugRoute
   '/api/public/category-wr-check': typeof ApiPublicCategoryWrCheckRoute
+  '/api/public/custom-levels-refresh': typeof ApiPublicCustomLevelsRefreshRoute
   '/api/public/sheets-export': typeof ApiPublicSheetsExportRoute
   '/api/public/site-wr-check': typeof ApiPublicSiteWrCheckRoute
   '/api/public/tas-wr-check': typeof ApiPublicTasWrCheckRoute
@@ -339,6 +349,7 @@ export interface FileRouteTypes {
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
+    | '/api/public/custom-levels-refresh'
     | '/api/public/sheets-export'
     | '/api/public/site-wr-check'
     | '/api/public/tas-wr-check'
@@ -374,6 +385,7 @@ export interface FileRouteTypes {
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
+    | '/api/public/custom-levels-refresh'
     | '/api/public/sheets-export'
     | '/api/public/site-wr-check'
     | '/api/public/tas-wr-check'
@@ -409,6 +421,7 @@ export interface FileRouteTypes {
     | '/api/level-details/$levelId'
     | '/api/packs/$slug'
     | '/api/public/category-wr-check'
+    | '/api/public/custom-levels-refresh'
     | '/api/public/sheets-export'
     | '/api/public/site-wr-check'
     | '/api/public/tas-wr-check'
@@ -444,6 +457,7 @@ export interface RootRouteChildren {
   ApiLevelDetailsLevelIdRoute: typeof ApiLevelDetailsLevelIdRoute
   ApiPacksSlugRoute: typeof ApiPacksSlugRoute
   ApiPublicCategoryWrCheckRoute: typeof ApiPublicCategoryWrCheckRoute
+  ApiPublicCustomLevelsRefreshRoute: typeof ApiPublicCustomLevelsRefreshRoute
   ApiPublicSheetsExportRoute: typeof ApiPublicSheetsExportRoute
   ApiPublicSiteWrCheckRoute: typeof ApiPublicSiteWrCheckRoute
   ApiPublicTasWrCheckRoute: typeof ApiPublicTasWrCheckRoute
@@ -607,6 +621,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicCategoryWrCheckRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/custom-levels-refresh': {
+      id: '/api/public/custom-levels-refresh'
+      path: '/api/public/custom-levels-refresh'
+      fullPath: '/api/public/custom-levels-refresh'
+      preLoaderRoute: typeof ApiPublicCustomLevelsRefreshRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/sheets-export': {
       id: '/api/public/sheets-export'
       path: '/api/public/sheets-export'
@@ -738,6 +759,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLevelDetailsLevelIdRoute: ApiLevelDetailsLevelIdRoute,
   ApiPacksSlugRoute: ApiPacksSlugRoute,
   ApiPublicCategoryWrCheckRoute: ApiPublicCategoryWrCheckRoute,
+  ApiPublicCustomLevelsRefreshRoute: ApiPublicCustomLevelsRefreshRoute,
   ApiPublicSheetsExportRoute: ApiPublicSheetsExportRoute,
   ApiPublicSiteWrCheckRoute: ApiPublicSiteWrCheckRoute,
   ApiPublicTasWrCheckRoute: ApiPublicTasWrCheckRoute,

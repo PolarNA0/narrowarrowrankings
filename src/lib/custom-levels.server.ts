@@ -1,12 +1,17 @@
 /**
  * Snapshot of the community-level feed, for the "Unbeaten authors" view.
  *
- * `/published-levels` is paged 10 levels at a time and the corpus is ~1,900
- * levels across three filters, so a full sweep is ~300 upstream requests —
- * far past the ~120/min budget and well beyond a request handler's patience.
- * So this mirrors `all-leaderboards`: each request advances a bounded batch of
- * the sweep and the result is persisted, letting successive requests warm the
- * snapshot until it covers every page.
+ * `/published-levels` is paged 10 levels at a time and every filter runs ~101
+ * pages, so a full sweep is ~303 upstream requests — far past the ~120/min
+ * budget and well beyond a request handler's patience. So this mirrors
+ * `all-leaderboards`: each request advances a bounded batch of the sweep and the
+ * result is persisted, letting successive requests warm the snapshot until it
+ * covers every page.
+ *
+ * The sweep is deliberately rare and must not be driven by visitor traffic: a
+ * completed sweep is trusted for `SWEEP_INTERVAL_MS` (4h), so however many
+ * people open the view, upstream sees at most one sweep per four hours. The
+ * cron target is `GET /api/public/custom-levels-refresh`.
  *
  * The feed already carries each level's `creator_name` and `world_record`, so
  * the author-defended check needs no per-level request.
@@ -17,21 +22,30 @@ import type { CustomLevelCompact } from "@/lib/unbeaten-authors";
 const COLLECTION = "cache";
 const DOC_ID = "customLevels";
 
-/** The three feeds overlap heavily; the union is what a sweep needs. */
+/**
+ * The three feeds are largely *distinct*, not overlapping (measured: 766 unique
+ * levels across 900 page slots, with `new` adding 285 that `popular` lacks and
+ * `discover` adding 181 more), so every feed must be walked — dropping one would
+ * silently lose levels from the view.
+ */
 export const FEEDS = ["popular", "new", "discover"] as const;
 export type FeedName = (typeof FEEDS)[number];
 
 /** Pages are fixed at 10 levels; 101 is the last page that returns data. */
 export const MAX_PAGE = 100;
 /**
- * Pages swept per request. The upstream budget is ~60 requests/min and the
+ * Pages swept per advance. The upstream budget is ~60 requests/min and the
  * proxy spaces calls 520ms apart, so a batch of six is ~3s of work — the same
  * slice size `all-leaderboards` uses.
  */
 export const BATCH = 6;
 const FEED_TTL = 6 * 60 * 60 * 1000;
-/** How long a completed sweep is trusted before it is walked again. */
-const RESWEEP_MS = 3 * 60 * 60 * 1000;
+/**
+ * How long a completed sweep is trusted before it is walked again. This is the
+ * whole cost control: upstream sees at most one full sweep per window no matter
+ * how much traffic the view gets. Four hours matches the cron cadence.
+ */
+export const SWEEP_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 export interface CustomLevelSnapshot {
   levels: Record<string, CustomLevelCompact>;
@@ -39,7 +53,14 @@ export interface CustomLevelSnapshot {
   cursor: Record<string, number>;
   /** True once every feed has been walked end to end at least once. */
   done: boolean;
+  /** When the snapshot was last written. */
   at: number;
+  /**
+   * When the current sweep began. The re-sweep window is measured from here, not
+   * from completion, so the cadence is exactly `SWEEP_INTERVAL_MS` rather than
+   * that plus however long the sweep took.
+   */
+  startedAt?: number;
 }
 
 const memoryStore: { snapshot: CustomLevelSnapshot | null } = { snapshot: null };
@@ -49,7 +70,7 @@ function memoryStoreEnabled(): boolean {
 }
 
 function emptySnapshot(): CustomLevelSnapshot {
-  return { levels: {}, cursor: {}, done: false, at: 0 };
+  return { levels: {}, cursor: {}, done: false, at: 0, startedAt: 0 };
 }
 
 /** The persisted snapshot, or null when nothing has been saved yet. */
@@ -143,20 +164,50 @@ function mergePage(snapshot: CustomLevelSnapshot, page: unknown): void {
 }
 
 /**
- * Sweep one bounded slice of the feed into the snapshot and persist it.
- * Returns the snapshot after the slice. A cold snapshot starts at page 0 of
- * every feed; once every feed's cursor passes the last page the sweep is done,
- * and a completed sweep is only walked again once `RESWEEP_MS` has elapsed.
+ * True when a sweep should be advanced: nothing persisted yet, an unfinished
+ * sweep to continue, or a completed one old enough to re-walk. This is the
+ * visitor-facing gate — a fresh completed sweep is never advanced on a view
+ * request, so traffic alone can never cost upstream another sweep.
  */
-export async function advanceCustomLevelSweep(): Promise<CustomLevelSnapshot> {
+export function sweepDue(snapshot: CustomLevelSnapshot | null): boolean {
+  if (!snapshot || !snapshot.done) return true;
+  return Date.now() - (snapshot.startedAt ?? snapshot.at) > SWEEP_INTERVAL_MS;
+}
+
+export interface SweepResult {
+  snapshot: CustomLevelSnapshot;
+  /** Pages swept by this advance; 0 when a fresh completed sweep was skipped. */
+  swept: number;
+  done: boolean;
+}
+
+/**
+ * Sweep one bounded slice of the feed into the snapshot and persist it.
+ * A cold snapshot starts at page 0 of every feed; once every feed's cursor
+ * passes the last page the sweep is done, and a completed sweep is only walked
+ * again once `SWEEP_INTERVAL_MS` has elapsed. `swept === 0` means the snapshot
+ * was fresh and nothing was requested upstream.
+ *
+ * `force` restarts a completed sweep regardless of its age. It resets the
+ * cursors, so `done` goes false and later calls continue rather than restarting
+ * again — pass it only on the first call of a forced run.
+ */
+export async function advanceCustomLevelSweep(
+  options: { force?: boolean } = {},
+): Promise<SweepResult> {
   const snapshot = (await readCustomLevelSnapshot()) ?? emptySnapshot();
   const cursor = { ...snapshot.cursor };
   // A finished, still-fresh sweep is left alone; an old one starts over so new
-  // levels (and new records) are picked up.
-  const restart = snapshot.done && Date.now() - snapshot.at > RESWEEP_MS;
+  // levels (and new records) are picked up. `startedAt` is stamped once at the
+  // beginning of a run and carried across its batches, so the re-sweep window is
+  // measured from when the sweep started rather than when it happened to finish.
+  const restart =
+    options.force ||
+    (snapshot.done && Date.now() - (snapshot.startedAt ?? snapshot.at) > SWEEP_INTERVAL_MS);
   if (restart) {
     for (const feed of FEEDS) cursor[feed] = 0;
   }
+  const startedAt = restart ? Date.now() : snapshot.startedAt || Date.now();
   let swept = 0;
 
   for (const feed of FEEDS) {
@@ -183,15 +234,18 @@ export async function advanceCustomLevelSweep(): Promise<CustomLevelSnapshot> {
   const done = FEEDS.every((feed) => (cursor[feed] ?? 0) > MAX_PAGE);
   // A fresh, completed sweep sweeps nothing — skip the write so a settled
   // snapshot is not re-upserted on every request.
-  if (swept === 0 && done === snapshot.done) return snapshot;
+  if (swept === 0 && done === snapshot.done) return { snapshot, swept, done };
   const next: CustomLevelSnapshot = {
     levels: snapshot.levels,
     cursor,
     done,
     at: Date.now(),
+    // The run keeps the time it began, so the window is measured from the sweep's
+    // start rather than from whenever its last batch happened to land.
+    startedAt,
   };
   await writeCustomLevelSnapshot(next);
-  return next;
+  return { snapshot: next, swept, done };
 }
 
 /** The level list from a snapshot. */

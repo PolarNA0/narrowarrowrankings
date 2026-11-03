@@ -20,6 +20,7 @@ import {
   UNBEATEN_TOLERANCE,
   type CustomLevelEntry,
 } from "@/lib/unbeaten-authors";
+import { SWEEP_INTERVAL_MS, sweepDue } from "@/lib/custom-levels.server";
 
 let failures = 0;
 const check = (label: string, ok: boolean, extra?: unknown) => {
@@ -273,6 +274,33 @@ check(
 );
 check("the tally folds case variants into one author", tally.length === 2, tally.length);
 check("an empty tally has no authors", tallyUnbeatenAuthors([]).length === 0);
+
+// --- sweep cost control ----------------------------------------------------
+// The whole point of the 4h window is that visitor traffic cannot drive upstream
+// cost, so pin the gate itself: a fresh completed sweep must not be due.
+const now = Date.now();
+const completed = (ageMs: number) => ({
+  levels: {},
+  cursor: { popular: 101, new: 101, discover: 101 },
+  done: true,
+  at: now - ageMs,
+  startedAt: now - ageMs,
+});
+check("a fresh completed sweep is not due", !sweepDue(completed(60 * 1000)));
+check(
+  "a completed sweep just inside the window is not due",
+  !sweepDue(completed(SWEEP_INTERVAL_MS - 60 * 1000)),
+);
+check(
+  "a completed sweep past the window is due",
+  sweepDue(completed(SWEEP_INTERVAL_MS + 60 * 1000)),
+);
+check("a never-swept snapshot is due", sweepDue(null));
+check(
+  "an unfinished sweep is always due",
+  sweepDue({ levels: {}, cursor: {}, done: false, at: now, startedAt: now }),
+);
+check("the window is four hours", SWEEP_INTERVAL_MS === 4 * 60 * 60 * 1000, SWEEP_INTERVAL_MS);
 
 console.log(failures === 0 ? "\nall unbeaten-author checks passed" : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);
