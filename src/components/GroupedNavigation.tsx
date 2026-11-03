@@ -65,6 +65,7 @@ export const NAV_GROUPS = [
     label: "Customs",
     items: [
       { id: "customs", label: "Custom levels" },
+      { id: "unbeaten-authors", label: "Unbeaten authors" },
       { id: "completions", label: "Custom completions" },
       { id: "random", label: "Randomizer" },
     ],

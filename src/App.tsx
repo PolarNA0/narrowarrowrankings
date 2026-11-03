@@ -150,6 +150,7 @@ import { InstallAppBanner } from "./components/InstallAppBanner";
 import { toast } from "sonner";
 import { ArrowRecordsView } from "@/components/ArrowRecordsView";
 import { TasVsHumanView } from "@/components/TasVsHumanView";
+import { UnbeatenAuthorsView } from "@/components/UnbeatenAuthorsView";
 import {
   GroupedNavigation,
   NAV_GROUPS,
@@ -2909,6 +2910,16 @@ export default function App() {
               </div>
             )}
           </div>
+        ) : view === "unbeaten-authors" ? (
+          <UnbeatenAuthorsView
+            profiles={playerProfiles}
+            formatTime={(seconds) => formatTime(seconds)}
+            onLevelClick={(levelId) => {
+              setSelectedCustomLevelId(levelId);
+              setView("customs");
+            }}
+            onPlayerClick={handlePlayerClick}
+          />
         ) : view === "customs" ? (
           <CustomsView
             profiles={playerProfiles}

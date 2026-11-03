@@ -23,6 +23,7 @@ import { Route as ApiSiteLevelsRouteImport } from './routes/api/site-levels'
 import { Route as ApiSiteRecordsRouteImport } from './routes/api/site-records'
 import { Route as ApiStartupDataRouteImport } from './routes/api/startup-data'
 import { Route as ApiTasLeaderboardsRouteImport } from './routes/api/tas-leaderboards'
+import { Route as ApiUnbeatenAuthorsRouteImport } from './routes/api/unbeaten-authors'
 import { Route as ApiCampaignsIdRouteImport } from './routes/api/campaigns.$id'
 import { Route as ApiLeaderboardLevelRouteImport } from './routes/api/leaderboard.$level'
 import { Route as ApiLevelDetailsLevelIdRouteImport } from './routes/api/level-details.$levelId'
@@ -110,6 +111,11 @@ const ApiStartupDataRoute = ApiStartupDataRouteImport.update({
 const ApiTasLeaderboardsRoute = ApiTasLeaderboardsRouteImport.update({
   id: '/api/tas-leaderboards',
   path: '/api/tas-leaderboards',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUnbeatenAuthorsRoute = ApiUnbeatenAuthorsRouteImport.update({
+  id: '/api/unbeaten-authors',
+  path: '/api/unbeaten-authors',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCampaignsIdRoute = ApiCampaignsIdRouteImport.update({
@@ -219,6 +225,7 @@ export interface FileRoutesByFullPath {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
+  '/api/unbeaten-authors': typeof ApiUnbeatenAuthorsRoute
   '/api/campaigns/$id': typeof ApiCampaignsIdRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
@@ -253,6 +260,7 @@ export interface FileRoutesByTo {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
+  '/api/unbeaten-authors': typeof ApiUnbeatenAuthorsRoute
   '/api/campaigns/$id': typeof ApiCampaignsIdRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
@@ -288,6 +296,7 @@ export interface FileRoutesById {
   '/api/site-records': typeof ApiSiteRecordsRoute
   '/api/startup-data': typeof ApiStartupDataRoute
   '/api/tas-leaderboards': typeof ApiTasLeaderboardsRoute
+  '/api/unbeaten-authors': typeof ApiUnbeatenAuthorsRoute
   '/api/campaigns/$id': typeof ApiCampaignsIdRoute
   '/api/leaderboard/$level': typeof ApiLeaderboardLevelRoute
   '/api/level-details/$levelId': typeof ApiLevelDetailsLevelIdRoute
@@ -324,6 +333,7 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
+    | '/api/unbeaten-authors'
     | '/api/campaigns/$id'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
@@ -358,6 +368,7 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
+    | '/api/unbeaten-authors'
     | '/api/campaigns/$id'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
@@ -392,6 +403,7 @@ export interface FileRouteTypes {
     | '/api/site-records'
     | '/api/startup-data'
     | '/api/tas-leaderboards'
+    | '/api/unbeaten-authors'
     | '/api/campaigns/$id'
     | '/api/leaderboard/$level'
     | '/api/level-details/$levelId'
@@ -427,6 +439,7 @@ export interface RootRouteChildren {
   ApiSiteRecordsRoute: typeof ApiSiteRecordsRoute
   ApiStartupDataRoute: typeof ApiStartupDataRoute
   ApiTasLeaderboardsRoute: typeof ApiTasLeaderboardsRoute
+  ApiUnbeatenAuthorsRoute: typeof ApiUnbeatenAuthorsRoute
   ApiLeaderboardLevelRoute: typeof ApiLeaderboardLevelRoute
   ApiLevelDetailsLevelIdRoute: typeof ApiLevelDetailsLevelIdRoute
   ApiPacksSlugRoute: typeof ApiPacksSlugRoute
@@ -543,6 +556,13 @@ declare module '@tanstack/react-router' {
       path: '/api/tas-leaderboards'
       fullPath: '/api/tas-leaderboards'
       preLoaderRoute: typeof ApiTasLeaderboardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/unbeaten-authors': {
+      id: '/api/unbeaten-authors'
+      path: '/api/unbeaten-authors'
+      fullPath: '/api/unbeaten-authors'
+      preLoaderRoute: typeof ApiUnbeatenAuthorsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/campaigns/$id': {
@@ -713,6 +733,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSiteRecordsRoute: ApiSiteRecordsRoute,
   ApiStartupDataRoute: ApiStartupDataRoute,
   ApiTasLeaderboardsRoute: ApiTasLeaderboardsRoute,
+  ApiUnbeatenAuthorsRoute: ApiUnbeatenAuthorsRoute,
   ApiLeaderboardLevelRoute: ApiLeaderboardLevelRoute,
   ApiLevelDetailsLevelIdRoute: ApiLevelDetailsLevelIdRoute,
   ApiPacksSlugRoute: ApiPacksSlugRoute,
