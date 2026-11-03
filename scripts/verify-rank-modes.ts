@@ -15,7 +15,7 @@ import {
   deriveLevelRankTimes,
 } from "@/lib/rankPoints";
 import { DEFAULT_RANKS, DEFAULT_OVERALL_RANKS, RANK_ORDER, migrateRankColors } from "@/constants";
-import { getLevelDefaultRanks } from "@/lib/rankDefaults";
+import { getLevelDefaultRanks, resolveLevelRanks } from "@/lib/rankDefaults";
 import type { LeaderboardEntry, RankInfo } from "@/types";
 
 let passed = 0;
@@ -316,6 +316,110 @@ console.log("\na rank missing from a saved level config falls back to the genera
     "every rank resolves positive, so the legend stays on summed cutoffs",
     RANK_ORDER.every((r) => resolved[r] > 0),
     RANK_ORDER.filter((r) => !(resolved[r] > 0)).join(", "),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Regression: a saved levelConfig predates a rank, so the rank has no cutoff
+// there. Resolving it against the *global* cutoff is wrong — the global ladder is
+// absolute while a level's authored ladder is relative to its own WR, so on a
+// fast level the global cutoff lands above the level's own Elite and inverts the
+// ladder. It must come from the level's generated default instead.
+console.log("\na rank missing from a saved levelConfig resolves from the level default");
+{
+  const saved: Record<string, RankInfo> = {};
+  for (const r of RANK_ORDER.filter((id) => id !== "Grandmaster")) {
+    saved[r] = { ...DEFAULT_RANKS[r], timeCutoff: 0 };
+  }
+  // Authored cutoffs for Diamond Rally (801170f9), mirroring rankDefaults.
+  const authored: Record<string, number> = {
+    Champion: 13.05,
+    Elite: 13.1,
+    Legend: 13.15,
+    Expert: 13.2,
+    Master: 13.275,
+    Pro: 13.4,
+    Skilled: 13.6,
+    Average: 13.8,
+    Beginner: 14.5,
+  };
+  for (const [r, t] of Object.entries(authored)) saved[r].timeCutoff = t;
+
+  const merged = resolveLevelRanks("801170f9", saved, DEFAULT_RANKS, RANK_ORDER);
+  const cuts = RANK_ORDER.filter((r) => r !== "Beginner+").map((r) => merged[r].timeCutoff);
+  check(
+    "the missing rank lands between Champion and Elite",
+    merged.Grandmaster.timeCutoff > merged.Champion.timeCutoff &&
+      merged.Grandmaster.timeCutoff < merged.Elite.timeCutoff,
+    `Champion ${merged.Champion.timeCutoff}, Grandmaster ${merged.Grandmaster.timeCutoff}, Elite ${merged.Elite.timeCutoff}`,
+  );
+  check(
+    "the resolved ladder stays monotonic (never the global 12.0s)",
+    cuts.every((c, i) => i === 0 || c >= cuts[i - 1]),
+    cuts.join(" < "),
+  );
+  check(
+    "a stored cutoff still wins over the generated default",
+    resolveLevelRanks(
+      "801170f9",
+      { ...saved, Grandmaster: { ...DEFAULT_RANKS.Grandmaster, timeCutoff: 9.9 } },
+      DEFAULT_RANKS,
+      RANK_ORDER,
+    ).Grandmaster.timeCutoff === 9.9,
+  );
+  // 63 of the 72 pack levels have no authored table, so their new rank can only
+  // come from the stored cutoffs either side of it.
+  check(
+    "a configured level with no authored table interpolates the new rank",
+    (() => {
+      const cfg: Record<string, RankInfo> = {};
+      for (const r of RANK_ORDER.filter((id) => id !== "Grandmaster")) {
+        cfg[r] = { ...DEFAULT_RANKS[r], timeCutoff: 0 };
+      }
+      for (const [r, t] of Object.entries({
+        Champion: 20,
+        Elite: 20.5,
+        Legend: 21,
+        Expert: 22,
+        Master: 23,
+        Pro: 25,
+        Skilled: 28,
+        Average: 32,
+        Beginner: 40,
+      })) {
+        cfg[r].timeCutoff = t;
+      }
+      const out = resolveLevelRanks("NOT_IN_AUTHORED_TABLE", cfg, DEFAULT_RANKS, RANK_ORDER);
+      const gm = out.Grandmaster.timeCutoff;
+      return gm > out.Champion.timeCutoff && gm < out.Elite.timeCutoff;
+    })(),
+    "Grandmaster must land between the level's own Champion and Elite",
+  );
+  // The live Diamond Rally ladder (stored Champion 16.210, Elite 16.694) is
+  // absolute and disagrees with the hand-authored table (13.05/13.10), so the
+  // new rank must be blended from the *stored* neighbours. Using the authored
+  // default here produced 16.211 (clamped onto Champion), not the midpoint.
+  check(
+    "the new rank blends the level's real ladder, not the authored table",
+    (() => {
+      const cfg: Record<string, RankInfo> = {};
+      for (const r of RANK_ORDER.filter((id) => id !== "Grandmaster")) {
+        cfg[r] = { ...DEFAULT_RANKS[r], timeCutoff: 0 };
+      }
+      cfg.Champion.timeCutoff = 16.21;
+      cfg.Elite.timeCutoff = 16.694;
+      cfg.Legend.timeCutoff = 17.258;
+      const gm = resolveLevelRanks("801170f9", cfg, DEFAULT_RANKS, RANK_ORDER).Grandmaster
+        .timeCutoff;
+      return gm > 16.3 && gm < 16.6;
+    })(),
+    "expected ~16.45 between Champion 16.21 and Elite 16.694",
+  );
+  check(
+    "an unconfigured level still resolves every rank to 0",
+    RANK_ORDER.every(
+      (r) => resolveLevelRanks("NOPE", undefined, DEFAULT_RANKS, RANK_ORDER)[r].timeCutoff === 0,
+    ),
   );
 }
 

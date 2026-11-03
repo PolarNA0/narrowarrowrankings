@@ -26,7 +26,7 @@ import {
 import { motion } from "motion/react";
 import { PlayerStats, LevelInfo, RankInfo, LevelRankConfig, LevelPack, ArrowScope } from "../types";
 import { RANK_ORDER, DEFAULT_RANKS } from "../constants";
-import { getLevelDefaultRanks } from "../lib/rankDefaults";
+import { getLevelDefaultRanks, resolveLevelRanks } from "../lib/rankDefaults";
 import { assignRank } from "../lib/ranking";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -425,17 +425,14 @@ export function PlayerProfile({
         const levelStats = stats.levels[level.id];
 
         const config = rankConfigs[level.id];
-        const levelRanks = config?.ranks || getLevelDefaultRanks(level.id, globalRankConfig);
-        const merged: Record<string, RankInfo> = {};
-        (Array.isArray(RANK_ORDER) ? RANK_ORDER : []).forEach(id => {
-          const gRank = globalRankConfig[id] || DEFAULT_RANKS[id];
-          const lRank = levelRanks[id];
-          let timeCutoff: number;
-          if (typeof lRank === 'number') timeCutoff = lRank;
-          else if (lRank && typeof lRank.timeCutoff === 'number') timeCutoff = lRank.timeCutoff;
-          else timeCutoff = gRank.timeCutoff;
-          merged[id] = { ...gRank, timeCutoff };
-        });
+        // A rank added after this level's config was saved has no cutoff there;
+        // resolve it from the level's generated default, never the global cutoff.
+        const merged = resolveLevelRanks(
+          level.id,
+          config?.ranks,
+          globalRankConfig || DEFAULT_RANKS,
+          Array.isArray(RANK_ORDER) ? RANK_ORDER : [],
+        );
         const rankInfo = levelStats ? (merged[levelStats.rankId] || DEFAULT_RANKS[levelStats.rankId] || DEFAULT_RANKS["Beginner"]) : null;
         const hex = rankInfo ? (DEFAULT_RANKS[levelStats?.rankId as string]?.color || rankInfo.color || "").match(/#[0-9a-fA-F]{6}/)?.[0] : undefined;
 
@@ -1061,29 +1058,14 @@ export function PlayerProfile({
                       
                       // Resolve rank info with proper fallback and merging
                       const config = rankConfigs[level.id];
-                      const levelRanks = config?.ranks || getLevelDefaultRanks(level.id, globalRankConfig);
-                      
-                      const merged: Record<string, RankInfo> = {};
-                      const safeRankOrder = Array.isArray(RANK_ORDER) ? RANK_ORDER : [];
-                      safeRankOrder.forEach(id => {
-                        const gRank = globalRankConfig[id] || DEFAULT_RANKS[id];
-                        const lRank = levelRanks[id];
-                        
-                        // Robustly get time cutoff (handle legacy number-only format)
-                        let timeCutoff: number;
-                        if (typeof lRank === 'number') {
-                          timeCutoff = lRank;
-                        } else if (lRank && typeof lRank.timeCutoff === 'number') {
-                          timeCutoff = lRank.timeCutoff;
-                        } else {
-                          timeCutoff = gRank.timeCutoff;
-                        }
-
-                        merged[id] = {
-                          ...gRank,
-                          timeCutoff
-                        };
-                      });
+                      // Resolve each rank's cutoff, falling back to the level's
+                      // generated default for a rank the saved config predates.
+                      const merged = resolveLevelRanks(
+                        level.id,
+                        config?.ranks,
+                        globalRankConfig || DEFAULT_RANKS,
+                        Array.isArray(RANK_ORDER) ? RANK_ORDER : [],
+                      );
 
                       const rankInfo = merged[levelStats.rankId] || DEFAULT_RANKS[levelStats.rankId] || DEFAULT_RANKS["Beginner"];
 

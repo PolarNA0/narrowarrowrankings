@@ -55,6 +55,7 @@ import {
   LEVEL_PACKS
 } from "../constants";
 import { LevelRankConfig, RankInfo, LevelInfo, LevelPack, LegacyRun, ArrowScope } from "../types";
+import { getLevelDefaultRanks } from "../lib/rankDefaults";
 import { ArrowIcon } from "./ArrowIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -266,6 +267,16 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
             }
           });
         }
+        // A rank with no entry at all in this doc was added after it was saved,
+        // so seed it from the level's generated default — otherwise the field
+        // renders blank and saving would persist 0. A rank the admin deliberately
+        // left blank is still present, so it stays untouched.
+        const generated = getLevelDefaultRanks(selectedLevel, globalConfig || DEFAULT_RANKS);
+        safeRankOrder.forEach(rankId => {
+          if (data?.ranks && !(rankId in data.ranks)) {
+            emptyRanks[rankId].timeCutoff = generated?.[rankId]?.timeCutoff ?? 0;
+          }
+        });
         setRankConfig(emptyRanks);
         setArrowRanks(data.arrowRanks || {});
         setTheoreticalMax(data.theoreticalMax ?? undefined);

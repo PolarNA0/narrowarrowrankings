@@ -52,7 +52,7 @@ import {
   OperationType,
   handleFirestoreError,
 } from "./lib/cloud-db";
-import { getLevelDefaultRanks } from "./lib/rankDefaults";
+import { resolveLevelRanks } from "./lib/rankDefaults";
 import { ClickToCopy } from "./components/ClickToCopy";
 import { NarrowScoreView } from "./components/NarrowScoreView";
 import { CustomCompletionsView } from "./components/CustomCompletionsView";
@@ -811,21 +811,28 @@ export default function App() {
   );
 
   const activeRankConfig = React.useMemo(() => {
-    const levelRanks = activeLevelData?.ranks || {};
     const arrowOverrides =
       arrowFilter !== "all" ? activeLevelData?.arrowRanks?.[arrowFilter] || {} : {};
-    const merged: Record<string, RankInfo> = {};
     const safeRankOrder = Array.isArray(RANK_ORDER) ? RANK_ORDER : [];
+    // Resolve the level's own ladder first — this is what the "View Ranks"
+    // legend and the board's rank badges read — so a rank the saved config
+    // predates shows the level's generated time instead of 0.
+    const resolved = resolveLevelRanks(
+      selectedLevel,
+      activeLevelData?.ranks,
+      globalRankConfig || DEFAULT_RANKS,
+      safeRankOrder,
+    );
+    const merged: Record<string, RankInfo> = {};
     safeRankOrder.forEach((id) => {
-      const gRank = globalRankConfig[id] || DEFAULT_RANKS[id];
       const override = Number(arrowOverrides[id] ?? 0);
-      merged[id] = {
-        ...gRank,
-        timeCutoff: override > 0 ? override : hasLevelRanks ? (levelRanks[id]?.timeCutoff ?? 0) : 0,
-      };
+      merged[id] =
+        override > 0
+          ? { ...(globalRankConfig[id] || DEFAULT_RANKS[id]), timeCutoff: override }
+          : resolved[id] || globalRankConfig[id] || DEFAULT_RANKS[id];
     });
     return merged;
-  }, [activeLevelData, globalRankConfig, arrowFilter, hasLevelRanks]);
+  }, [activeLevelData, globalRankConfig, arrowFilter, selectedLevel]);
 
   const fetchAllLevels = async (forceRefresh = false) => {
     const levelsToFetch = dynamicLevels.length >= LEVELS.length ? dynamicLevels : LEVELS;
@@ -994,30 +1001,14 @@ export default function App() {
         const hasConfig = !!(config && config.ranks && Object.keys(config.ranks).length > 0);
         const levelRanks = config?.ranks || {};
 
-        // Merge with global ranks for consistent names/colors
-        const merged: Record<string, RankInfo> = {};
-        // A rank added after this level's config was saved has no stored cutoff;
-        // fall back to the level's generated default so it is still awardable.
-        const generatedDefaults = getLevelDefaultRanks(level.id, globalRankConfig || DEFAULT_RANKS);
-        RANK_ORDER.forEach((id) => {
-          const gRank = globalRankConfig[id] || DEFAULT_RANKS[id];
-          const lRank = levelRanks[id];
-
-          // Robustly get time cutoff (handle legacy number-only format)
-          let timeCutoff: number;
-          if (typeof lRank === "number") {
-            timeCutoff = lRank;
-          } else if (lRank && typeof lRank.timeCutoff === "number" && lRank.timeCutoff > 0) {
-            timeCutoff = lRank.timeCutoff;
-          } else {
-            timeCutoff = generatedDefaults?.[id]?.timeCutoff ?? 0;
-          }
-
-          merged[id] = {
-            ...gRank,
-            timeCutoff,
-          };
-        });
+        // Merge with global ranks for consistent names/colors, resolving a rank
+        // the saved config predates from the level's generated default.
+        const merged = resolveLevelRanks(
+          level.id,
+          levelRanks,
+          globalRankConfig || DEFAULT_RANKS,
+          RANK_ORDER,
+        );
 
         const rankId = hasConfig ? assignRank(entry, merged, RANK_ORDER) : "";
 
@@ -1250,24 +1241,17 @@ export default function App() {
     // default) rather than counting the missing rank as 0 — a 0 would hide the
     // rank and trip the "usable" check below.
     const perLevelCutoffs = dynamicLevels.map((level) => {
-      const saved = allRankConfigs[level.id]?.ranks;
-      const fallback = getLevelDefaultRanks(level.id, globalRankConfig || DEFAULT_RANKS);
-      const resolved: Record<string, number> = {};
-      const hasConfig = !!saved && Object.keys(saved).length > 0;
+      const resolved = resolveLevelRanks(
+        level.id,
+        allRankConfigs[level.id]?.ranks,
+        globalRankConfig || DEFAULT_RANKS,
+        order,
+      );
+      const cutoffs: Record<string, number> = {};
       order.forEach((rankId) => {
-        const stored = saved?.[rankId]?.timeCutoff;
-        if (stored && stored > 0) {
-          resolved[rankId] = stored;
-        } else if (hasConfig) {
-          // The level is configured but has no cutoff for this rank — it predates
-          // the rank, so use the generated default rather than 0.
-          resolved[rankId] = Number(fallback?.[rankId]?.timeCutoff ?? 0);
-        } else {
-          // No config at all: leave it uncounted, as before.
-          resolved[rankId] = 0;
-        }
+        cutoffs[rankId] = Number(resolved[rankId]?.timeCutoff ?? 0);
       });
-      return resolved;
+      return cutoffs;
     });
     order.forEach((rankId) => {
       let sum = 0;
@@ -1317,19 +1301,17 @@ export default function App() {
     // per-player loop below does not rebuild the same map ~100k times.
     const resolvedLevelCutoffs: Record<string, Record<string, number>> = {};
     packLevels.forEach((level) => {
-      const saved = allRankConfigs[level.id]?.ranks;
-      const fallback = getLevelDefaultRanks(level.id, globalRankConfig || DEFAULT_RANKS);
-      const resolved: Record<string, number> = {};
-      const hasConfig = !!saved && Object.keys(saved).length > 0;
+      const resolved = resolveLevelRanks(
+        level.id,
+        allRankConfigs[level.id]?.ranks,
+        globalRankConfig || DEFAULT_RANKS,
+        RANK_ORDER,
+      );
+      const cutoffs: Record<string, number> = {};
       for (const rankId of RANK_ORDER) {
-        const stored = saved?.[rankId]?.timeCutoff;
-        // Only fall back for a *configured* level missing this rank (it predates
-        // the rank). An unconfigured level contributes nothing, as before.
-        resolved[rankId] = Number(
-          stored && stored > 0 ? stored : hasConfig ? (fallback?.[rankId]?.timeCutoff ?? 0) : 0,
-        );
+        cutoffs[rankId] = Number(resolved[rankId]?.timeCutoff ?? 0);
       }
-      resolvedLevelCutoffs[level.id] = resolved;
+      resolvedLevelCutoffs[level.id] = cutoffs;
     });
 
     allUsernames.forEach((username) => {
