@@ -31,6 +31,7 @@ export interface NameChange {
 
 export type RankName = 
   | "Champion" 
+  | "Grandmaster"
   | "Elite" 
   | "Legend" 
   | "Expert" 

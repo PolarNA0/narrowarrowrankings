@@ -49,6 +49,7 @@ import {
   DEFAULT_RANKS, 
   RANK_ORDER, 
   DEFAULT_OVERALL_RANKS,
+  migrateRankColors,
   THEORETICAL_MAX_DEFAULTS,
   HUMAN_LIMIT_DEFAULTS,
   LEVEL_PACKS
@@ -187,14 +188,15 @@ export function AdminPanel({ levels, levelPacks, allUsernames = [], isFetchingAl
     const unsubscribe = onSnapshot(globalRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data() as LevelRankConfig;
-        // Merge with defaults
+        // Merge with defaults so a rank added after this doc was saved still
+        // appears (and is editable) rather than being silently absent.
         const mergedRanks = { ...DEFAULT_RANKS };
         if (data?.ranks) {
           Object.keys(data.ranks).forEach(rankId => {
             mergedRanks[rankId] = { ...mergedRanks[rankId], ...data.ranks[rankId] };
           });
         }
-        setGlobalConfig(mergedRanks);
+        setGlobalConfig(migrateRankColors(mergedRanks));
       }
     }, (err) => {
       handleFirestoreError(err, OperationType.GET, "configs/ranks");

@@ -90,21 +90,23 @@ function check(name: string, ok: boolean, extra = "") {
 
 // ---- Rank resolution -----------------------------------------------------
 {
-  // Champion cutoff 23.05, Elite 24.10 in DEFAULT_OVERALL_RANKS.
+  // Champion cutoff 23.05, Grandmaster 23.58, Elite 24.10 in DEFAULT_OVERALL_RANKS.
   const champ = resolveOverallRank(23.0, RANK_ORDER, DEFAULT_OVERALL_RANKS);
   check("a time under the Champion cutoff is Champion", champ.rankId === "Champion", champ.rankId);
   check("Champion has no next rank", champ.nextRankId === null && champ.nextCutoff === null);
 
   const elite = resolveOverallRank(24.0, RANK_ORDER, DEFAULT_OVERALL_RANKS);
   check("a time between cutoffs resolves to the next rank", elite.rankId === "Elite", elite.rankId);
+  // Elite's next rank is the *immediately* faster one (Grandmaster), not the
+  // top rank — the ladder is walked one step at a time.
   check(
-    "the next rank is the faster one, with its cutoff",
-    elite.nextRankId === "Champion" && elite.nextCutoff === 23.05,
+    "the next rank is the immediately faster one, with its cutoff",
+    elite.nextRankId === "Grandmaster" && elite.nextCutoff === 23.58,
     `${elite.nextRankId} @ ${elite.nextCutoff}`,
   );
 
   const gap = timeToNextRank(24.0, elite);
-  check("the gap to the next rank is exact", gap != null && Math.abs(gap - 0.95) < 1e-9, `${gap}`);
+  check("the gap to the next rank is exact", gap != null && Math.abs(gap - 0.42) < 1e-9, `${gap}`);
 
   const exact = resolveOverallRank(23.05, RANK_ORDER, DEFAULT_OVERALL_RANKS);
   check("a time exactly on the cutoff earns that rank", exact.rankId === "Champion", exact.rankId);
@@ -132,9 +134,10 @@ function check(name: string, ok: boolean, extra = "") {
 
 // ---- Scaling (a single pack is a fraction of every level) ----------------
 {
-  // At half scale the Champion cutoff is 23.05 / 2 = 11.525, so a 10s total is
-  // Champion. The same total is also Champion at full scale, so the meaningful
-  // assertion is that the *boundary* moves with the scale factor.
+  // At half scale the Champion cutoff is 23.05 / 2 = 11.525 and Grandmaster's
+  // 23.58 / 2 = 11.79, so a 10s total is Champion. The same total is also
+  // Champion at full scale, so the meaningful assertion is that the *boundary*
+  // moves with the scale factor.
   const half = resolveOverallRank(10.0, RANK_ORDER, DEFAULT_OVERALL_RANKS, 0.5);
   check(
     "a scaled cutoff is compared against the scaled total",
@@ -150,12 +153,12 @@ function check(name: string, ok: boolean, extra = "") {
   );
   check(
     "the next-rank cutoff is scaled too",
-    boundary.nextRankId === "Champion" && Math.abs((boundary.nextCutoff ?? 0) - 11.525) < 1e-9,
+    boundary.nextRankId === "Grandmaster" && Math.abs((boundary.nextCutoff ?? 0) - 11.79) < 1e-9,
     `${boundary.nextRankId} @ ${boundary.nextCutoff}`,
   );
 
   const gap = timeToNextRank(12.0, boundary);
-  check("the scaled gap is exact", gap != null && Math.abs(gap - 0.475) < 1e-9, `${gap}`);
+  check("the scaled gap is exact", gap != null && Math.abs(gap - 0.21) < 1e-9, `${gap}`);
 }
 
 // ---- Real config sanity --------------------------------------------------

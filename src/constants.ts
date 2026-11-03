@@ -90,10 +90,17 @@ export const LEVELS: LevelInfo[] = [
 export const DEFAULT_RANKS: Record<string, RankInfo> = {
   "Champion": {
     name: "Champion",
+    color: "text-[#FFFFFF]",
+    bgColor: "bg-[#FFFFFF]/10",
+    borderColor: "border-[#FFFFFF]/50",
+    timeCutoff: 10.0,
+  },
+  "Grandmaster": {
+    name: "Grandmaster",
     color: "text-[#FF1F8E]",
     bgColor: "bg-[#FF1F8E]/10",
     borderColor: "border-[#FF1F8E]/50",
-    timeCutoff: 10.0,
+    timeCutoff: 12.0,
   },
   "Elite": {
     name: "Elite",
@@ -162,6 +169,7 @@ export const DEFAULT_RANKS: Record<string, RankInfo> = {
 
 export const DEFAULT_OVERALL_RANKS: Record<string, RankInfo> = {
   "Champion": { ...DEFAULT_RANKS["Champion"], timeCutoff: 23.05 },
+  "Grandmaster": { ...DEFAULT_RANKS["Grandmaster"], timeCutoff: 23.58 },
   "Elite": { ...DEFAULT_RANKS["Elite"], timeCutoff: 24.10 },
   "Legend": { ...DEFAULT_RANKS["Legend"], timeCutoff: 25.15 },
   "Expert": { ...DEFAULT_RANKS["Expert"], timeCutoff: 27.20 },
@@ -174,8 +182,33 @@ export const DEFAULT_OVERALL_RANKS: Record<string, RankInfo> = {
 };
 
 export const RANK_ORDER = [
-  "Champion", "Elite", "Legend", "Expert", "Master", "Pro", "Skilled", "Average", "Beginner", "Beginner+"
+  "Champion", "Grandmaster", "Elite", "Legend", "Expert", "Master", "Pro", "Skilled", "Average", "Beginner", "Beginner+"
 ];
+
+/**
+ * Colours a saved config may still hold from before the palette changed. A
+ * stored colour that exactly matches its rank's legacy default is treated as
+ * "never customised" and upgraded to the current default: Champion kept the old
+ * pink, which Grandmaster now uses, so leaving it would render two ranks with
+ * the same colour. A hand-picked colour is never touched.
+ */
+const LEGACY_RANK_COLORS: Record<string, string> = {
+  Champion: "#FF1F8E",
+};
+
+export function migrateRankColors(ranks: Record<string, RankInfo>): Record<string, RankInfo> {
+  const out: Record<string, RankInfo> = {};
+  for (const [id, rank] of Object.entries(ranks || {})) {
+    const legacy = LEGACY_RANK_COLORS[id];
+    const current = DEFAULT_RANKS[id];
+    const isLegacyDefault =
+      legacy && current && typeof rank?.color === "string" && rank.color.includes(legacy);
+    out[id] = isLegacyDefault
+      ? { ...rank, color: current.color, bgColor: current.bgColor, borderColor: current.borderColor }
+      : rank;
+  }
+  return out;
+}
 
 export const THEORETICAL_MAX_DEFAULTS: Record<string, number> = {
   "1777118905185": 10.0,

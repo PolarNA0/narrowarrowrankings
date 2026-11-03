@@ -52,6 +52,7 @@ import {
   OperationType,
   handleFirestoreError,
 } from "./lib/cloud-db";
+import { getLevelDefaultRanks } from "./lib/rankDefaults";
 import { ClickToCopy } from "./components/ClickToCopy";
 import { NarrowScoreView } from "./components/NarrowScoreView";
 import { CustomCompletionsView } from "./components/CustomCompletionsView";
@@ -113,6 +114,7 @@ import {
   DEFAULT_RANKS,
   RANK_ORDER,
   DEFAULT_OVERALL_RANKS,
+  migrateRankColors,
   THEORETICAL_MAX_DEFAULTS,
   HUMAN_LIMIT_DEFAULTS,
   LEVEL_PACKS,
@@ -704,14 +706,18 @@ export default function App() {
 
         snapshot.forEach((doc) => {
           const data = doc.data() as LevelRankConfig;
+          // Merge over the defaults rather than replacing them: a saved doc is a
+          // snapshot of the ranks that existed when it was written, so a rank added
+          // later would otherwise be missing (and silently unawardable) until an
+          // admin happened to re-save every level.
           if (doc.id === "ranks") {
-            gRanks = data.ranks || DEFAULT_RANKS;
+            gRanks = migrateRankColors({ ...DEFAULT_RANKS, ...(data.ranks || {}) });
           } else if (doc.id === "overallRanks") {
-            oRanks = data.ranks || DEFAULT_OVERALL_RANKS;
+            oRanks = migrateRankColors({ ...DEFAULT_OVERALL_RANKS, ...(data.ranks || {}) });
           } else if (doc.id.startsWith("overallRanks_")) {
             const packId = doc.id.substring("overallRanks_".length);
             if (data.ranks) {
-              packOverall[packId] = data.ranks;
+              packOverall[packId] = migrateRankColors({ ...DEFAULT_OVERALL_RANKS, ...data.ranks });
             }
           }
         });
@@ -990,6 +996,9 @@ export default function App() {
 
         // Merge with global ranks for consistent names/colors
         const merged: Record<string, RankInfo> = {};
+        // A rank added after this level's config was saved has no stored cutoff;
+        // fall back to the level's generated default so it is still awardable.
+        const generatedDefaults = getLevelDefaultRanks(level.id, globalRankConfig || DEFAULT_RANKS);
         RANK_ORDER.forEach((id) => {
           const gRank = globalRankConfig[id] || DEFAULT_RANKS[id];
           const lRank = levelRanks[id];
@@ -998,10 +1007,10 @@ export default function App() {
           let timeCutoff: number;
           if (typeof lRank === "number") {
             timeCutoff = lRank;
-          } else if (lRank && typeof lRank.timeCutoff === "number") {
+          } else if (lRank && typeof lRank.timeCutoff === "number" && lRank.timeCutoff > 0) {
             timeCutoff = lRank.timeCutoff;
           } else {
-            timeCutoff = 0;
+            timeCutoff = generatedDefaults?.[id]?.timeCutoff ?? 0;
           }
 
           merged[id] = {
@@ -1236,11 +1245,35 @@ export default function App() {
     const result: Record<string, RankInfo> = {};
     const order = Array.isArray(RANK_ORDER) ? RANK_ORDER : [];
     let usable = true;
+    // A rank added after the level configs were saved has no stored cutoff there,
+    // so resolve each level's cutoffs once (stored value, else its generated
+    // default) rather than counting the missing rank as 0 — a 0 would hide the
+    // rank and trip the "usable" check below.
+    const perLevelCutoffs = dynamicLevels.map((level) => {
+      const saved = allRankConfigs[level.id]?.ranks;
+      const fallback = getLevelDefaultRanks(level.id, globalRankConfig || DEFAULT_RANKS);
+      const resolved: Record<string, number> = {};
+      const hasConfig = !!saved && Object.keys(saved).length > 0;
+      order.forEach((rankId) => {
+        const stored = saved?.[rankId]?.timeCutoff;
+        if (stored && stored > 0) {
+          resolved[rankId] = stored;
+        } else if (hasConfig) {
+          // The level is configured but has no cutoff for this rank — it predates
+          // the rank, so use the generated default rather than 0.
+          resolved[rankId] = Number(fallback?.[rankId]?.timeCutoff ?? 0);
+        } else {
+          // No config at all: leave it uncounted, as before.
+          resolved[rankId] = 0;
+        }
+      });
+      return resolved;
+    });
     order.forEach((rankId) => {
       let sum = 0;
       let counted = 0;
-      dynamicLevels.forEach((level) => {
-        const cutoff = Number(allRankConfigs[level.id]?.ranks?.[rankId]?.timeCutoff ?? 0);
+      perLevelCutoffs.forEach((resolved) => {
+        const cutoff = resolved[rankId] ?? 0;
         if (cutoff > 0) {
           sum += cutoff;
           counted += 1;
@@ -1279,6 +1312,26 @@ export default function App() {
       }
     > = {};
 
+    // Resolve each level's cutoffs once (stored value, else its generated
+    // default) so a rank the saved config predates is still scored, and so the
+    // per-player loop below does not rebuild the same map ~100k times.
+    const resolvedLevelCutoffs: Record<string, Record<string, number>> = {};
+    packLevels.forEach((level) => {
+      const saved = allRankConfigs[level.id]?.ranks;
+      const fallback = getLevelDefaultRanks(level.id, globalRankConfig || DEFAULT_RANKS);
+      const resolved: Record<string, number> = {};
+      const hasConfig = !!saved && Object.keys(saved).length > 0;
+      for (const rankId of RANK_ORDER) {
+        const stored = saved?.[rankId]?.timeCutoff;
+        // Only fall back for a *configured* level missing this rank (it predates
+        // the rank). An unconfigured level contributes nothing, as before.
+        resolved[rankId] = Number(
+          stored && stored > 0 ? stored : hasConfig ? (fallback?.[rankId]?.timeCutoff ?? 0) : 0,
+        );
+      }
+      resolvedLevelCutoffs[level.id] = resolved;
+    });
+
     allUsernames.forEach((username) => {
       packLevels.forEach((level) => {
         const levelData = processedAllLevelsData[level.id] || [];
@@ -1300,14 +1353,12 @@ export default function App() {
           players[username].count += 1;
           players[username].totalTime += entry.completion_time;
 
-          const levelRanks = allRankConfigs[level.id]?.ranks;
-          if (levelRanks) {
-            for (const rankId of RANK_ORDER) {
-              const cutoff = Number(levelRanks[rankId]?.timeCutoff ?? 0);
-              if (cutoff > 0) {
-                players[username].cutoffByRank[rankId] =
-                  (players[username].cutoffByRank[rankId] ?? 0) + cutoff;
-              }
+          const levelCutoffs = resolvedLevelCutoffs[level.id];
+          for (const rankId of RANK_ORDER) {
+            const cutoff = levelCutoffs?.[rankId] ?? 0;
+            if (cutoff > 0) {
+              players[username].cutoffByRank[rankId] =
+                (players[username].cutoffByRank[rankId] ?? 0) + cutoff;
             }
           }
         }
@@ -3744,7 +3795,10 @@ export default function App() {
                                       ""
                                     ).match(/#[0-9a-fA-F]{6}/)?.[0];
                                     if (!hex) return undefined;
-                                    const strong = rankId === "Champion" || rankId === "Elite";
+                                    const strong =
+                                      rankId === "Champion" ||
+                                      rankId === "Grandmaster" ||
+                                      rankId === "Elite";
                                     return {
                                       background: `${hex}${strong ? "55" : "33"}`,
                                       boxShadow: `inset 4px 0 0 ${hex}`,

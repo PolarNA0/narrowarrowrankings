@@ -5,7 +5,17 @@
  *   - all-arrows: each map scores once per arrow, cutoffs derived per arrow
  * and that arrow bucketing folds name variants of the same arrow together.
  */
-import { computeRankPoints, arrowBucket, WR_POINTS } from "@/lib/rankPoints";
+import {
+  computeRankPoints,
+  arrowBucket,
+  WR_POINTS,
+  RANK_POINTS,
+  RANK_TEXT_COLOR,
+  POINT_RANK_ORDER,
+  deriveLevelRankTimes,
+} from "@/lib/rankPoints";
+import { DEFAULT_RANKS, DEFAULT_OVERALL_RANKS, RANK_ORDER, migrateRankColors } from "@/constants";
+import { getLevelDefaultRanks } from "@/lib/rankDefaults";
 import type { LeaderboardEntry, RankInfo } from "@/types";
 
 let passed = 0;
@@ -141,20 +151,173 @@ check(
 console.log("\nmax possible follows the mode");
 check(
   "best-arrow max is 2 slots x WR",
-  best.slotsScored * WR_POINTS === 22,
+  best.slotsScored * WR_POINTS === 24,
   `got ${best.slotsScored * WR_POINTS}`,
 );
 check(
   "all-arrows max is 4 slots x WR",
-  all.slotsScored * WR_POINTS === 44,
+  all.slotsScored * WR_POINTS === 48,
   `got ${all.slotsScored * WR_POINTS}`,
 );
-check("WR points are Champion plus the bonus", WR_POINTS === 11, `got ${WR_POINTS}`);
+check("WR points are Champion plus the bonus", WR_POINTS === 12, `got ${WR_POINTS}`);
 
 // ---------------------------------------------------------------------------
 console.log("\nempty boards contribute nothing");
 const empty = computeRankPoints(["alpha", "missing"], boards, {}, "all-arrows");
 check("a level with no runs is skipped", empty.slotsScored === 3, `got ${empty.slotsScored}`);
+
+// ---------------------------------------------------------------------------
+// A rank added to RANK_ORDER must be wired into every per-rank table. A missing
+// key does not throw: it silently yields NaN points / NaN cutoffs, so the ladder
+// still renders while scoring is quietly broken. These checks are the guard.
+console.log("\nevery rank in the ladder is wired into every per-rank table");
+for (const rank of RANK_ORDER) {
+  check(
+    `RANK_POINTS has ${rank}`,
+    typeof RANK_POINTS[rank] === "number",
+    `got ${RANK_POINTS[rank]}`,
+  );
+  check(
+    `RANK_TEXT_COLOR has ${rank}`,
+    typeof RANK_TEXT_COLOR[rank] === "string",
+    `got ${RANK_TEXT_COLOR[rank]}`,
+  );
+  check(`DEFAULT_RANKS has ${rank}`, !!DEFAULT_RANKS[rank]);
+  check(`DEFAULT_OVERALL_RANKS has ${rank}`, !!DEFAULT_OVERALL_RANKS[rank]);
+  check(`POINT_RANK_ORDER has ${rank}`, POINT_RANK_ORDER.includes(rank as never));
+  // The derived cutoffs are the one table that cannot be read directly, so drive
+  // the real deriver and assert the rank lands on a finite cutoff.
+  const derived = deriveLevelRankTimes(
+    [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map((t) => entry("p", "narrow", t)),
+    null,
+  );
+  if (rank !== "Beginner+") {
+    const c = derived?.cutoffs[rank];
+    check(
+      `${rank} derives a finite cutoff`,
+      typeof c === "number" && Number.isFinite(c),
+      `got ${c}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The ladder must stay monotonic and fully ascending.
+console.log("\nthe rank ladder is monotonic");
+const ladder = RANK_ORDER.map((id) => DEFAULT_OVERALL_RANKS[id]?.timeCutoff ?? 0);
+check(
+  "overall cutoffs ascend from Champion to Beginner+",
+  ladder.every((c, i) => i === 0 || c >= ladder[i - 1]),
+  ladder.join(" < "),
+);
+const levelCutoffs = RANK_ORDER.map((id) => DEFAULT_RANKS[id]?.timeCutoff ?? 0);
+check(
+  "per-level default cutoffs ascend",
+  levelCutoffs.every((c, i) => i === 0 || c >= levelCutoffs[i - 1]),
+  levelCutoffs.join(" < "),
+);
+check(
+  "points descend from Champion to Beginner",
+  RANK_POINTS.Champion > RANK_POINTS.Grandmaster &&
+    RANK_POINTS.Grandmaster > RANK_POINTS.Elite &&
+    RANK_POINTS.Elite > RANK_POINTS.Beginner,
+  `${RANK_POINTS.Champion}/${RANK_POINTS.Grandmaster}/${RANK_POINTS.Elite}/${RANK_POINTS.Beginner}`,
+);
+
+// ---------------------------------------------------------------------------
+// Every ranked level's generated defaults must be monotonic too — a level with a
+// hand-authored table but no row for a new rank would otherwise be non-monotonic
+// (the new rank inheriting a slow base cutoff while sitting above a faster one).
+console.log("\nper-level generated defaults stay monotonic");
+const authoredLevels = [
+  "1777118905185",
+  "801170f9",
+  "b05c7ede",
+  "9892299a",
+  "bbb1af96",
+  "c68a5228",
+  "1b901dfe",
+  "b91ca820",
+  "d4111ef0",
+  "1778427891183",
+];
+for (const id of authoredLevels) {
+  const ranks = getLevelDefaultRanks(id, DEFAULT_RANKS);
+  const cuts = RANK_ORDER.map((r) => ranks[r]?.timeCutoff ?? 0);
+  check(
+    `level ${id} cutoffs ascend`,
+    cuts.every((c, i) => i === 0 || c >= cuts[i - 1]),
+    cuts.join(" < "),
+  );
+}
+
+// ---------------------------------------------------------------------------
+console.log("\nlegacy saved configs upgrade cleanly");
+const legacyChampion = {
+  ...DEFAULT_RANKS.Champion,
+  color: "text-[#FF1F8E]",
+  bgColor: "bg-[#FF1F8E]/10",
+  borderColor: "border-[#FF1F8E]/50",
+};
+const migrated = migrateRankColors({ ...DEFAULT_RANKS, Champion: legacyChampion });
+check(
+  "a stored legacy Champion colour is upgraded to the new default",
+  migrated.Champion.color === DEFAULT_RANKS.Champion.color,
+  migrated.Champion.color,
+);
+check(
+  "the upgraded Champion no longer collides with Grandmaster",
+  migrated.Champion.color !== migrated.Grandmaster.color,
+  `${migrated.Champion.color} vs ${migrated.Grandmaster.color}`,
+);
+const customChampion = { ...DEFAULT_RANKS.Champion, color: "text-[#123456]" };
+check(
+  "a hand-picked colour is never overwritten",
+  migrateRankColors({ Champion: customChampion }).Champion.color === "text-[#123456]",
+  migrateRankColors({ Champion: customChampion }).Champion.color,
+);
+// A doc saved before Grandmaster existed simply has no key for it. Spreading it
+// over the defaults is what supplies the missing rank (an explicit `undefined`
+// would overwrite, which is not how a stored doc behaves).
+const legacyDoc = Object.fromEntries(
+  Object.entries(DEFAULT_RANKS).filter(([id]) => id !== "Grandmaster"),
+) as Record<string, RankInfo>;
+const mergedLegacy = migrateRankColors({ ...DEFAULT_RANKS, ...legacyDoc });
+check(
+  "a saved config missing a new rank still gains it when merged over defaults",
+  !!mergedLegacy.Grandmaster && mergedLegacy.Grandmaster.timeCutoff > 0,
+  `got ${mergedLegacy.Grandmaster?.timeCutoff}`,
+);
+
+// ---------------------------------------------------------------------------
+// Regression: a level config saved before a rank existed has no cutoff for it.
+// Counting that as 0 used to hide the rank AND trip the 90%-usable check that
+// decides whether the overall-rank legend shows summed or global cutoffs.
+console.log("\na rank missing from a saved level config falls back to the generated default");
+{
+  const legacyLevelRanks: Record<string, RankInfo> = {};
+  for (const r of RANK_ORDER.filter((id) => id !== "Grandmaster")) {
+    legacyLevelRanks[r] = { ...DEFAULT_RANKS[r], timeCutoff: 10 };
+  }
+  const fallback = getLevelDefaultRanks("801170f9", DEFAULT_RANKS);
+  const resolved: Record<string, number> = {};
+  for (const rankId of RANK_ORDER) {
+    const stored = legacyLevelRanks[rankId]?.timeCutoff;
+    resolved[rankId] = Number(
+      stored && stored > 0 ? stored : (fallback?.[rankId]?.timeCutoff ?? 0),
+    );
+  }
+  check(
+    "the missing rank resolves to a positive cutoff",
+    resolved.Grandmaster > 0,
+    `got ${resolved.Grandmaster}`,
+  );
+  check(
+    "every rank resolves positive, so the legend stays on summed cutoffs",
+    RANK_ORDER.every((r) => resolved[r] > 0),
+    RANK_ORDER.filter((r) => !(resolved[r] > 0)).join(", "),
+  );
+}
 
 console.log(`\n${passed} checks passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

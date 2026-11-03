@@ -49,7 +49,8 @@ export function arrowBucket(entry: LeaderboardEntry): ArrowKind {
 }
 
 export const RANK_POINTS: Record<string, number> = {
-  Champion: 9,
+  Champion: 10,
+  Grandmaster: 9,
   Elite: 8,
   Legend: 7,
   Expert: 6,
@@ -67,6 +68,7 @@ export const WR_POINTS = RANK_POINTS.Champion + WR_BONUS;
 
 export const POINT_RANK_ORDER = [
   "Champion",
+  "Grandmaster",
   "Elite",
   "Legend",
   "Expert",
@@ -84,6 +86,7 @@ export type PointRank = (typeof POINT_RANK_ORDER)[number];
 // stays genuinely hard, loosening quickly toward the casual ranks.
 const WR_MULTIPLIER: Record<string, number> = {
   Champion: 1.015,
+  Grandmaster: 1.027,
   Elite: 1.04,
   Legend: 1.075,
   Expert: 1.12,
@@ -98,6 +101,7 @@ const WR_MULTIPLIER: Record<string, number> = {
 // densely-contested maps stay strict and quiet maps stay attainable.
 const POSITION_TARGET: Record<string, number> = {
   Champion: 3,
+  Grandmaster: 4,
   Elite: 6,
   Legend: 10,
   Expert: 18,
@@ -145,7 +149,8 @@ export function deriveLevelRankTimes(
     const byMultiplier = wr * WR_MULTIPLIER[rank];
     const byPosition = positionTime(times, POSITION_TARGET[rank]);
     // Stricter of the two for the elite ranks, kinder for the casual ones.
-    const strict = rank === "Champion" || rank === "Elite" || rank === "Legend";
+    const strict =
+      rank === "Champion" || rank === "Grandmaster" || rank === "Elite" || rank === "Legend";
     cutoffs[rank] =
       byPosition == null
         ? byMultiplier
@@ -343,7 +348,8 @@ export function computeRankPoints(
 }
 
 export const RANK_TEXT_COLOR: Record<string, string> = {
-  Champion: "text-[#D300CF]",
+  Champion: "text-[#FFFFFF]",
+  Grandmaster: "text-[#FF1F8E]",
   Elite: "text-[#A804D6]",
   Legend: "text-[#7681FF]",
   Expert: "text-[#14E6FF]",
