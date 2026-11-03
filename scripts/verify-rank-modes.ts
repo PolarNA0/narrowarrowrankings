@@ -415,6 +415,82 @@ console.log("\na rank missing from a saved levelConfig resolves from the level d
     })(),
     "expected ~16.45 between Champion 16.21 and Elite 16.694",
   );
+  // Drifting Stars: authored at ~14.2s WR (Champion 14.454) but now run in
+  // 13.254, so the stored Champion had drifted to 1.09x the WR and let 27 of
+  // 100 runs through. The board-derived cap pulls it back in.
+  check(
+    "a stale stored Champion is capped by the level's current board",
+    (() => {
+      const wr = 13.254;
+      const board: LeaderboardEntry[] = Array.from({ length: 100 }, (_, i) => ({
+        username: `p${i}`,
+        completion_time: wr + i * 0.03,
+        arrow_name: "narrow arrow",
+      }));
+      const cfg: Record<string, RankInfo> = {};
+      for (const r of RANK_ORDER) cfg[r] = { ...DEFAULT_RANKS[r], timeCutoff: 0 };
+      cfg.Champion.timeCutoff = 14.454;
+      cfg.Elite.timeCutoff = 14.9;
+      cfg.Legend.timeCutoff = 15.404;
+      const out = resolveLevelRanks("E66F7D98", cfg, DEFAULT_RANKS, RANK_ORDER, board);
+      // Champion must come down to the derived strict cutoff, not stay at 14.454.
+      return out.Champion.timeCutoff < 14.0 && out.Champion.timeCutoff > wr;
+    })(),
+    "Champion should tighten toward WR x 1.015 once the board is known",
+  );
+  check(
+    "a stored cutoff is left alone when the board has too few runs to judge",
+    (() => {
+      const cfg: Record<string, RankInfo> = {};
+      for (const r of RANK_ORDER) cfg[r] = { ...DEFAULT_RANKS[r], timeCutoff: 0 };
+      cfg.Champion.timeCutoff = 14.454;
+      const thin: LeaderboardEntry[] = [
+        { username: "a", completion_time: 13.254, arrow_name: "narrow arrow" },
+        { username: "b", completion_time: 13.9, arrow_name: "narrow arrow" },
+      ];
+      const out = resolveLevelRanks("E66F7D98", cfg, DEFAULT_RANKS, RANK_ORDER, thin);
+      return Math.abs(out.Champion.timeCutoff - 14.454) < 1e-9;
+    })(),
+    "a two-run board must not rewrite the authored Champion",
+  );
+  check(
+    "the cap never loosens a level that is already stricter than derived",
+    (() => {
+      const wr = 13.254;
+      const board: LeaderboardEntry[] = Array.from({ length: 100 }, (_, i) => ({
+        username: `p${i}`,
+        completion_time: wr + i * 0.03,
+        arrow_name: "narrow arrow",
+      }));
+      const cfg: Record<string, RankInfo> = {};
+      for (const r of RANK_ORDER) cfg[r] = { ...DEFAULT_RANKS[r], timeCutoff: 0 };
+      cfg.Champion.timeCutoff = 13.30; // tighter than derived
+      cfg.Elite.timeCutoff = 14.9;
+      const out = resolveLevelRanks("E66F7D98", cfg, DEFAULT_RANKS, RANK_ORDER, board);
+      return Math.abs(out.Champion.timeCutoff - 13.3) < 1e-9;
+    })(),
+    "the cap is a min(), so a tighter stored cutoff survives",
+  );
+  check(
+    "the casual ranks are never capped by the board",
+    (() => {
+      const wr = 13.254;
+      const board: LeaderboardEntry[] = Array.from({ length: 100 }, (_, i) => ({
+        username: `p${i}`,
+        completion_time: wr + i * 0.03,
+        arrow_name: "narrow arrow",
+      }));
+      const cfg: Record<string, RankInfo> = {};
+      for (const r of RANK_ORDER) cfg[r] = { ...DEFAULT_RANKS[r], timeCutoff: 0 };
+      cfg.Champion.timeCutoff = 14.454;
+      cfg.Elite.timeCutoff = 14.9;
+      cfg.Pro.timeCutoff = 18.427; // deliberately generous
+      cfg.Skilled.timeCutoff = 20.442;
+      const out = resolveLevelRanks("E66F7D98", cfg, DEFAULT_RANKS, RANK_ORDER, board);
+      return out.Pro.timeCutoff === 18.427 && out.Skilled.timeCutoff === 20.442 && out.Elite.timeCutoff === 14.9;
+    })(),
+    "Pro/Skilled are meant to be attainable and keep their authored times; Elite is not capped either",
+  );
   check(
     "an unconfigured level still resolves every rank to 0",
     RANK_ORDER.every(

@@ -432,6 +432,7 @@ export function PlayerProfile({
           config?.ranks,
           globalRankConfig || DEFAULT_RANKS,
           Array.isArray(RANK_ORDER) ? RANK_ORDER : [],
+          levelStandings?.[level.id] ?? [],
         );
         const rankInfo = levelStats ? (merged[levelStats.rankId] || DEFAULT_RANKS[levelStats.rankId] || DEFAULT_RANKS["Beginner"]) : null;
         const hex = rankInfo ? (DEFAULT_RANKS[levelStats?.rankId as string]?.color || rankInfo.color || "").match(/#[0-9a-fA-F]{6}/)?.[0] : undefined;
@@ -1065,6 +1066,7 @@ export function PlayerProfile({
                         config?.ranks,
                         globalRankConfig || DEFAULT_RANKS,
                         Array.isArray(RANK_ORDER) ? RANK_ORDER : [],
+                        levelStandings?.[level.id] ?? [],
                       );
 
                       const rankInfo = merged[levelStats.rankId] || DEFAULT_RANKS[levelStats.rankId] || DEFAULT_RANKS["Beginner"];

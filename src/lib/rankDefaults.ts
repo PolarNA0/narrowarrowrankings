@@ -1,5 +1,6 @@
-import { RankInfo } from "../types";
+import { RankInfo, LeaderboardEntry } from "../types";
 import { DEFAULT_RANKS } from "../constants";
+import { deriveLevelRankTimes } from "./rankPoints";
 
 const rawData: Record<string, Record<string, string>> = {
   Champion: {
@@ -175,15 +176,57 @@ export function getLevelDefaultRanks(
  * Only a *configured* level falls back; a level with no stored config keeps
  * contributing nothing, as it did before.
  */
+/**
+ * Ranks whose stored cutoff is capped by the level's own current board. A saved
+ * `levelConfigs/<id>` is a snapshot of the WR at the moment an admin wrote it,
+ * so as the WR improves the stored ladder silently loosens: Drifting Stars was
+ * authored around a 14.2s WR (Champion 14.454) but is now run in 13.254, which
+ * made Champion 1.09x the WR and let 27 of 100 runs into it. The top three
+ * two champion-tier ranks are the ones that must stay strict, and
+ * `deriveLevelRankTimes` is the authority on them (WR multiplier blended with
+ * the time at a fixed leaderboard position, whichever is stricter).
+ *
+ * Elite and below are deliberately left as authored. They drift the same way,
+ * but only by ~1.4% on a typical level, whereas the positional component of the
+ * derivation bites hard on a dense board — on 2D95770C it would drag Elite to
+ * 0.009s above the WR, which is stricter than anyone asked for. The top ranks
+ * are also the ones a stale cutoff is actually visible on: nobody notices a
+ * slightly generous Legend, but 27 Champions on one map is obvious.
+ */
+const CAPPED_RANKS = new Set(["Champion", "Grandmaster"]);
+
+/**
+ * The strict ranks' cutoffs as the level's current board implies them. Exposed
+ * so a per-arrow ladder (which overrides the stored one entirely) can be capped
+ * by the same rule instead of silently bypassing it.
+ */
+export function strictRankCaps(boardEntries?: LeaderboardEntry[] | null): Record<string, number> {
+  if (!boardEntries || boardEntries.length < 3) return {};
+  const ladder = deriveLevelRankTimes(boardEntries, null);
+  const caps: Record<string, number> = {};
+  if (ladder) {
+    for (const rank of CAPPED_RANKS) {
+      const value = ladder.cutoffs[rank];
+      if (typeof value === "number" && value > 0) caps[rank] = value;
+    }
+  }
+  return caps;
+}
+
 export function resolveLevelRanks(
   levelId: string,
   storedRanks: Record<string, RankInfo> | undefined | null,
   baseRanks: Record<string, RankInfo> = DEFAULT_RANKS,
   rankOrder: string[] = Object.keys(baseRanks || {}),
+  boardEntries?: LeaderboardEntry[] | null,
 ): Record<string, RankInfo> {
   const base = baseRanks || DEFAULT_RANKS;
   const hasConfig = !!storedRanks && Object.keys(storedRanks).length > 0;
   const defaults = getLevelDefaultRanks(levelId, base);
+
+  // A level with fewer than three recorded runs has no meaningful ladder to
+  // derive from, so it keeps whatever was stored.
+  const caps = strictRankCaps(boardEntries);
 
   // Where each rank sits in the ladder, so a rank with no stored cutoff can be
   // placed between the ranks either side of it.
@@ -255,7 +298,9 @@ export function resolveLevelRanks(
     const gRank = base[id] || DEFAULT_RANKS[id];
     const position = indexOf.get(id) ?? 0;
     const stored = readCutoff(id);
-    resolved[id] = { ...gRank, timeCutoff: stored ?? resolveCutoff(id, position) };
+    let cutoff = stored ?? resolveCutoff(id, position);
+    if (cutoff > 0 && caps[id] > 0) cutoff = Math.min(cutoff, caps[id]);
+    resolved[id] = { ...gRank, timeCutoff: cutoff };
     derived.push(stored === null && resolved[id].timeCutoff > 0);
   }
 

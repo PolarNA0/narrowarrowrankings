@@ -52,7 +52,8 @@ import {
   OperationType,
   handleFirestoreError,
 } from "./lib/cloud-db";
-import { resolveLevelRanks } from "./lib/rankDefaults";
+import { resolveLevelRanks, strictRankCaps } from "./lib/rankDefaults";
+import { arrowKind } from "./lib/arrow-sprites";
 import { ClickToCopy } from "./components/ClickToCopy";
 import { NarrowScoreView } from "./components/NarrowScoreView";
 import { CustomCompletionsView } from "./components/CustomCompletionsView";
@@ -817,22 +818,37 @@ export default function App() {
     // Resolve the level's own ladder first — this is what the "View Ranks"
     // legend and the board's rank badges read — so a rank the saved config
     // predates shows the level's generated time instead of 0.
+    // The derived ladder is per-arrow, so cap against the board actually being
+    // displayed; a Speedy ladder is much looser than Narrow on the same map.
+    const rawBoard =
+      allLevelsData[selectedLevel] || allLevelsData[selectedLevel.toLowerCase()] || [];
+    const board =
+      arrowFilter === "all"
+        ? rawBoard
+        : rawBoard.filter((e) => arrowKind(e.arrow_name) === arrowKind(arrowFilter));
     const resolved = resolveLevelRanks(
       selectedLevel,
       activeLevelData?.ranks,
       globalRankConfig || DEFAULT_RANKS,
       safeRankOrder,
+      board,
     );
+    // An arrow-specific ladder replaces the stored one wholesale, so it needs
+    // the same cap or the strict ranks drift loose on that arrow.
+    const caps = strictRankCaps(board);
     const merged: Record<string, RankInfo> = {};
     safeRankOrder.forEach((id) => {
       const override = Number(arrowOverrides[id] ?? 0);
       merged[id] =
         override > 0
-          ? { ...(globalRankConfig[id] || DEFAULT_RANKS[id]), timeCutoff: override }
+          ? {
+              ...(globalRankConfig[id] || DEFAULT_RANKS[id]),
+              timeCutoff: caps[id] > 0 ? Math.min(override, caps[id]) : override,
+            }
           : resolved[id] || globalRankConfig[id] || DEFAULT_RANKS[id];
     });
     return merged;
-  }, [activeLevelData, globalRankConfig, arrowFilter, selectedLevel]);
+  }, [activeLevelData, globalRankConfig, arrowFilter, selectedLevel, allLevelsData]);
 
   const fetchAllLevels = async (forceRefresh = false) => {
     const levelsToFetch = dynamicLevels.length >= LEVELS.length ? dynamicLevels : LEVELS;
@@ -1008,6 +1024,7 @@ export default function App() {
           levelRanks,
           globalRankConfig || DEFAULT_RANKS,
           RANK_ORDER,
+          allLevelsData[level.id] || allLevelsData[level.id.toLowerCase()] || [],
         );
 
         const rankId = hasConfig ? assignRank(entry, merged, RANK_ORDER) : "";
@@ -1246,6 +1263,7 @@ export default function App() {
         allRankConfigs[level.id]?.ranks,
         globalRankConfig || DEFAULT_RANKS,
         order,
+        allLevelsData[level.id] || allLevelsData[level.id.toLowerCase()] || [],
       );
       const cutoffs: Record<string, number> = {};
       order.forEach((rankId) => {
@@ -1268,7 +1286,7 @@ export default function App() {
       result[rankId] = { ...base, timeCutoff: sum };
     });
     return usable ? result : overallRankConfig;
-  }, [allRankConfigs, dynamicLevels, overallRankConfig]);
+  }, [allRankConfigs, dynamicLevels, overallRankConfig, allLevelsData]);
 
   const averageLeaderboard = useMemo(() => {
     if (Object.keys(processedAllLevelsData).length === 0) return [];
@@ -1306,6 +1324,7 @@ export default function App() {
         allRankConfigs[level.id]?.ranks,
         globalRankConfig || DEFAULT_RANKS,
         RANK_ORDER,
+        allLevelsData[level.id] || allLevelsData[level.id.toLowerCase()] || [],
       );
       const cutoffs: Record<string, number> = {};
       for (const rankId of RANK_ORDER) {
@@ -1394,6 +1413,7 @@ export default function App() {
     selectedAveragePack,
     averageSort,
     allRankConfigs,
+    allLevelsData,
   ]);
 
   const selectedPlayerMedals = useMemo(() => {
