@@ -11,11 +11,13 @@
  */
 import {
   authorTimeOf,
+  buildBeatenAuthorRows,
   buildUnbeatenAuthorRows,
   isAuthorUnbeaten,
   MIN_RECORD_SECONDS,
   sortUnbeatenAuthorRows,
   summariseUnbeatenAuthors,
+  tallyBeaters,
   tallyUnbeatenAuthors,
   UNBEATEN_TOLERANCE,
   type CustomLevelEntry,
@@ -300,7 +302,93 @@ check(
   "an unfinished sweep is always due",
   sweepDue({ levels: {}, cursor: {}, done: false, at: now, startedAt: now }),
 );
-check("the window is four hours", SWEEP_INTERVAL_MS === 4 * 60 * 60 * 1000, SWEEP_INTERVAL_MS);
+check("the window is a day", SWEEP_INTERVAL_MS === 24 * 60 * 60 * 1000, SWEEP_INTERVAL_MS);
+
+// --- beaten authors --------------------------------------------------------
+// A level is beaten while the best run has gone under the author's time. This is
+// the complement of `isAuthorUnbeaten`, and the two must partition the levels
+// that carry an author time — a level cannot be both, nor neither.
+const beatenLevel = (best: number) =>
+  level({
+    level_id: "BEAT1",
+    world_record: { completion_time: best, username: "Rival", arrow_name: "Speedy Arrow" },
+  });
+const beaten = buildBeatenAuthorRows([beatenLevel(9.5)]);
+check("a run under the author time is a beating", beaten.length === 1, beaten.length);
+check("the beating records who did it", beaten[0]?.beater === "Rival", beaten[0]?.beater);
+check("the beating records the margin", Math.abs((beaten[0]?.beatBy ?? 0) - 0.5) < 1e-9);
+check("a tie is not a beating", buildBeatenAuthorRows([beatenLevel(10)]).length === 0);
+check(
+  "a tie within tolerance is not a beating",
+  buildBeatenAuthorRows([beatenLevel(10 - UNBEATEN_TOLERANCE / 2)]).length === 0,
+);
+check(
+  "a run over the author time is not a beating",
+  buildBeatenAuthorRows([beatenLevel(11)]).length === 0,
+);
+check(
+  "an official pack level is never a beating",
+  buildBeatenAuthorRows([
+    level({
+      pack: { slug: "core" },
+      world_record: { completion_time: 5, username: "X", arrow_name: "Narrow Arrow" },
+    }),
+  ]).length === 0,
+);
+check(
+  "a joke-level time is never a beating",
+  buildBeatenAuthorRows([beatenLevel(0.5)]).length === 0,
+);
+check(
+  "the unbeaten and beaten sets partition the levels with an author time",
+  (() => {
+    const entries = [level({ level_id: "A" }), beatenLevel(9), beatenLevel(11)];
+    const unbeaten = buildUnbeatenAuthorRows(entries).length;
+    const beat = buildBeatenAuthorRows(entries).length;
+    const withAuthorTime = entries.filter((e) => authorTimeOf(e) !== null && e.world_record).length;
+    return unbeaten + beat === withAuthorTime;
+  })(),
+);
+
+// The arrow filter must narrow the beaten list the same way it narrows the
+// unbeaten one, or the two tabs would disagree about the same level.
+check(
+  "the arrow filter applies to beaten rows",
+  buildBeatenAuthorRows([beatenLevel(9)], { arrow: "narrow" }).length === 0,
+);
+check(
+  "the matching arrow keeps the beaten row",
+  buildBeatenAuthorRows([beatenLevel(9)], { arrow: "speedy" }).length === 1,
+);
+check(
+  "the min-plays filter applies to beaten rows",
+  buildBeatenAuthorRows([beatenLevel(9)], { minPlays: 500 }).length === 0,
+);
+
+// --- beater tally ----------------------------------------------------------
+const beaters = tallyBeaters(
+  buildBeatenAuthorRows([
+    beatenLevel(9),
+    level({
+      level_id: "BEAT2",
+      world_record: { completion_time: 8, username: "Rival", arrow_name: "Narrow Arrow" },
+    }),
+    level({
+      level_id: "BEAT3",
+      world_record: { completion_time: 9.9, username: "Other", arrow_name: "Energy Arrow" },
+    }),
+  ]),
+);
+check("the beater tally ranks by beatings", beaters[0]?.beater === "Rival", beaters[0]?.beater);
+check("the top beater's count is right", beaters[0]?.beaten === 2, beaters[0]?.beaten);
+check("the tally records the widest margin", Math.abs((beaters[0]?.bestMargin ?? 0) - 2) < 1e-9);
+check(
+  "the tally records the fastest author time taken",
+  Math.abs((beaters[0]?.fastestTaken ?? 0) - 10) < 1e-9,
+  beaters[0]?.fastestTaken,
+);
+check("every beater appears once", beaters.length === 2, beaters.length);
+check("an empty beating set has no beaters", tallyBeaters([]).length === 0);
 
 console.log(failures === 0 ? "\nall unbeaten-author checks passed" : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

@@ -247,3 +247,130 @@ export function tallyUnbeatenAuthors(rows: UnbeatenAuthorRow[]): AuthorTally[] {
       b.defended - a.defended || b.topPlays - a.topPlays || a.author.localeCompare(b.author),
   );
 }
+
+/**
+ * A community level whose author's time has been beaten.
+ *
+ * This is permanent, not a moment: a level's `topTime` is seeded from the
+ * author's run and never moves, so once someone has gone under it the level stays
+ * beaten. The snapshot only ever holds the *current* best run, so a beaten level
+ * keeps showing whoever holds the fastest time now — which may be a third player,
+ * not the first person to beat the author.
+ */
+export interface BeatenAuthorRow {
+  levelId: string;
+  levelName: string;
+  author: string;
+  /** The author's own time, from the level's `topTime`. */
+  authorTime: number;
+  /** The fastest recorded run, which is under the author's time. */
+  bestTime: number;
+  /** Who holds that run. */
+  beater: string;
+  /** `authorTime - bestTime`: how far the author was beaten by (always > 0). */
+  beatBy: number;
+  arrow: string;
+  plays: number;
+  likes: number;
+  finishers: number;
+  createdAt: string | null;
+}
+
+/** Every level whose author time has been beaten, as table rows. */
+export function buildBeatenAuthorRows(
+  entries: Iterable<CustomLevelEntry>,
+  options: UnbeatenAuthorOptions = {},
+): BeatenAuthorRow[] {
+  const rows: BeatenAuthorRow[] = [];
+  for (const entry of entries) {
+    if (!entry?.level_id) continue;
+    const authorTime = authorTimeOf(entry);
+    const best = bestTimeOf(entry);
+    if (authorTime === null || best === null) continue;
+    if (best >= authorTime - UNBEATEN_TOLERANCE) continue;
+    const arrow = entry.world_record?.arrow_name ?? "";
+    if (options.arrow && arrowKind(arrow) !== options.arrow) continue;
+    const plays = Number(entry.play_count) || 0;
+    if (plays < (options.minPlays ?? 0)) continue;
+    rows.push({
+      levelId: entry.level_id,
+      levelName: entry.name || entry.level_id,
+      author: (entry.creator_name ?? "").trim(),
+      authorTime,
+      bestTime: best,
+      beater: (entry.world_record?.username ?? "").trim(),
+      beatBy: authorTime - best,
+      arrow,
+      plays,
+      likes: Number(entry.like_count) || 0,
+      finishers: Number(entry.medals?.finisherCount) || 0,
+      createdAt: entry.created_at ?? null,
+    });
+  }
+  return rows;
+}
+
+export type BeatenSort = "beaters" | "margin" | "time" | "recent" | "author";
+
+/**
+ * `beaters` (the default) groups by who did the beating, so the table reads as a
+ * scoreboard; `margin` is the biggest beating, `time` the fastest author time
+ * taken, `recent` the newest level, `author` groups by the beaten author.
+ */
+export function sortBeatenAuthorRows(rows: BeatenAuthorRow[], by: BeatenSort): BeatenAuthorRow[] {
+  const sorted = [...rows];
+  const byName = (a: BeatenAuthorRow, b: BeatenAuthorRow) => a.levelName.localeCompare(b.levelName);
+  switch (by) {
+    case "margin":
+      return sorted.sort((a, b) => b.beatBy - a.beatBy || byName(a, b));
+    case "time":
+      return sorted.sort((a, b) => a.authorTime - b.authorTime || byName(a, b));
+    case "recent":
+      return sorted.sort(
+        (a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || byName(a, b),
+      );
+    case "author":
+      return sorted.sort(
+        (a, b) => a.author.localeCompare(b.author) || b.beatBy - a.beatBy || byName(a, b),
+      );
+    default:
+      return sorted.sort(
+        (a, b) => b.beatBy - a.beatBy || a.beater.localeCompare(b.beater) || byName(a, b),
+      );
+  }
+}
+
+export interface BeaterTally {
+  beater: string;
+  /** How many author times this player has beaten. */
+  beaten: number;
+  /** The widest margin of those beatings, so a tie can be broken sensibly. */
+  bestMargin: number;
+  /** The fastest author time they took down. */
+  fastestTaken: number;
+}
+
+/** One row per player, most author times beaten first. */
+export function tallyBeaters(rows: BeatenAuthorRow[]): BeaterTally[] {
+  const byBeater = new Map<string, BeaterTally>();
+  for (const row of rows) {
+    const key = row.beater.trim().toLowerCase();
+    const current = byBeater.get(key);
+    if (current) {
+      current.beaten += 1;
+      current.bestMargin = Math.max(current.bestMargin, row.beatBy);
+      current.fastestTaken = Math.min(current.fastestTaken, row.authorTime);
+    } else {
+      byBeater.set(key, {
+        beater: row.beater,
+        beaten: 1,
+        bestMargin: row.beatBy,
+        fastestTaken: row.authorTime,
+      });
+    }
+  }
+  return [...byBeater.values()].sort(
+    (a, b) =>
+      b.beaten - a.beaten || b.bestMargin - a.bestMargin || a.beater.localeCompare(b.beater),
+  );
+}

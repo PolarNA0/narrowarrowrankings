@@ -43,9 +43,10 @@ const FEED_TTL = 6 * 60 * 60 * 1000;
 /**
  * How long a completed sweep is trusted before it is walked again. This is the
  * whole cost control: upstream sees at most one full sweep per window no matter
- * how much traffic the view gets. Four hours matches the cron cadence.
+ * how much traffic the view gets. A day matches the cron cadence — the feed is
+ * community levels that change slowly, so there is no reason to walk it oftener.
  */
-export const SWEEP_INTERVAL_MS = 4 * 60 * 60 * 1000;
+export const SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export interface CustomLevelSnapshot {
   levels: Record<string, CustomLevelCompact>;
