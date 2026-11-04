@@ -484,12 +484,65 @@ console.log("\na rank missing from a saved levelConfig resolves from the level d
       for (const r of RANK_ORDER) cfg[r] = { ...DEFAULT_RANKS[r], timeCutoff: 0 };
       cfg.Champion.timeCutoff = 14.454;
       cfg.Elite.timeCutoff = 14.9;
+      cfg.Legend.timeCutoff = 15.404;
       cfg.Pro.timeCutoff = 18.427; // deliberately generous
       cfg.Skilled.timeCutoff = 20.442;
       const out = resolveLevelRanks("E66F7D98", cfg, DEFAULT_RANKS, RANK_ORDER, board);
-      return out.Pro.timeCutoff === 18.427 && out.Skilled.timeCutoff === 20.442 && out.Elite.timeCutoff === 14.9;
+      return (
+        out.Pro.timeCutoff === 18.427 &&
+        out.Skilled.timeCutoff === 20.442 &&
+        out.Legend.timeCutoff === 15.404
+      );
     })(),
-    "Pro/Skilled are meant to be attainable and keep their authored times; Elite is not capped either",
+    "Legend and below are meant to be attainable and keep their authored times",
+  );
+  // A stale Elite is a real problem: Drifting Stars' stored 14.9 was 1.124x its
+  // 13.254 WR, so "Elite" read as 12% off the record.
+  check(
+    "a stale stored Elite is capped to WR x 1.04",
+    (() => {
+      const wr = 13.254;
+      const board: LeaderboardEntry[] = Array.from({ length: 100 }, (_, i) => ({
+        username: `p${i}`,
+        completion_time: wr + i * 0.03,
+        arrow_name: "narrow arrow",
+      }));
+      const cfg: Record<string, RankInfo> = {};
+      for (const r of RANK_ORDER) cfg[r] = { ...DEFAULT_RANKS[r], timeCutoff: 0 };
+      cfg.Champion.timeCutoff = 14.454;
+      cfg.Elite.timeCutoff = 14.9;
+      cfg.Legend.timeCutoff = 15.404;
+      const out = resolveLevelRanks("E66F7D98", cfg, DEFAULT_RANKS, RANK_ORDER, board);
+      return Math.abs(out.Elite.timeCutoff - wr * 1.04) < 1e-6;
+    })(),
+    "Elite should be a time standard (WR x 1.04), not a 12% gap",
+  );
+  // On a dense board the positional target collapses: 2D95770C's top ten sit
+  // within 0.03s, so "6th place" is 0.009s off the WR. Elite must use the
+  // multiplier there instead, while Champion keeps the positional component.
+  check(
+    "Elite uses the multiplier on a dense board, not the positional target",
+    (() => {
+      const wr = 10.454;
+      const board: LeaderboardEntry[] = Array.from({ length: 100 }, (_, i) => ({
+        username: `p${i}`,
+        completion_time: wr + Math.floor(i / 10) * 0.004 + (i % 10) * 0.0005,
+        arrow_name: "speedy arrow",
+      }));
+      const cfg: Record<string, RankInfo> = {};
+      for (const r of RANK_ORDER) cfg[r] = { ...DEFAULT_RANKS[r], timeCutoff: 0 };
+      cfg.Champion.timeCutoff = 10.51;
+      cfg.Elite.timeCutoff = 11.5; // generously authored, so the cap bites
+      cfg.Legend.timeCutoff = 12.0;
+      const out = resolveLevelRanks("2D95770C", cfg, DEFAULT_RANKS, RANK_ORDER, board);
+      // The positional blend would give ~10.46 (0.009s off the WR); the
+      // multiplier gives a distinguishable 10.87.
+      return (
+        Math.abs(out.Elite.timeCutoff - wr * 1.04) < 1e-6 &&
+        out.Elite.timeCutoff > out.Champion.timeCutoff + 0.3
+      );
+    })(),
+    "a dense board must not collapse Elite onto the WR",
   );
   check(
     "an unconfigured level still resolves every rank to 0",

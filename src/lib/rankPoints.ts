@@ -84,7 +84,7 @@ export type PointRank = (typeof POINT_RANK_ORDER)[number];
 
 // Multipliers applied to the world record time. Tight at the top so Champion
 // stays genuinely hard, loosening quickly toward the casual ranks.
-const WR_MULTIPLIER: Record<string, number> = {
+export const WR_MULTIPLIER: Record<string, number> = {
   Champion: 1.015,
   Grandmaster: 1.027,
   Elite: 1.04,

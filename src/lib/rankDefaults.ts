@@ -1,6 +1,6 @@
 import { RankInfo, LeaderboardEntry } from "../types";
 import { DEFAULT_RANKS } from "../constants";
-import { deriveLevelRankTimes } from "./rankPoints";
+import { deriveLevelRankTimes, WR_MULTIPLIER } from "./rankPoints";
 
 const rawData: Record<string, Record<string, string>> = {
   Champion: {
@@ -182,18 +182,15 @@ export function getLevelDefaultRanks(
  * so as the WR improves the stored ladder silently loosens: Drifting Stars was
  * authored around a 14.2s WR (Champion 14.454) but is now run in 13.254, which
  * made Champion 1.09x the WR and let 27 of 100 runs into it. The top three
- * two champion-tier ranks are the ones that must stay strict, and
+ * the strict ranks are the ones that must stay strict, and
  * `deriveLevelRankTimes` is the authority on them (WR multiplier blended with
  * the time at a fixed leaderboard position, whichever is stricter).
  *
- * Elite and below are deliberately left as authored. They drift the same way,
- * but only by ~1.4% on a typical level, whereas the positional component of the
- * derivation bites hard on a dense board — on 2D95770C it would drag Elite to
- * 0.009s above the WR, which is stricter than anyone asked for. The top ranks
- * are also the ones a stale cutoff is actually visible on: nobody notices a
- * slightly generous Legend, but 27 Champions on one map is obvious.
+ * Legend and below are deliberately left as authored: they drift the same way
+ * but are meant to be attainable, and a slightly generous Legend is not what
+ * anyone notices. The top ranks are where a stale cutoff is actually visible.
  */
-const CAPPED_RANKS = new Set(["Champion", "Grandmaster"]);
+const CAPPED_RANKS = new Set(["Champion", "Grandmaster", "Elite"]);
 
 /**
  * The strict ranks' cutoffs as the level's current board implies them. Exposed
@@ -203,12 +200,17 @@ const CAPPED_RANKS = new Set(["Champion", "Grandmaster"]);
 export function strictRankCaps(boardEntries?: LeaderboardEntry[] | null): Record<string, number> {
   if (!boardEntries || boardEntries.length < 3) return {};
   const ladder = deriveLevelRankTimes(boardEntries, null);
+  if (!ladder) return {};
   const caps: Record<string, number> = {};
-  if (ladder) {
-    for (const rank of CAPPED_RANKS) {
-      const value = ladder.cutoffs[rank];
-      if (typeof value === "number" && value > 0) caps[rank] = value;
-    }
+  for (const rank of CAPPED_RANKS) {
+    // Elite is a time standard ("within 4% of the record"), so it takes the WR
+    // multiplier alone. The ladder's positional target collapses on a dense
+    // board — on 2D95770C the top ten sit within 0.03s of each other, so a
+    // "6th place" Elite lands 0.009s off the WR, which is not a rank anyone can
+    // distinguish. Champion and Grandmaster keep the positional component,
+    // where "one of the top few" is the point.
+    const value = rank === "Elite" ? ladder.wr * (WR_MULTIPLIER[rank] ?? 1) : ladder.cutoffs[rank];
+    if (typeof value === "number" && value > 0) caps[rank] = value;
   }
   return caps;
 }
