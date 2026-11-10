@@ -1,8 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { buildCampaignStandings, campaignStatus, type CampaignStanding } from "@/lib/campaign";
+import {
+  applyLevelColors,
+  buildCampaignStandings,
+  campaignStatus,
+  type CampaignStanding,
+} from "@/lib/campaign";
 import {
   readCampaign,
   readCampaignPublic,
+  normalizeStoredCampaign,
   saveCampaign,
   readStandingsMemo,
   writeStandingsMemo,
@@ -84,17 +90,23 @@ export const Route = createFileRoute("/api/campaigns/$id")({
        * `?summary=1` returns only the top rows, for the home-page card.
        */
       GET: async ({ params, request }) => {
-        const record = await readCampaignPublic(params.id);
-        if (!record) return Response.json({ error: "Not found." }, { status: 404 });
+        const stored = await readCampaignPublic(params.id);
+        if (!stored) return Response.json({ error: "Not found." }, { status: 404 });
+        // A campaign saved before per-level colours still names a class; fold it
+        // in so the client and the standings see the current shape.
+        const record = normalizeStoredCampaign(stored);
 
         const summaryOnly = new URL(request.url).searchParams.get("summary") === "1";
         const status = campaignStatus(record, Date.now());
 
         if (record.frozenAt !== null && record.standings) {
+          // The snapshot is the historical record, but its colours are
+          // presentation and may predate per-level colours.
+          const snapshot = applyLevelColors(record.standings, record.levels);
           return Response.json(
             {
               campaign: publicView(record),
-              standings: summaryOnly ? record.standings.slice(0, 5) : record.standings,
+              standings: summaryOnly ? snapshot.slice(0, 5) : snapshot,
               status: "ended",
             },
             { headers: { "cache-control": "public, max-age=300" } },
@@ -120,8 +132,9 @@ export const Route = createFileRoute("/api/campaigns/$id")({
         if (!(await verifyAdminRequest(request))) {
           return Response.json({ error: "Not authorized." }, { status: 403 });
         }
-        const record = await readCampaign(params.id);
-        if (!record) return Response.json({ error: "Not found." }, { status: 404 });
+        const stored = await readCampaign(params.id);
+        if (!stored) return Response.json({ error: "Not found." }, { status: 404 });
+        const record = normalizeStoredCampaign(stored);
 
         if (record.frozenAt !== null) {
           return Response.json({ ok: true, frozenAt: record.frozenAt, alreadyFrozen: true });

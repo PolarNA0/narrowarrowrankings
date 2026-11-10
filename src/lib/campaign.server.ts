@@ -13,7 +13,12 @@
  * uses Supabase — the same shape as the TAS/site-level stores.
  */
 
-import type { Campaign, CampaignStanding } from "./campaign";
+import {
+  campaignPaletteColor,
+  normalizeCampaignColor,
+  type Campaign,
+  type CampaignStanding,
+} from "./campaign";
 
 /**
  * A short-lived per-process memo of computed standings. The home page and the
@@ -92,8 +97,31 @@ function summarise(record: CampaignRecord): CampaignSummary {
   };
 }
 
+/**
+ * The campaign index. The list route is public, so this reads through the
+ * anonymous client first — the index holds nothing but campaign metadata, and
+ * going through the service role would make the public list fail whenever the
+ * key is absent or rotated. The admin client is kept as a fallback so an
+ * RLS-restricted deployment still lists.
+ */
 async function readIndex(): Promise<CampaignSummary[]> {
   if (memoryStoreEnabled()) return memoryIndex;
+  try {
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { data, error } = await supabase
+      .from("app_docs")
+      .select("data")
+      .eq("collection", COLLECTION)
+      .eq("doc_id", INDEX_DOC)
+      .maybeSingle();
+    if (!error) {
+      const list = (data?.data as unknown as { campaigns?: CampaignSummary[] } | undefined)
+        ?.campaigns;
+      return Array.isArray(list) ? list : [];
+    }
+  } catch {
+    /* fall through to the admin client */
+  }
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data } = await supabaseAdmin
@@ -214,14 +242,34 @@ export async function deleteCampaign(id: string): Promise<void> {
 }
 
 /**
+ * The stored record with its level list brought up to the current shape.
+ *
+ * `parseCampaign` is a validator for *incoming* payloads, so the read paths used
+ * to skip it — which meant a campaign saved before per-level colours reached the
+ * client (and the standings) still naming a `classId` and carrying no `color`,
+ * and its per-level rows rendered with an empty colour. Normalising on read is
+ * what lets an existing campaign keep its look without a migration. Only the
+ * levels are taken from the parse: the stored timestamps and frozen snapshot
+ * must survive verbatim, which is also why this is not just `parseCampaign`.
+ */
+export function normalizeStoredCampaign(record: CampaignRecord): CampaignRecord {
+  const parsed = parseCampaign(record);
+  if ("error" in parsed) return record;
+  // `classes` is a retired field; drop it rather than pass the legacy grouping
+  // through to a client that no longer knows what to do with it.
+  const { classes: _legacyClasses, ...rest } = record as CampaignRecord & { classes?: unknown };
+  return { ...rest, levels: parsed.levels };
+}
+
+/**
  * Validate and normalise an incoming campaign payload. Exported so the verify
  * script can exercise the rules directly rather than through HTTP.
  *
- * The level list must be non-empty and each level must name a known class;
- * dates must be finite and ordered.
+ * Each level carries its own colour; the list must be non-empty, ids unique,
+ * and the dates finite and ordered.
  */
 export function parseCampaign(raw: unknown): CampaignRecord | { error: string } {
-  const d = raw as Partial<CampaignRecord> | null;
+  const d = raw as (Partial<CampaignRecord> & { classes?: unknown }) | null;
   if (!d || typeof d !== "object") return { error: "Missing campaign data." };
 
   const id = String(d.id ?? "").trim();
@@ -237,35 +285,39 @@ export function parseCampaign(raw: unknown): CampaignRecord | { error: string } 
     return { error: "Dates must be set." };
   if (endsAt <= startsAt) return { error: "The end must come after the start." };
 
-  const classes = Array.isArray(d.classes) ? d.classes : [];
-  if (classes.length === 0) return { error: "Add at least one class." };
-  const classIds = new Set<string>();
-  const cleanClasses = classes.map((k) => {
-    const classId = String(k?.id ?? "").trim();
-    const className = String(k?.name ?? "").trim();
-    const color = String(k?.color ?? "").trim();
-    classIds.add(classId);
-    return { id: classId, name: className || classId, color: color || "#64748B" };
-  });
-  if (cleanClasses.some((k) => !k.id)) return { error: "Every class needs an id." };
-  if (classIds.size !== cleanClasses.length) return { error: "Class ids must be unique." };
+  /**
+   * Campaigns used to group levels into named, coloured "classes". A payload
+   * saved back then still names a class per level, so fold each level's class
+   * colour into the level itself — that is exactly what the class was for, and
+   * it keeps an existing campaign looking the same instead of greying out.
+   */
+  const legacyColors = new Map<string, string>();
+  if (Array.isArray(d.classes)) {
+    for (const k of d.classes as Array<{ id?: unknown; color?: unknown }>) {
+      const key = String(k?.id ?? "").trim();
+      if (key) legacyColors.set(key, normalizeCampaignColor(k?.color));
+    }
+  }
 
   const levels = Array.isArray(d.levels) ? d.levels : [];
   if (levels.length === 0) return { error: "Add at least one level." };
   const levelIds = new Set<string>();
-  const cleanLevels = levels.map((l) => {
+  const cleanLevels = levels.map((l, index) => {
     const levelId = String(l?.id ?? "").trim();
     levelIds.add(levelId);
+    const legacyClassId = String((l as { classId?: unknown })?.classId ?? "").trim();
+    const hasOwnColor = String((l as { color?: unknown })?.color ?? "").trim().length > 0;
+    const color = hasOwnColor
+      ? normalizeCampaignColor((l as { color?: unknown }).color)
+      : (legacyColors.get(legacyClassId) ?? campaignPaletteColor(index));
     return {
       id: levelId,
       name: String(l?.name ?? levelId).trim() || levelId,
-      classId: String(l?.classId ?? "").trim(),
+      color,
     };
   });
   if (cleanLevels.some((l) => !l.id)) return { error: "Every level needs an id." };
   if (levelIds.size !== cleanLevels.length) return { error: "A level cannot appear twice." };
-  const bad = cleanLevels.find((l) => !classIds.has(l.classId));
-  if (bad) return { error: `"${bad.name}" is not in a known class.` };
 
   const now = new Date().toISOString();
   return {
@@ -273,7 +325,6 @@ export function parseCampaign(raw: unknown): CampaignRecord | { error: string } 
     name,
     startsAt,
     endsAt,
-    classes: cleanClasses,
     levels: cleanLevels,
     createdAt: now,
     updatedAt: now,

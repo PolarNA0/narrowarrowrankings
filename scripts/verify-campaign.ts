@@ -9,14 +9,18 @@
  * a reward.
  */
 import {
+  applyLevelColors,
   buildCampaignStandings,
-  buildClassStandings,
   campaignLevelPoints,
+  campaignPaletteColor,
   campaignStatus,
-  rankClassRows,
+  normalizeCampaignColor,
+  CAMPAIGN_COLOR_PALETTE,
+  CAMPAIGN_FALLBACK_COLOR,
   CAMPAIGN_MAX_POINTS,
   MAX_POSITION_PENALTY,
   type Campaign,
+  type CampaignStanding,
 } from "@/lib/campaign";
 import type { LeaderboardEntry } from "@/types";
 
@@ -118,7 +122,6 @@ function entry(username: string, time: number, arrow = "Narrow Arrow"): Leaderbo
     startsAt: 1000,
     endsAt: 2000,
     levels: [],
-    classes: [],
   } as Campaign;
   check("before the window is upcoming", campaignStatus(campaign, 500) === "upcoming");
   check("inside the window is live", campaignStatus(campaign, 1500) === "live");
@@ -134,13 +137,9 @@ function entry(username: string, time: number, arrow = "Narrow Arrow"): Leaderbo
     name: "Test",
     startsAt: 0,
     endsAt: 1e12,
-    classes: [
-      { id: "a", name: "Alpha", color: "#fff" },
-      { id: "b", name: "Beta", color: "#000" },
-    ],
     levels: [
-      { id: "L1", name: "One", classId: "a" },
-      { id: "L2", name: "Two", classId: "b" },
+      { id: "L1", name: "One", color: "#38BDF8" },
+      { id: "L2", name: "Two", color: "#F472B6" },
     ],
   };
 
@@ -181,7 +180,7 @@ function entry(username: string, time: number, arrow = "Narrow Arrow"): Leaderbo
       entry("Bob", 10.2, "Speedy Arrow"),
     ],
   };
-  const oneLevel: Campaign = { ...campaign, levels: [{ id: "L1", name: "One", classId: "a" }] };
+  const oneLevel: Campaign = { ...campaign, levels: [{ id: "L1", name: "One", color: "#38BDF8" }] };
   const multiRows = buildCampaignStandings(oneLevel, multi);
   const ann = multiRows.find((r) => r.username === "Ann")!;
   check(
@@ -200,8 +199,7 @@ function entry(username: string, time: number, arrow = "Narrow Arrow"): Leaderbo
     name: "T",
     startsAt: 0,
     endsAt: 1e12,
-    classes: [{ id: "a", name: "A", color: "#fff" }],
-    levels: [{ id: "L1", name: "One", classId: "a" }],
+    levels: [{ id: "L1", name: "One", color: "#38BDF8" }],
   };
   const data: Record<string, LeaderboardEntry[]> = {
     L1: [entry("A", 10.0), entry("B", 10.0), entry("C", 10.5)],
@@ -223,20 +221,16 @@ function entry(username: string, time: number, arrow = "Narrow Arrow"): Leaderbo
   check("equal points break on total time, then name", rows.length === 3);
 }
 
-// ---- Class standings -----------------------------------------------------
+// ---- Per-level colour ----------------------------------------------------
 {
   const campaign: Campaign = {
     id: "c1",
     name: "T",
     startsAt: 0,
     endsAt: 1e12,
-    classes: [
-      { id: "a", name: "Alpha", color: "#fff" },
-      { id: "b", name: "Beta", color: "#000" },
-    ],
     levels: [
-      { id: "L1", name: "One", classId: "a" },
-      { id: "L2", name: "Two", classId: "b" },
+      { id: "L1", name: "One", color: "#38BDF8" },
+      { id: "L2", name: "Two", color: "#F472B6" },
     ],
   };
   const data: Record<string, LeaderboardEntry[]> = {
@@ -244,30 +238,107 @@ function entry(username: string, time: number, arrow = "Narrow Arrow"): Leaderbo
     L2: [entry("Slow", 20.0)],
   };
   const standings = buildCampaignStandings(campaign, data);
-  const byClass = buildClassStandings(campaign, standings);
+  const polar = standings.find((r) => r.username === "Polar")!;
+  const slow = standings.find((r) => r.username === "Slow")!;
 
-  const alpha = byClass.get("a")!;
-  const beta = byClass.get("b")!;
-  check("each class only counts its own levels", alpha.length === 2 && beta.length === 1);
-  check("a class max is its own level count", alpha[0].maxPoints === CAMPAIGN_MAX_POINTS);
-  check("Polar leads Alpha", alpha[0].username === "Polar");
-  check("Slow alone leads Beta", beta[0].username === "Slow");
   check(
-    "a player missing from a class is absent from it",
-    !beta.some((r) => r.username === "Polar"),
+    "each level score carries its own colour",
+    polar.levels[0].color === "#38BDF8" &&
+      slow.levels.find((l) => l.levelId === "L2")?.color === "#F472B6",
   );
+  check("a level score has no class id", !("classId" in polar.levels[0]));
+  check("every level is still scored for the campaign total", slow.levels.length === 2);
+}
 
-  const ranked = rankClassRows(alpha);
-  check("class ranks are 1-based", ranked[0].rank === 1 && ranked[1].rank === 2);
+// ---- Legacy snapshot re-colouring ----------------------------------------
+{
+  // A snapshot saved before per-level colours carries a classId and no colour.
+  const legacyStanding = {
+    username: "Polar",
+    points: 1000,
+    maxPoints: 1000,
+    levelsPlayed: 1,
+    levelCount: 1,
+    bestFinish: 1,
+    totalTime: 10,
+    levels: [
+      {
+        levelId: "L1",
+        levelName: "One",
+        classId: "a",
+        time: 10,
+        wrTime: 10,
+        position: 1,
+        entrants: 1,
+        points: 1000,
+      },
+    ],
+  } as unknown as CampaignStanding;
 
-  // Tied points share a rank.
-  const tied = rankClassRows([
-    { ...alpha[0], points: 500, username: "X" },
-    { ...alpha[0], points: 500, username: "Y" },
-    { ...alpha[0], points: 100, username: "Z" },
-  ]);
-  check("tied class points share a rank", tied[0].rank === 1 && tied[1].rank === 1);
-  check("the rank after a tie skips", tied[2].rank === 3, `${tied[2].rank}`);
+  const recoloured = applyLevelColors(
+    [legacyStanding],
+    [{ id: "L1", name: "One", color: "#38bdf8" }],
+  );
+  const lvl = recoloured[0].levels[0];
+  check("a legacy snapshot row gains its level's colour", lvl.color === "#38bdf8");
+  check("the legacy classId is dropped", !("classId" in lvl));
+  check(
+    "the historical numbers are untouched",
+    lvl.time === 10 && lvl.points === 1000 && recoloured[0].points === 1000,
+  );
+  // A level missing from the list still renders something rather than nothing.
+  const orphan = applyLevelColors([legacyStanding], []);
+  check(
+    "a level no longer in the campaign still gets a colour",
+    /^#[0-9a-f]{6}$/i.test(orphan[0].levels[0].color),
+  );
+}
+
+// ---- Legacy read-path normalisation ---------------------------------------
+{
+  const { normalizeStoredCampaign } = await import("@/lib/campaign.server");
+  const stored = {
+    id: "0001",
+    name: "Legacy",
+    startsAt: 1_000,
+    endsAt: 2_000,
+    createdAt: "2020-01-01T00:00:00.000Z",
+    updatedAt: "2020-01-01T00:00:00.000Z",
+    frozenAt: 12345,
+    standings: [{ username: "P" }],
+    classes: [{ id: "chaos", name: "Chaos", color: "#ff0000" }],
+    levels: [{ id: "L1", name: "A01 - Race", classId: "chaos" }],
+  } as unknown as Parameters<typeof normalizeStoredCampaign>[0];
+
+  const norm = normalizeStoredCampaign(stored);
+  check("a stored legacy level gets its class colour", norm.levels[0].color === "#ff0000");
+  check("normalising drops the stored classes", !("classes" in norm));
+  check(
+    "normalising preserves the frozen snapshot",
+    norm.frozenAt === 12345 && norm.standings === stored.standings,
+  );
+  check(
+    "normalising preserves the stored timestamps",
+    norm.createdAt === stored.createdAt && norm.updatedAt === stored.updatedAt,
+  );
+}
+
+// ---- Colour helpers ------------------------------------------------------
+{
+  check("a palette colour cycles", campaignPaletteColor(0) === CAMPAIGN_COLOR_PALETTE[0]);
+  check(
+    "the palette wraps around",
+    campaignPaletteColor(CAMPAIGN_COLOR_PALETTE.length) === CAMPAIGN_COLOR_PALETTE[0],
+  );
+  check("a full hex passes through", normalizeCampaignColor("#AABBCC") === "#aabbcc");
+  check("a short hex expands", normalizeCampaignColor("#abc") === "#aabbcc");
+  check("a bare hex gains its hash", normalizeCampaignColor("aabbcc") === "#aabbcc");
+  check("an empty colour falls back", normalizeCampaignColor("") === CAMPAIGN_FALLBACK_COLOR);
+  check("garbage falls back", normalizeCampaignColor("not-a-colour") === CAMPAIGN_FALLBACK_COLOR);
+  check(
+    "a missing colour falls back",
+    normalizeCampaignColor(undefined) === CAMPAIGN_FALLBACK_COLOR,
+  );
 }
 
 // ---- Empty input ---------------------------------------------------------
@@ -277,8 +348,7 @@ function entry(username: string, time: number, arrow = "Narrow Arrow"): Leaderbo
     name: "T",
     startsAt: 0,
     endsAt: 1e12,
-    classes: [],
-    levels: [{ id: "L1", name: "One", classId: "a" }],
+    levels: [{ id: "L1", name: "One", color: "#38BDF8" }],
   };
   check("an empty board produces no standings", buildCampaignStandings(campaign, {}).length === 0);
   check(
@@ -303,27 +373,84 @@ function entry(username: string, time: number, arrow = "Narrow Arrow"): Leaderbo
     name: "Spring Campaign",
     startsAt: 1_000,
     endsAt: 2_000,
-    classes: [{ id: "a", name: "Alpha", color: "#fff" }],
-    levels: [{ id: "L1", name: "One", classId: "a" }],
+    levels: [{ id: "L1", name: "One", color: "#38BDF8" }],
   };
 
   check("a well-formed campaign parses", !("error" in parseCampaign(base)));
   check("an empty level list is rejected", "error" in parseCampaign({ ...base, levels: [] }));
-  check("an empty class list is rejected", "error" in parseCampaign({ ...base, classes: [] }));
-  check(
-    "a level in an unknown class is rejected",
-    "error" in parseCampaign({ ...base, levels: [{ id: "L1", name: "One", classId: "zzz" }] }),
-  );
   check(
     "a duplicate level is rejected",
     "error" in
       parseCampaign({
         ...base,
         levels: [
-          { id: "L1", name: "One", classId: "a" },
-          { id: "L1", name: "One again", classId: "a" },
+          { id: "L1", name: "One", color: "#38BDF8" },
+          { id: "L1", name: "One again", color: "#F472B6" },
         ],
       }),
+  );
+  check(
+    "a level with no colour gets a palette colour, not a rejection",
+    (() => {
+      const p = parseCampaign({ ...base, levels: [{ id: "L1", name: "One" }] });
+      return !("error" in p) && /^#[0-9a-f]{6}$/i.test(p.levels[0].color);
+    })(),
+  );
+  check(
+    "a level colour is normalised to lowercase hex",
+    (() => {
+      const p = parseCampaign({ ...base, levels: [{ id: "L1", name: "One", color: "#AABBCC" }] });
+      return !("error" in p) && p.levels[0].color === "#aabbcc";
+    })(),
+  );
+  check(
+    "an unparsable colour falls back rather than rejecting",
+    (() => {
+      const p = parseCampaign({ ...base, levels: [{ id: "L1", name: "One", color: "nope" }] });
+      return !("error" in p) && p.levels[0].color === CAMPAIGN_FALLBACK_COLOR;
+    })(),
+  );
+  // A payload saved before colours existed names a class per level; the class
+  // colour must fold into the level so an existing campaign keeps its look.
+  check(
+    "a legacy classId migrates to the class's colour",
+    (() => {
+      const p = parseCampaign({
+        ...base,
+        classes: [
+          { id: "a", name: "Alpha", color: "#123456" },
+          { id: "b", name: "Beta", color: "#abcdef" },
+        ],
+        levels: [
+          { id: "L1", name: "One", classId: "a" },
+          { id: "L2", name: "Two", classId: "b" },
+        ],
+      });
+      return (
+        !("error" in p) &&
+        p.levels[0].color === "#123456" &&
+        p.levels[1].color === "#abcdef" &&
+        !("classes" in p)
+      );
+    })(),
+  );
+  check(
+    "a legacy classId with no matching class falls back to the palette",
+    (() => {
+      const p = parseCampaign({ ...base, levels: [{ id: "L1", name: "One", classId: "gone" }] });
+      return !("error" in p) && /^#[0-9a-f]{6}$/i.test(p.levels[0].color);
+    })(),
+  );
+  check(
+    "a level's own colour wins over its legacy class",
+    (() => {
+      const p = parseCampaign({
+        ...base,
+        classes: [{ id: "a", name: "Alpha", color: "#123456" }],
+        levels: [{ id: "L1", name: "One", classId: "a", color: "#00ff00" }],
+      });
+      return !("error" in p) && p.levels[0].color === "#00ff00";
+    })(),
   );
   check("end before start is rejected", "error" in parseCampaign({ ...base, endsAt: 500 }));
   check("a bad id is rejected", "error" in parseCampaign({ ...base, id: "x" }));
@@ -361,9 +488,11 @@ function entry(username: string, time: number, arrow = "Narrow Arrow"): Leaderbo
     username: "Polar",
     points: 10,
     levelsPlayed: 1,
-    levelsTotal: 1,
+    levelCount: 1,
+    maxPoints: 10,
+    bestFinish: 1,
     totalTime: 1,
-    classPoints: {},
+    levels: [],
     rank: 1,
   };
   writeStandingsMemo("memo-a", [row as never]);

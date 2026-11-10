@@ -19,20 +19,7 @@ import {
   saveCampaignRequest,
   type CampaignSummary,
 } from "@/lib/campaign-client";
-import type { CampaignClass, CampaignLevel } from "@/lib/campaign";
-
-/**
- * The five starting tracks, Trackmania-style: a colour per class so a level's
- * discipline is readable at a glance. The admin can rename or recolour them,
- * but five is the intended shape of a campaign.
- */
-const DEFAULT_CLASSES: CampaignClass[] = [
-  { id: "speed", name: "Speed", color: "#38BDF8" },
-  { id: "tech", name: "Tech", color: "#F472B6" },
-  { id: "mixed", name: "Mixed", color: "#FBBF24" },
-  { id: "precision", name: "Precision", color: "#A78BFA" },
-  { id: "chaos", name: "Chaos", color: "#34D399" },
-];
+import { campaignPaletteColor, type CampaignLevel } from "@/lib/campaign";
 
 /** ISO date input value (`YYYY-MM-DD`) for an epoch ms. */
 function toDateInput(ms: number): string {
@@ -52,7 +39,6 @@ interface Draft {
   name: string;
   startsOn: string;
   endsOn: string;
-  classes: CampaignClass[];
   levels: CampaignLevel[];
 }
 
@@ -66,7 +52,6 @@ function emptyDraft(): Draft {
     name: "New campaign",
     startsOn: toDateInput(start.getTime()),
     endsOn: toDateInput(end.getTime()),
-    classes: DEFAULT_CLASSES.map((k) => ({ ...k })),
     levels: [],
   };
 }
@@ -85,7 +70,6 @@ export function CampaignCuratorDialog({ open, onOpenChange, onChanged }: Props) 
   const [frozen, setFrozen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [message, setMessage] = React.useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [pickClass, setPickClass] = React.useState<string>(DEFAULT_CLASSES[0].id);
 
   const refreshList = React.useCallback(async () => {
     try {
@@ -114,7 +98,6 @@ export function CampaignCuratorDialog({ open, onOpenChange, onChanged }: Props) 
         name: c.name,
         startsOn: toDateInput(c.startsAt),
         endsOn: toDateInput(c.endsAt),
-        classes: c.classes.map((k) => ({ ...k })),
         levels: c.levels.map((l) => ({ ...l })),
       });
       setEditingId(c.id);
@@ -131,23 +114,32 @@ export function CampaignCuratorDialog({ open, onOpenChange, onChanged }: Props) 
     setEditingId(null);
     setFrozen(false);
     setMessage(null);
-    setPickClass(DEFAULT_CLASSES[0].id);
   };
 
-  const addLevel = (picked: PickedLevel) => {
+  /**
+   * Adds every picked level in one go, skipping any already in the campaign and
+   * assigning each a colour from the palette by its position in the list, so a
+   * bulk add comes out visually varied.
+   */
+  const addLevels = (picked: PickedLevel[]) => {
     setDraft((d) => {
-      if (d.levels.some((l) => l.id === picked.id)) return d;
-      return {
-        ...d,
-        levels: [...d.levels, { id: picked.id, name: picked.name, classId: pickClass }],
-      };
+      const existing = new Set(d.levels.map((l) => l.id));
+      const fresh = picked
+        .filter((p) => p.id && !existing.has(p.id))
+        .map((p, i) => ({
+          id: p.id,
+          name: p.name,
+          color: campaignPaletteColor(d.levels.length + i),
+        }));
+      if (fresh.length === 0) return d;
+      return { ...d, levels: [...d.levels, ...fresh] };
     });
   };
 
-  const setLevelClass = (levelId: string, classId: string) => {
+  const setLevelColor = (levelId: string, color: string) => {
     setDraft((d) => ({
       ...d,
-      levels: d.levels.map((l) => (l.id === levelId ? { ...l, classId } : l)),
+      levels: d.levels.map((l) => (l.id === levelId ? { ...l, color } : l)),
     }));
   };
 
@@ -164,7 +156,6 @@ export function CampaignCuratorDialog({ open, onOpenChange, onChanged }: Props) 
         name: draft.name,
         startsAt: fromDateInput(draft.startsOn),
         endsAt: fromDateInput(draft.endsOn) + 24 * 60 * 60 * 1000 - 1,
-        classes: draft.classes,
         levels: draft.levels,
       });
       setMessage({ kind: "ok", text: "Campaign saved." });
@@ -212,7 +203,6 @@ export function CampaignCuratorDialog({ open, onOpenChange, onChanged }: Props) 
     }
   };
 
-  const classOf = (id: string) => draft.classes.find((k) => k.id === id);
   const readOnly = frozen;
 
   return (
@@ -223,8 +213,8 @@ export function CampaignCuratorDialog({ open, onOpenChange, onChanged }: Props) 
             <Flag className="w-4 h-4 text-[var(--app-accent)]" /> Campaign curator
           </DialogTitle>
           <DialogDescription className="text-slate-400">
-            Hand-pick the levels, group them into classes, and set the window. Levels are frozen
-            once the campaign closes.
+            Hand-pick the levels, give each one its own colour, and set the window. Levels are
+            frozen once the campaign closes.
           </DialogDescription>
         </DialogHeader>
 
@@ -307,104 +297,54 @@ export function CampaignCuratorDialog({ open, onOpenChange, onChanged }: Props) 
             </label>
           </div>
 
-          {/* Classes */}
-          <div className="space-y-2">
-            <div className="text-[10px] uppercase tracking-widest text-slate-500">
-              Classes ({draft.classes.length})
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {draft.classes.map((k, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={k.color}
-                    disabled={readOnly}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        classes: d.classes.map((c, i) =>
-                          i === index ? { ...c, color: e.target.value } : c,
-                        ),
-                      }))
-                    }
-                    className="h-8 w-8 rounded border border-white/10 bg-transparent cursor-pointer"
-                    aria-label={`${k.name} colour`}
-                  />
-                  <Input
-                    value={k.name}
-                    disabled={readOnly}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        classes: d.classes.map((c, i) =>
-                          i === index ? { ...c, name: e.target.value } : c,
-                        ),
-                      }))
-                    }
-                    className="bg-black/30 border-white/10 text-sm h-8"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* Level curation */}
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div className="text-[10px] uppercase tracking-widest text-slate-500">
                 Levels ({draft.levels.length}) — hand-picked
               </div>
-              <div className="flex items-center gap-2">
-                <select
-                  value={pickClass}
-                  disabled={readOnly}
-                  onChange={(e) => setPickClass(e.target.value)}
-                  className="h-8 rounded border border-white/10 bg-black/30 px-2 text-xs text-slate-200"
-                  aria-label="Class for the next level"
-                >
-                  {draft.classes.map((k) => (
-                    <option key={k.id} value={k.id}>
-                      {k.name}
-                    </option>
-                  ))}
-                </select>
-                <div className={cn(readOnly && "pointer-events-none opacity-50")}>
-                  <LevelPicker value="" onChange={addLevel} />
-                </div>
+              <div className={cn(readOnly && "pointer-events-none opacity-50")}>
+                <LevelPicker value="" onChange={() => {}} multiSelect onPickMany={addLevels} />
               </div>
             </div>
 
             {draft.levels.length === 0 ? (
               <div className="rounded border border-white/10 bg-black/20 px-3 py-6 text-center text-xs text-slate-500">
-                No levels yet. Pick a class, then add levels one at a time.
+                No levels yet. Open the picker, tick as many as you like, then add them all at once.
+                Each level gets its own colour, which you can change below.
               </div>
             ) : (
               <div className="divide-y divide-white/5 rounded border border-white/10 bg-black/20">
                 {draft.levels.map((l) => (
                   <div key={l.id} className="flex items-center gap-2 px-3 py-2">
+                    {/* The level's identity: a dot and a ring in its own colour. */}
                     <span
-                      className="w-1.5 h-4 rounded-sm shrink-0"
-                      style={{ backgroundColor: classOf(l.classId)?.color ?? "#64748B" }}
-                    />
-                    <span className="min-w-0 flex-1 truncate text-sm text-slate-200">{l.name}</span>
-                    <select
-                      value={l.classId}
-                      disabled={readOnly}
-                      onChange={(e) => setLevelClass(l.id, e.target.value)}
-                      className="h-7 rounded border border-white/10 bg-black/30 px-2 text-xs text-slate-300"
-                      aria-label={`Class for ${l.name}`}
+                      className="flex items-center justify-center w-5 h-5 rounded-full shrink-0"
+                      style={{ boxShadow: `inset 0 0 0 1.5px ${l.color}` }}
+                      aria-hidden
                     >
-                      {draft.classes.map((k) => (
-                        <option key={k.id} value={k.id}>
-                          {k.name}
-                        </option>
-                      ))}
-                    </select>
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: l.color }} />
+                    </span>
+                    <span
+                      className="min-w-0 flex-1 truncate text-sm"
+                      style={{ color: l.color }}
+                      title={l.name}
+                    >
+                      {l.name}
+                    </span>
+                    <input
+                      type="color"
+                      value={l.color}
+                      disabled={readOnly}
+                      onChange={(e) => setLevelColor(l.id, e.target.value)}
+                      className="h-7 w-8 rounded border border-white/10 bg-transparent cursor-pointer shrink-0"
+                      aria-label={`Colour for ${l.name}`}
+                    />
                     {!readOnly && (
                       <button
                         type="button"
                         onClick={() => removeLevel(l.id)}
-                        className="text-slate-500 hover:text-red-400"
+                        className="text-slate-500 hover:text-red-400 shrink-0"
                         aria-label={`Remove ${l.name}`}
                       >
                         <X className="w-3.5 h-3.5" />

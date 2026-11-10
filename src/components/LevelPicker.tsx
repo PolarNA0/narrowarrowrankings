@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Check, ChevronsUpDown, Loader2, Search } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, Search, Square, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -41,14 +41,26 @@ export function LevelPicker({
   onChange,
   extra,
   className,
+  multiSelect = false,
+  onPickMany,
 }: {
   value: string;
   onChange: (level: PickedLevel) => void;
   /** In-memory levels (e.g. one authored in the editor) shown above the tabs. */
   extra?: PickedLevel[];
   className?: string;
+  /**
+   * Multi-pick mode: rows toggle a checkbox instead of closing the popover, and
+   * the footer adds everything ticked at once. `onChange` is still called on
+   * every toggle (with the row just clicked) so a caller can react live, but
+   * `onPickMany` is the one to use to actually collect the selection.
+   */
+  multiSelect?: boolean;
+  /** Called with every ticked level when the footer's add button is pressed. */
+  onPickMany?: (levels: PickedLevel[]) => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [selected, setSelected] = React.useState<PickedLevel[]>([]);
   const [tab, setTab] = React.useState<Tab>("officials");
   const [query, setQuery] = React.useState("");
   const [community, setCommunity] = React.useState<PickedLevel[]>([]);
@@ -151,15 +163,43 @@ export function LevelPicker({
     return sitePicked?.name ?? value;
   }, [value, community, site, extra]);
 
-  const list = tab === "officials" ? officialMatches : tab === "community" ? community : siteMatches;
+  const list =
+    tab === "officials" ? officialMatches : tab === "community" ? community : siteMatches;
 
   const pick = (level: PickedLevel) => {
     onChange(level);
+    if (multiSelect) {
+      setSelected((prev) =>
+        prev.some((l) => l.id === level.id)
+          ? prev.filter((l) => l.id !== level.id)
+          : [...prev, level],
+      );
+      return;
+    }
+    setOpen(false);
+  };
+
+  const toggleSelectAll = () => {
+    const ids = new Set(selected.map((l) => l.id));
+    const allChosen = list.length > 0 && list.every((l) => ids.has(l.id));
+    setSelected(allChosen ? [] : list.slice(0, 100));
+  };
+
+  const confirmMany = () => {
+    if (selected.length === 0) return;
+    onPickMany?.(selected);
+    setSelected([]);
     setOpen(false);
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setSelected([]);
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -209,6 +249,22 @@ export function LevelPicker({
             className="h-9 border-0 bg-transparent pl-7 text-xs focus-visible:ring-0"
           />
         </div>
+        {multiSelect && (
+          <button
+            type="button"
+            onClick={toggleSelectAll}
+            className="flex w-full items-center gap-2 border-b border-white/10 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-widest text-slate-400 hover:bg-white/5"
+          >
+            {list.length > 0 && selected.length >= list.slice(0, 100).length ? (
+              <CheckSquare className="h-3.5 w-3.5 shrink-0 text-[var(--app-accent)]" />
+            ) : (
+              <Square className="h-3.5 w-3.5 shrink-0 opacity-50" />
+            )}
+            {list.length > 0 && selected.length >= list.slice(0, 100).length
+              ? "Clear selection"
+              : `Select all ${list.length > 100 ? "100 " : ""}shown`}
+          </button>
+        )}
         <div className="max-h-72 overflow-y-auto py-1">
           {extra && extra.length > 0 && (
             <>
@@ -224,12 +280,20 @@ export function LevelPicker({
                   )}
                   onClick={() => pick(level)}
                 >
-                  <Check
-                    className={cn(
-                      "h-3.5 w-3.5 shrink-0",
-                      level.id === value ? "opacity-100" : "opacity-0",
-                    )}
-                  />
+                  {multiSelect ? (
+                    selected.some((l) => l.id === level.id) ? (
+                      <CheckSquare className="h-3.5 w-3.5 shrink-0 text-[var(--app-accent)]" />
+                    ) : (
+                      <Square className="h-3.5 w-3.5 shrink-0 opacity-40" />
+                    )
+                  ) : (
+                    <Check
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0",
+                        level.id === value ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                  )}
                   <span className="truncate">{level.name}</span>
                 </button>
               ))}
@@ -256,16 +320,38 @@ export function LevelPicker({
               )}
               onClick={() => pick(level)}
             >
-              <Check
-                className={cn(
-                  "h-3.5 w-3.5 shrink-0",
-                  level.id === value ? "opacity-100" : "opacity-0",
-                )}
-              />
+              {multiSelect ? (
+                selected.some((l) => l.id === level.id) ? (
+                  <CheckSquare className="h-3.5 w-3.5 shrink-0 text-[var(--app-accent)]" />
+                ) : (
+                  <Square className="h-3.5 w-3.5 shrink-0 opacity-40" />
+                )
+              ) : (
+                <Check
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0",
+                    level.id === value ? "opacity-100" : "opacity-0",
+                  )}
+                />
+              )}
               <span className="truncate">{level.name}</span>
             </button>
           ))}
         </div>
+        {multiSelect && (
+          <div className="border-t border-white/10 p-2">
+            <Button
+              size="sm"
+              onClick={confirmMany}
+              disabled={selected.length === 0}
+              className="h-8 w-full text-xs"
+            >
+              {selected.length === 0
+                ? "Select levels to add"
+                : `Add ${selected.length} level${selected.length === 1 ? "" : "s"}`}
+            </Button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

@@ -6,13 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CampaignCuratorDialog } from "@/components/CampaignCuratorDialog";
-import {
-  buildClassStandings,
-  CAMPAIGN_MAX_POINTS,
-  formatCountdown,
-  rankClassRows,
-  type CampaignStanding,
-} from "@/lib/campaign";
+import { CAMPAIGN_MAX_POINTS, formatCountdown, type CampaignStanding } from "@/lib/campaign";
 import {
   fetchCampaigns,
   fetchCampaign,
@@ -47,7 +41,6 @@ export function CampaignView({
   const [query, setQuery] = React.useState("");
   const [visible, setVisible] = React.useState(PAGE);
   const [expanded, setExpanded] = React.useState<string | null>(null);
-  const [classId, setClassId] = React.useState<string | null>(null);
   const [now, setNow] = React.useState(() => Date.now());
   const [curatorOpen, setCuratorOpen] = React.useState(false);
   const [reloadToken, setReloadToken] = React.useState(0);
@@ -93,7 +86,6 @@ export function CampaignView({
       .then((d) => {
         if (cancelled) return;
         setDetail(d);
-        setClassId(null);
         setVisible(PAGE);
         setExpanded(null);
       })
@@ -112,24 +104,18 @@ export function CampaignView({
   const campaign = detail?.campaign ?? null;
   const standings = React.useMemo(() => detail?.standings ?? [], [detail]);
 
-  const classRows = React.useMemo(() => {
-    if (!campaign) return new Map<string, CampaignStanding[]>();
-    return buildClassStandings(campaign, standings);
-  }, [campaign, standings]);
-
-  /** Ranks are 1-based within the active scope (overall, or one class). */
+  /** Ranks are 1-based, ties sharing the better rank. */
   const ranked = React.useMemo(() => {
-    const rows = classId ? (classRows.get(classId) ?? []) : standings;
     let rank = 0;
     let previous: number | null = null;
-    return rows.map((row, index) => {
+    return standings.map((row, index) => {
       if (previous === null || row.points !== previous) {
         rank = index + 1;
         previous = row.points;
       }
       return { ...row, rank };
     });
-  }, [standings, classId, classRows]);
+  }, [standings]);
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -137,7 +123,6 @@ export function CampaignView({
     return ranked.filter((r) => r.username.toLowerCase().includes(q));
   }, [ranked, query]);
 
-  const classOf = (id: string) => campaign?.classes.find((k) => k.id === id) ?? null;
   const status = detail?.status ?? "upcoming";
 
   return (
@@ -268,57 +253,10 @@ export function CampaignView({
             </CardContent>
           </Card>
 
-          {/* Classes double as a scope filter, so each has its own standings. */}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setClassId(null);
-                setVisible(PAGE);
-              }}
-              className={cn(
-                "h-8 px-3 text-[10px] uppercase tracking-widest border border-white/10",
-                classId === null
-                  ? "bg-[var(--app-accent)] text-slate-950 font-bold"
-                  : "text-slate-400",
-              )}
-            >
-              Overall
-            </Button>
-            {campaign.classes.map((k) => (
-              <Button
-                key={k.id}
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setClassId(k.id);
-                  setVisible(PAGE);
-                }}
-                className={cn(
-                  "h-8 px-3 text-[10px] uppercase tracking-widest border gap-2",
-                  classId === k.id ? "text-slate-950 font-bold" : "text-slate-300",
-                )}
-                style={
-                  classId === k.id
-                    ? { backgroundColor: k.color, borderColor: k.color }
-                    : { borderColor: `${k.color}66` }
-                }
-              >
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: classId === k.id ? "#0f172a" : k.color }}
-                />
-                {k.name}
-              </Button>
-            ))}
-          </div>
-
           <Card className="bg-white/5 border-white/10">
             <CardHeader className="border-b border-white/10 bg-white/[0.02] py-3">
               <CardTitle className="text-base font-bold text-white">
-                {classId ? `${classOf(classId)?.name} standings` : "Standings"} (
-                {filtered.length.toLocaleString()} players)
+                Standings ({filtered.length.toLocaleString()} players)
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 divide-y divide-white/5">
@@ -365,12 +303,21 @@ export function CampaignView({
                             onClick={() => onLevelClick?.(l.levelId)}
                             className="w-full grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 py-1.5 text-left hover:bg-white/[0.03] items-center"
                           >
-                            <span className="min-w-0 truncate text-sm text-slate-300 flex items-center gap-2">
+                            <span className="min-w-0 truncate text-sm flex items-center gap-2">
+                              {/* Dot inside a ring, both in the level's own colour. */}
                               <span
-                                className="w-1.5 h-3 rounded-sm shrink-0"
-                                style={{ backgroundColor: classOf(l.classId)?.color ?? "#64748B" }}
-                              />
-                              {l.levelName}
+                                className="flex items-center justify-center w-4 h-4 rounded-full shrink-0"
+                                style={{ boxShadow: `inset 0 0 0 1.5px ${l.color}` }}
+                                aria-hidden
+                              >
+                                <span
+                                  className="w-1.5 h-1.5 rounded-full"
+                                  style={{ backgroundColor: l.color }}
+                                />
+                              </span>
+                              <span className="min-w-0 truncate" style={{ color: l.color }}>
+                                {l.levelName}
+                              </span>
                               {l.position === 1 && (
                                 <Medal className="w-3 h-3 text-amber-400 shrink-0" />
                               )}

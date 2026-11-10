@@ -82,15 +82,20 @@ export function HomeCampaignCard({
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-white font-bold">{campaign.name}</span>
               <span className="text-xs text-slate-500">{campaign.levels.length} levels</span>
-              <div className="flex items-center gap-1.5">
-                {campaign.classes.map((k) => (
+              {/* A strip of the levels' own colours, so the campaign's palette
+                  reads at a glance without listing every level. */}
+              <div className="flex items-center gap-1">
+                {campaign.levels.slice(0, 12).map((l) => (
                   <span
-                    key={k.id}
-                    title={k.name}
+                    key={l.id}
+                    title={l.name}
                     className="w-2.5 h-2.5 rounded-full"
-                    style={{ backgroundColor: k.color }}
+                    style={{ backgroundColor: l.color }}
                   />
                 ))}
+                {campaign.levels.length > 12 && (
+                  <span className="text-[10px] text-slate-500">+{campaign.levels.length - 12}</span>
+                )}
               </div>
             </div>
             <Button

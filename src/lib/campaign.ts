@@ -40,19 +40,16 @@ export const GAP_STEEPNESS = 18;
 /** Largest fraction of the score position alone can cost. */
 export const MAX_POSITION_PENALTY = 0.1;
 
-/** A class of tracks (the campaign's difficulty/theme grouping). */
-export interface CampaignClass {
-  id: string;
-  name: string;
-  /** Hex colour used for the class chip, badge and accent bar. */
-  color: string;
-}
-
-/** One curated level in a campaign. The class places it in the standings. */
+/** One curated level in a campaign, tagged with its own free colour. */
 export interface CampaignLevel {
   id: string;
   name: string;
-  classId: string;
+  /**
+   * Hex colour the curator assigned to this level, e.g. `#38BDF8`. Purely
+   * presentational — it is the level's identity in the list, not a grouping
+   * that affects scoring.
+   */
+  color: string;
 }
 
 /**
@@ -67,13 +64,55 @@ export interface Campaign {
   startsAt: number;
   endsAt: number;
   levels: CampaignLevel[];
-  classes: CampaignClass[];
+}
+
+/**
+ * The colours a freshly added level cycles through, so a new campaign is
+ * visually varied without the curator touching a picker. Any hex is accepted;
+ * these are only a pleasant default sequence.
+ */
+export const CAMPAIGN_COLOR_PALETTE = [
+  "#38bdf8",
+  "#f472b6",
+  "#fbbf24",
+  "#a78bfa",
+  "#34d399",
+  "#fb7185",
+  "#22d3ee",
+  "#a3e635",
+  "#f97316",
+  "#c084fc",
+] as const;
+
+/** The palette colour at `index`, wrapping. */
+export function campaignPaletteColor(index: number): string {
+  return CAMPAIGN_COLOR_PALETTE[index % CAMPAIGN_COLOR_PALETTE.length];
+}
+
+/** Shown when a stored colour is missing or unparsable. */
+export const CAMPAIGN_FALLBACK_COLOR = "#64748b";
+
+/**
+ * Normalises a colour to a `#rrggbb` string, falling back when it is absent or
+ * unparsable. Accepts a bare `#rgb`/`#rrggbb` and expands the short form, so a
+ * colour typed into a picker and one stored by an older payload agree.
+ */
+export function normalizeCampaignColor(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return CAMPAIGN_FALLBACK_COLOR;
+  const hex = raw.startsWith("#") ? raw.slice(1) : raw;
+  if (/^[0-9a-f]{3}$/i.test(hex)) {
+    return `#${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}`.toLowerCase();
+  }
+  if (/^[0-9a-f]{6}$/i.test(hex)) return `#${hex.toLowerCase()}`;
+  return CAMPAIGN_FALLBACK_COLOR;
 }
 
 export interface CampaignLevelScore {
   levelId: string;
   levelName: string;
-  classId: string;
+  /** The level's own colour, copied through for the per-level rows. */
+  color: string;
   /** The player's fastest run on this level, any arrow. */
   time: number;
   wrTime: number;
@@ -182,7 +221,7 @@ export function buildCampaignStandings(
       row.levels.push({
         levelId: level.id,
         levelName: level.name,
-        classId: level.classId,
+        color: level.color,
         time: entry.completion_time,
         wrTime,
         position,
@@ -199,53 +238,36 @@ export function buildCampaignStandings(
   );
 }
 
-/** Per-class totals, so each class has its own mini-standings. */
-export function buildClassStandings(
-  campaign: Campaign,
+/**
+ * Re-colours a stored (frozen) standings snapshot from the campaign's current
+ * level list, dropping the legacy `classId`.
+ *
+ * A snapshot taken before per-level colours was saved with a `classId` per
+ * level, so serving it verbatim would leave every per-level row colourless. The
+ * times and points are the historical record and are left untouched — only the
+ * colour, which is presentation, is re-derived.
+ */
+export function applyLevelColors(
   standings: CampaignStanding[],
-): Map<string, CampaignStanding[]> {
-  const byClass = new Map<string, CampaignStanding[]>();
-  for (const klass of campaign.classes) {
-    const classLevelIds = new Set(
-      campaign.levels.filter((l) => l.classId === klass.id).map((l) => l.id),
-    );
-    const rows: CampaignStanding[] = [];
-    for (const row of standings) {
-      const levels = row.levels.filter((l) => classLevelIds.has(l.levelId));
-      if (levels.length === 0) continue;
-      rows.push({
-        ...row,
-        points: levels.reduce((sum, l) => sum + l.points, 0),
-        maxPoints: classLevelIds.size * CAMPAIGN_MAX_POINTS,
-        levelsPlayed: levels.length,
-        levelCount: classLevelIds.size,
-        totalTime: levels.reduce((sum, l) => sum + l.time, 0),
-        bestFinish: levels.reduce((best, l) => Math.min(best, l.position), Infinity),
-        levels,
-      });
-    }
-    rows.sort(
-      (a, b) =>
-        b.points - a.points || a.totalTime - b.totalTime || a.username.localeCompare(b.username),
-    );
-    byClass.set(klass.id, rows);
-  }
-  return byClass;
-}
-
-/** Ranks within a class, 1-based, ties sharing the better rank. */
-export function rankClassRows(
-  rows: CampaignStanding[],
-): Array<CampaignStanding & { rank: number }> {
-  let rank = 0;
-  let previousPoints: number | null = null;
-  return rows.map((row, index) => {
-    if (previousPoints === null || row.points !== previousPoints) {
-      rank = index + 1;
-      previousPoints = row.points;
-    }
-    return { ...row, rank };
-  });
+  levels: CampaignLevel[],
+): CampaignStanding[] {
+  const colorOf = new Map(levels.map((l) => [l.id, l.color]));
+  return standings.map((row) => ({
+    ...row,
+    levels: row.levels.map((l) => {
+      const legacy = l as CampaignLevelScore & { classId?: string };
+      return {
+        levelId: legacy.levelId,
+        levelName: legacy.levelName,
+        time: legacy.time,
+        wrTime: legacy.wrTime,
+        position: legacy.position,
+        entrants: legacy.entrants,
+        points: legacy.points,
+        color: colorOf.get(legacy.levelId) ?? normalizeCampaignColor(legacy.color),
+      };
+    }),
+  }));
 }
 
 /** Time left as a compact "12d 4h" / "3h 20m" / "18m" string. */
