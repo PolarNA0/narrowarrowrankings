@@ -1,15 +1,21 @@
 import * as React from "react";
-import { Clock, Flag, Medal, Search, Settings, Trophy } from "lucide-react";
+import { Clock, Flag, Medal, RefreshCw, Search, Settings, Trophy } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CampaignCuratorDialog } from "@/components/CampaignCuratorDialog";
-import { CAMPAIGN_MAX_POINTS, formatCountdown, type CampaignStanding } from "@/lib/campaign";
+import {
+  CAMPAIGN_MAX_POINTS,
+  formatCountdown,
+  formatRelativeAge,
+  type CampaignStanding,
+} from "@/lib/campaign";
 import {
   fetchCampaigns,
   fetchCampaign,
+  refreshCampaignRequest,
   type CampaignDetail,
   type CampaignSummary,
 } from "@/lib/campaign-client";
@@ -44,6 +50,7 @@ export function CampaignView({
   const [now, setNow] = React.useState(() => Date.now());
   const [curatorOpen, setCuratorOpen] = React.useState(false);
   const [reloadToken, setReloadToken] = React.useState(0);
+  const [refreshing, setRefreshing] = React.useState(false);
 
   // A live countdown only matters while a campaign is running.
   React.useEffect(() => {
@@ -101,6 +108,35 @@ export function CampaignView({
     };
   }, [selected]);
 
+  /**
+   * Pull the campaign's cached standings up to date. The server stores the
+   * result, so this is a one-off cost rather than something every visitor pays.
+   */
+  const refreshStandings = React.useCallback(async () => {
+    if (!selected) return;
+    setRefreshing(true);
+    setError(null);
+    try {
+      const fresh = await refreshCampaignRequest(selected);
+      setDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              standings: fresh.standings,
+              status: fresh.status,
+              cachedAt: fresh.cachedAt,
+              stale: fresh.stale,
+            }
+          : prev,
+      );
+      setNow(Date.now());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to refresh the standings.");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [selected]);
+
   const campaign = detail?.campaign ?? null;
   const standings = React.useMemo(() => detail?.standings ?? [], [detail]);
 
@@ -152,16 +188,31 @@ export function CampaignView({
         </div>
       </div>
 
-      {isAdmin && (
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setCuratorOpen(true)}
-            className="h-8 px-3 text-[10px] uppercase tracking-widest border border-white/10 text-slate-300 gap-2"
-          >
-            <Settings className="w-3.5 h-3.5" /> Curate campaign
-          </Button>
+      {(isAdmin || (campaign && detail?.stale)) && (
+        <div className="flex justify-end items-center gap-2">
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setCuratorOpen(true)}
+              className="h-8 px-3 text-[10px] uppercase tracking-widest border border-white/10 text-slate-300 gap-2"
+            >
+              <Settings className="w-3.5 h-3.5" /> Curate campaign
+            </Button>
+          )}
+          {campaign && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={refreshStandings}
+              disabled={refreshing}
+              title="Re-fetch every level's board and update the standings"
+              className="h-8 px-3 text-[10px] uppercase tracking-widest border border-white/10 text-slate-300 gap-2"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin")} />
+              {refreshing ? "Refreshing" : "Refresh times"}
+            </Button>
+          )}
         </div>
       )}
 
@@ -249,6 +300,22 @@ export function CampaignView({
                     {(campaign.levels.length * CAMPAIGN_MAX_POINTS).toLocaleString()}
                   </div>
                 </div>
+                {status !== "ended" && detail?.cachedAt ? (
+                  <div className="text-right">
+                    <div className="text-[10px] uppercase tracking-widest text-slate-500">
+                      Times
+                    </div>
+                    <div
+                      className={cn(
+                        "font-mono text-sm",
+                        detail.stale ? "text-amber-300" : "text-slate-400",
+                      )}
+                      title={new Date(detail.cachedAt).toLocaleString()}
+                    >
+                      {formatRelativeAge(detail.cachedAt, now)}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>

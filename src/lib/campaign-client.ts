@@ -17,6 +17,20 @@ export interface CampaignDetail {
   campaign: CampaignRecord;
   standings: CampaignStanding[];
   status: CampaignStatus;
+  /** Epoch ms the standings were computed, when the server reported one. */
+  cachedAt?: number;
+  /** True once the snapshot is older than the refresh window. */
+  stale?: boolean;
+}
+
+/** The result of a standings refresh. */
+export interface CampaignRefresh {
+  standings: CampaignStanding[];
+  status: CampaignStatus;
+  cachedAt?: number;
+  stale?: boolean;
+  /** Set when the refresh came too soon after the last one and was skipped. */
+  throttled?: boolean;
 }
 
 /** Every campaign, newest first. */
@@ -39,6 +53,20 @@ export async function fetchCampaign(
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Campaign request failed (${res.status})`);
   return (await res.json()) as CampaignDetail;
+}
+
+/**
+ * Recompute a campaign's standings from the live boards and store the result.
+ * Public: the point of the cache is that anyone can pull it up to date.
+ */
+export async function refreshCampaignRequest(id: string): Promise<CampaignRefresh> {
+  const res = await fetch(`/api/campaigns/${encodeURIComponent(id)}?refresh=1`, {
+    method: "POST",
+    signal: AbortSignal.timeout(90000),
+  });
+  const data = (await res.json()) as CampaignRefresh & { error?: string };
+  if (!res.ok) throw new Error(data.error ?? `Refresh failed (${res.status})`);
+  return data;
 }
 
 async function adminHeaders(): Promise<HeadersInit> {

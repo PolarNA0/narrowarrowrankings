@@ -158,6 +158,22 @@ export function campaignLevelPoints(time: number, wrTime: number, position: numb
   return Math.max(0, Math.round(paceScore * (1 - positionPenalty)));
 }
 
+/**
+ * A short "how long ago" label for a cached snapshot, e.g. `just now`, `4m ago`.
+ * Used to show how current a campaign's standings are, since they are served
+ * from a stored snapshot rather than recomputed on every read.
+ */
+export function formatRelativeAge(at: number, now = Date.now()): string {
+  if (!Number.isFinite(at) || at <= 0) return "—";
+  const seconds = Math.max(0, Math.round((now - at) / 1000));
+  if (seconds < 45) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
 export function campaignStatus(campaign: Campaign, now: number): CampaignStatus {
   if (now < campaign.startsAt) return "upcoming";
   if (now > campaign.endsAt) return "ended";

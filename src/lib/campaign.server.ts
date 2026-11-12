@@ -30,6 +30,21 @@ import {
 const MEMO_TTL_MS = 30_000;
 const standingsMemo = new Map<string, { at: number; standings: CampaignStanding[] }>();
 
+/**
+ * How long a persisted standings snapshot is served before it is considered due
+ * for a recompute. This is the *staleness* signal shown in the UI, not a hard
+ * expiry: an old snapshot is still served (and still correct as of `cachedAt`),
+ * because recomputing reads a board per level.
+ */
+export const STANDINGS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Floor between two recomputes of the same campaign. The refresh endpoint is
+ * public, and a recompute is ~3 upstream requests per level against a ~120/min
+ * budget, so a press within this window is answered from the cache instead.
+ */
+export const MIN_REFRESH_INTERVAL_MS = 30_000;
+
 export function readStandingsMemo(id: string): CampaignStanding[] | null {
   const hit = standingsMemo.get(id);
   if (hit && Date.now() - hit.at < MEMO_TTL_MS) return hit.standings;
@@ -71,6 +86,49 @@ export interface CampaignRecord extends Campaign {
   frozenAt: number | null;
   /** The snapshot taken at close. Authoritative once present. */
   standings?: CampaignStanding[];
+  /**
+   * The last computed standings while the campaign is live, kept so a read does
+   * not have to recompute from every level's board. Distinct from `standings`:
+   * that one is the final result and never moves, whereas this is a cache of a
+   * live value and is refreshed when someone presses refresh.
+   */
+  cachedStandings?: CampaignStanding[];
+  /** Epoch ms `cachedStandings` was computed at. */
+  cachedAt?: number | null;
+}
+
+/** The cached live standings plus when they were computed. */
+export interface StandingsCache {
+  standings: CampaignStanding[];
+  cachedAt: number;
+}
+
+/** A campaign's cached live standings, or null when nothing is cached. */
+export function readStandingsCache(record: CampaignRecord): StandingsCache | null {
+  const standings = record.cachedStandings;
+  if (!Array.isArray(standings)) return null;
+  return { standings, cachedAt: Number(record.cachedAt ?? 0) || 0 };
+}
+
+/** True once a cache is old enough that a recompute is worth offering. */
+export function isStandingsCacheStale(cache: StandingsCache | null, now = Date.now()): boolean {
+  if (!cache) return true;
+  return now - cache.cachedAt > STANDINGS_CACHE_TTL_MS;
+}
+
+/**
+ * Writes freshly computed standings onto a campaign without disturbing the rest
+ * of the record. Used by the recompute path so the cache survives independently
+ * of the level list.
+ */
+export async function writeStandingsCache(
+  record: CampaignRecord,
+  standings: CampaignStanding[],
+  at = Date.now(),
+): Promise<CampaignRecord> {
+  const next: CampaignRecord = { ...record, cachedStandings: standings, cachedAt: at };
+  await persistRecord(next);
+  return next;
 }
 
 const memoryCampaigns = new Map<string, CampaignRecord>();
@@ -195,6 +253,24 @@ export async function readCampaignPublic(id: string): Promise<CampaignRecord | n
 }
 
 /**
+ * Writes a campaign record verbatim, without touching the index. Split out of
+ * `saveCampaign` so the standings cache can be persisted on its own.
+ */
+async function persistRecord(record: CampaignRecord): Promise<void> {
+  if (memoryStoreEnabled()) {
+    memoryCampaigns.set(record.id, record);
+    return;
+  }
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  await supabaseAdmin
+    .from("app_docs")
+    .upsert(
+      { collection: COLLECTION, doc_id: record.id, data: record as never },
+      { onConflict: "collection,doc_id" },
+    );
+}
+
+/**
  * Creates or replaces a campaign. The frozen snapshot is carried over from any
  * existing doc, so a later metadata edit cannot silently discard the result of
  * a finished campaign.
@@ -202,29 +278,51 @@ export async function readCampaignPublic(id: string): Promise<CampaignRecord | n
 export async function saveCampaign(record: CampaignRecord): Promise<void> {
   const now = new Date().toISOString();
   const existing = await readCampaign(record.id);
+
+  /**
+   * The cached standings are only valid for the level list they were computed
+   * from — every level contributes points, so adding or removing one changes
+   * every player's total. A save that alters the level list therefore drops the
+   * cache rather than serving numbers that no longer match the campaign.
+   */
+  const levelsChanged =
+    !existing ||
+    existing.levels.length !== record.levels.length ||
+    existing.levels.some((l, i) => l.id !== record.levels[i]?.id);
+  const cachedStandings = levelsChanged
+    ? undefined
+    : (record.cachedStandings ?? existing?.cachedStandings);
+  const cachedAt = levelsChanged ? null : (record.cachedAt ?? existing?.cachedAt ?? null);
+
   const next: CampaignRecord = {
     ...record,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     frozenAt: record.frozenAt ?? existing?.frozenAt ?? null,
     standings: record.standings ?? existing?.standings,
+    cachedStandings,
+    cachedAt,
   };
 
+  /**
+   * A frozen campaign's `standings` are authoritative and never re-derived, so
+   * its live cache is dead weight — and leaving both in the doc invites the
+   * question of which one wins. Keep only the final snapshot.
+   */
+  if (next.frozenAt !== null) {
+    delete next.cachedStandings;
+    next.cachedAt = null;
+  }
+
+  await persistRecord(next);
+
   if (memoryStoreEnabled()) {
-    memoryCampaigns.set(next.id, next);
     const index = await readIndex();
     const without = index.filter((c) => c.id !== next.id);
     await writeIndex([...without, summarise(next)]);
     return;
   }
 
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  await supabaseAdmin
-    .from("app_docs")
-    .upsert(
-      { collection: COLLECTION, doc_id: next.id, data: next as never },
-      { onConflict: "collection,doc_id" },
-    );
   const index = await readIndex();
   const without = index.filter((c) => c.id !== next.id);
   await writeIndex([...without, summarise(next)]);

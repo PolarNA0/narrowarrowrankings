@@ -13,6 +13,12 @@ import {
   readStandingsMemo,
   writeStandingsMemo,
   clearStandingsMemo,
+  readStandingsCache,
+  writeStandingsCache,
+  isStandingsCacheStale,
+  MIN_REFRESH_INTERVAL_MS,
+  type CampaignRecord,
+  type StandingsCache,
 } from "@/lib/campaign.server";
 import { fetchLevelBoard } from "@/lib/leaderboard-source";
 import { readSnapshot } from "@/lib/board-snapshot.server";
@@ -77,6 +83,24 @@ async function computeStandings(
   return standings;
 }
 
+/**
+ * Recomputes standings and persists them onto the campaign, so the next read is
+ * served from the stored cache rather than re-reading every level's board.
+ *
+ * The persist is best-effort: a read must still succeed if the write fails (a
+ * missing service key, a transient error), it just stays slow.
+ */
+async function recomputeStandings(record: CampaignRecord): Promise<StandingsCache> {
+  const standings = await computeStandings(record);
+  const at = Date.now();
+  try {
+    await writeStandingsCache(record, standings, at);
+  } catch {
+    /* the cache is an optimisation; the response is still correct */
+  }
+  return { standings, cachedAt: at };
+}
+
 export const Route = createFileRoute("/api/campaigns/$id")({
   server: {
     handlers: {
@@ -108,27 +132,86 @@ export const Route = createFileRoute("/api/campaigns/$id")({
               campaign: publicView(record),
               standings: summaryOnly ? snapshot.slice(0, 5) : snapshot,
               status: "ended",
+              cachedAt: record.frozenAt,
+              stale: false,
             },
             { headers: { "cache-control": "public, max-age=300" } },
           );
         }
 
-        const standings = await computeStandings(record);
+        /**
+         * A live campaign is served from its stored snapshot so a visitor never
+         * waits on a board per level. The first read after a level-list change
+         * (or on a campaign with nothing cached yet) computes and stores one.
+         */
+        const cache = readStandingsCache(record);
+        const cached = cache ?? (await recomputeStandings(record));
+        const stale = isStandingsCacheStale(cached);
+
         return Response.json(
           {
             campaign: publicView(record),
-            standings: summaryOnly ? standings.slice(0, 5) : standings,
+            standings: summaryOnly ? cached.standings.slice(0, 5) : cached.standings,
             status,
+            cachedAt: cached.cachedAt,
+            stale,
           },
           { headers: { "cache-control": "no-store" } },
         );
       },
 
       /**
-       * Admin: freeze the campaign, snapshotting its standings permanently.
-       * Safe to call repeatedly — the first snapshot wins.
+       * `?refresh=1`: recompute the standings from the live boards and store
+       * them, returning the fresh result. Public on purpose — any visitor can
+       * pull a campaign up to date, which is what keeps the cached snapshot from
+       * drifting. Rate-limited by `MIN_REFRESH_INTERVAL_MS` so a burst of presses
+       * cannot burn the upstream budget.
+       *
+       * Without the flag: admin only — freeze the campaign, snapshotting its
+       * standings permanently. Safe to call repeatedly; the first snapshot wins.
        */
       POST: async ({ params, request }) => {
+        const refresh = new URL(request.url).searchParams.get("refresh") === "1";
+
+        if (refresh) {
+          // The public read is tried too: refresh must work in a deployment
+          // without the service role, and the admin read returns null there.
+          const stored = (await readCampaign(params.id)) ?? (await readCampaignPublic(params.id));
+          if (!stored) return Response.json({ error: "Not found." }, { status: 404 });
+          const record = normalizeStoredCampaign(stored);
+
+          // A closed campaign's result is final; there is nothing to refresh.
+          if (record.frozenAt !== null && record.standings) {
+            const snapshot = applyLevelColors(record.standings, record.levels);
+            return Response.json({
+              standings: snapshot,
+              status: "ended",
+              cachedAt: record.frozenAt,
+              stale: false,
+            });
+          }
+
+          const existing = readStandingsCache(record);
+          if (existing && Date.now() - existing.cachedAt < MIN_REFRESH_INTERVAL_MS) {
+            // Too soon: answer from what we have rather than hammering upstream.
+            return Response.json({
+              standings: existing.standings,
+              status: campaignStatus(record, Date.now()),
+              cachedAt: existing.cachedAt,
+              stale: isStandingsCacheStale(existing),
+              throttled: true,
+            });
+          }
+
+          const fresh = await recomputeStandings(record);
+          return Response.json({
+            standings: fresh.standings,
+            status: campaignStatus(record, Date.now()),
+            cachedAt: fresh.cachedAt,
+            stale: false,
+          });
+        }
+
         if (!(await verifyAdminRequest(request))) {
           return Response.json({ error: "Not authorized." }, { status: 403 });
         }

@@ -502,5 +502,102 @@ function entry(username: string, time: number, arrow = "Narrow Arrow"): Leaderbo
   check("a cleared memo is gone", readStandingsMemo("memo-a") === null);
 }
 
+// ---- The persisted standings cache ----------------------------------------
+{
+  const {
+    parseCampaign,
+    saveCampaign,
+    readCampaign,
+    readStandingsCache,
+    writeStandingsCache,
+    isStandingsCacheStale,
+    STANDINGS_CACHE_TTL_MS,
+    __resetCampaignMemory,
+  } = await import("@/lib/campaign.server");
+  const { formatRelativeAge } = await import("@/lib/campaign");
+
+  __resetCampaignMemory();
+  const parsed = parseCampaign({
+    id: "cache-test",
+    name: "Cache Test",
+    startsAt: 1_000,
+    endsAt: 2_000,
+    levels: [
+      { id: "L1", name: "One", color: "#38BDF8" },
+      { id: "L2", name: "Two", color: "#F59E0B" },
+    ],
+  });
+  if ("error" in parsed) throw new Error(`fixture invalid: ${parsed.error}`);
+  await saveCampaign(parsed);
+
+  const stored = await readCampaign("cache-test");
+  check("a fresh campaign has no standings cache", readStandingsCache(stored!) === null);
+  check("a missing cache reads as stale", isStandingsCacheStale(null));
+
+  const row = {
+    username: "Polar",
+    points: 500,
+    levelsPlayed: 1,
+    levelCount: 2,
+    maxPoints: 2000,
+    bestFinish: 1,
+    totalTime: 10,
+    levels: [],
+  };
+  const at = 1_700_000_000_000;
+  const written = await writeStandingsCache(stored!, [row as never], at);
+  check("writing the cache returns the updated record", written.cachedAt === at);
+
+  const reread = await readCampaign("cache-test");
+  const cache = readStandingsCache(reread!);
+  check(
+    "the cache round-trips through the store",
+    cache?.standings.length === 1,
+    `${cache?.standings.length}`,
+  );
+  check("the cache keeps its timestamp", cache?.cachedAt === at);
+  check("a fresh cache is not stale", !isStandingsCacheStale(cache, at + 1000));
+  check(
+    "a cache past the TTL is stale",
+    isStandingsCacheStale(cache, at + STANDINGS_CACHE_TTL_MS + 1),
+  );
+
+  // A save that leaves the level list alone must not drop the cache.
+  const kept = await saveCampaign({ ...reread!, name: "Cache Test Renamed" });
+  const afterRename = readStandingsCache((await readCampaign("cache-test"))!);
+  check("renaming a campaign keeps its cache", afterRename?.standings.length === 1);
+  void kept;
+
+  // Changing the level list invalidates it — points would no longer match.
+  await saveCampaign({
+    ...(await readCampaign("cache-test"))!,
+    levels: [
+      { id: "L1", name: "One", color: "#38BDF8" },
+      { id: "L2", name: "Two", color: "#F59E0B" },
+      { id: "L3", name: "Three", color: "#F43F5E" },
+    ],
+  });
+  const afterLevels = await readCampaign("cache-test");
+  check("adding a level drops the cache", readStandingsCache(afterLevels!) === null);
+
+  // Freezing keeps only the final snapshot.
+  await saveCampaign({
+    ...(await readCampaign("cache-test"))!,
+    standings: [row as never],
+    frozenAt: 1_800_000_000_000,
+  });
+  const frozen = await readCampaign("cache-test");
+  check("a frozen campaign keeps its final standings", frozen?.standings?.length === 1);
+  check("a frozen campaign has no live cache", readStandingsCache(frozen!) === null);
+
+  // The age label the UI shows.
+  const t0 = 1_700_000_000_000;
+  check("age under a minute reads as just now", formatRelativeAge(t0, t0 + 10_000) === "just now");
+  check("age in minutes", formatRelativeAge(t0, t0 + 4 * 60_000) === "4m ago");
+  check("age in hours", formatRelativeAge(t0, t0 + 3 * 3_600_000) === "3h ago");
+  check("age in days", formatRelativeAge(t0, t0 + 2 * 86_400_000) === "2d ago");
+  check("a zero timestamp has no age", formatRelativeAge(0, t0) === "—");
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
