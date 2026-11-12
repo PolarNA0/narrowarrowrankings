@@ -599,5 +599,79 @@ function entry(username: string, time: number, arrow = "Narrow Arrow"): Leaderbo
   check("a zero timestamp has no age", formatRelativeAge(0, t0) === "—");
 }
 
+// ---- Ordering the board by points or by total time ------------------------
+{
+  const { sortCampaignRows, rankCampaignRows } = await import("@/lib/campaign");
+
+  const rows = [
+    { username: "Partial", points: 900, totalTime: 100 },
+    { username: "Complete", points: 800, totalTime: 200 },
+    { username: "AlsoComplete", points: 800, totalTime: 150 },
+  ];
+
+  const byPoints = sortCampaignRows(rows, "points");
+  check(
+    "points order puts the top scorer first",
+    byPoints.map((r) => r.username).join(",") === "Partial,AlsoComplete,Complete",
+    byPoints.map((r) => r.username).join(","),
+  );
+  check(
+    "equal points fall back to the lower total time",
+    byPoints[1].username === "AlsoComplete" && byPoints[2].username === "Complete",
+  );
+
+  const byTime = sortCampaignRows(rows, "time");
+  check(
+    "time order puts the lowest total first, ignoring points",
+    byTime.map((r) => r.username).join(",") === "Partial,AlsoComplete,Complete",
+    byTime.map((r) => r.username).join(","),
+  );
+  check("sorting does not mutate the input", rows[0].username === "Partial");
+  check("a partial player can lead on time but not on points", byTime[0].username === "Partial");
+
+  const rankedByPoints = rankCampaignRows(byPoints, "points");
+  check("points ranks are 1-based", rankedByPoints[0].rank === 1);
+  check("equal points share a rank", rankedByPoints[1].rank === 2 && rankedByPoints[2].rank === 2);
+
+  const tied = rankCampaignRows(
+    [
+      { points: 10, totalTime: 5 },
+      { points: 10, totalTime: 5 },
+      { points: 1, totalTime: 9 },
+    ],
+    "points",
+  );
+  check("a tie shares the better rank and the next skips", tied[2].rank === 3, `${tied[2].rank}`);
+
+  const rankedByTime = rankCampaignRows(byTime, "time");
+  check("time ranks follow the time order", rankedByTime[0].rank === 1);
+  check("time ranking is monotonic", rankedByTime[0].rank <= rankedByTime[1].rank);
+
+  // A player who ran one short level leads on raw total. That is the honest
+  // consequence of summing only played levels, which is why the board shows the
+  // level count next to the total; points order is the campaign's real standing.
+  const singleLevel = sortCampaignRows(
+    [
+      { username: "OneLevel", points: 50, totalTime: 10 },
+      { username: "AllLevels", points: 5000, totalTime: 300 },
+    ],
+    "time",
+  );
+  check(
+    "a one-level player tops the time board (the known caveat)",
+    singleLevel[0].username === "OneLevel",
+  );
+  check(
+    "but not the points board",
+    sortCampaignRows(
+      [
+        { username: "OneLevel", points: 50, totalTime: 10 },
+        { username: "AllLevels", points: 5000, totalTime: 300 },
+      ],
+      "points",
+    )[0].username === "AllLevels",
+  );
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

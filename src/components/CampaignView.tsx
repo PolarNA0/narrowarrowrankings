@@ -10,6 +10,9 @@ import {
   CAMPAIGN_MAX_POINTS,
   formatCountdown,
   formatRelativeAge,
+  rankCampaignRows,
+  sortCampaignRows,
+  type CampaignSortMode,
   type CampaignStanding,
 } from "@/lib/campaign";
 import {
@@ -51,6 +54,7 @@ export function CampaignView({
   const [curatorOpen, setCuratorOpen] = React.useState(false);
   const [reloadToken, setReloadToken] = React.useState(0);
   const [refreshing, setRefreshing] = React.useState(false);
+  const [sortMode, setSortMode] = React.useState<CampaignSortMode>("points");
 
   // A live countdown only matters while a campaign is running.
   React.useEffect(() => {
@@ -140,18 +144,15 @@ export function CampaignView({
   const campaign = detail?.campaign ?? null;
   const standings = React.useMemo(() => detail?.standings ?? [], [detail]);
 
-  /** Ranks are 1-based, ties sharing the better rank. */
-  const ranked = React.useMemo(() => {
-    let rank = 0;
-    let previous: number | null = null;
-    return standings.map((row, index) => {
-      if (previous === null || row.points !== previous) {
-        rank = index + 1;
-        previous = row.points;
-      }
-      return { ...row, rank };
-    });
-  }, [standings]);
+  /**
+   * The board order. Points is the campaign's own score; time sums the levels a
+   * player actually ran, so a partial campaign can out-rank a complete one — the
+   * per-row "not played" line is the caveat.
+   */
+  const ranked = React.useMemo(
+    () => rankCampaignRows(sortCampaignRows(standings, sortMode), sortMode),
+    [standings, sortMode],
+  );
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -322,9 +323,40 @@ export function CampaignView({
 
           <Card className="bg-white/5 border-white/10">
             <CardHeader className="border-b border-white/10 bg-white/[0.02] py-3">
-              <CardTitle className="text-base font-bold text-white">
-                Standings ({filtered.length.toLocaleString()} players)
-              </CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-base font-bold text-white">
+                  Standings ({filtered.length.toLocaleString()} players)
+                </CardTitle>
+                <div className="flex items-center gap-1 rounded border border-white/10 p-0.5">
+                  {(
+                    [
+                      ["points", "Points"],
+                      ["time", "Total time"],
+                    ] as const
+                  ).map(([mode, label]) => (
+                    <Button
+                      key={mode}
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setSortMode(mode)}
+                      className={cn(
+                        "h-6 px-2 text-[10px] uppercase tracking-widest rounded-sm",
+                        sortMode === mode
+                          ? "bg-[var(--app-accent)] text-slate-950 font-bold"
+                          : "text-slate-400",
+                      )}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              {sortMode === "time" && (
+                <p className="text-[11px] text-slate-500 pt-1">
+                  Summed across the levels each player ran — players who ran fewer levels have less
+                  time on the clock, so check the “levels” column.
+                </p>
+              )}
             </CardHeader>
             <CardContent className="p-0 divide-y divide-white/5">
               {filtered.slice(0, visible).map((row) => (
@@ -343,13 +375,32 @@ export function CampaignView({
                       )}
                       {displayNameFor(profiles, row.username)}
                     </span>
-                    <span className="font-mono text-sm text-[var(--app-accent)] font-bold text-right">
+                    <span
+                      className={cn(
+                        "font-mono text-sm text-right",
+                        sortMode === "points"
+                          ? "text-[var(--app-accent)] font-bold"
+                          : "text-slate-500",
+                      )}
+                    >
                       {row.points.toLocaleString()}
                     </span>
-                    <span className="hidden md:block font-mono text-xs text-slate-500 text-right">
+                    <span
+                      className={cn(
+                        "font-mono text-xs text-slate-500 text-right",
+                        sortMode === "time" ? "block" : "hidden md:block",
+                      )}
+                    >
                       {row.levelsPlayed}/{row.levelCount} levels
                     </span>
-                    <span className="font-mono text-xs text-slate-400 text-right">
+                    <span
+                      className={cn(
+                        "font-mono text-right",
+                        sortMode === "time"
+                          ? "text-sm text-[var(--app-accent)] font-bold"
+                          : "text-xs text-slate-400",
+                      )}
+                    >
                       {formatTime(row.totalTime)}
                     </span>
                   </button>

@@ -158,6 +158,52 @@ export function campaignLevelPoints(time: number, wrTime: number, position: numb
   return Math.max(0, Math.round(paceScore * (1 - positionPenalty)));
 }
 
+/** How a campaign board is ordered. */
+export type CampaignSortMode = "points" | "time";
+
+/**
+ * Orders a campaign board by points (the campaign's own score) or by total time
+ * summed across the levels a player actually ran.
+ *
+ * Total time deliberately sums only played levels: charging a missed level an
+ * arbitrary penalty would invent a time that was never set, and the "x levels
+ * not played" line on each row is what tells the reader the totals are not
+ * like-for-like. Points order is the campaign's real standing; time order is a
+ * secondary view of the same runs.
+ */
+export function sortCampaignRows<T extends { points: number; totalTime: number; username: string }>(
+  rows: T[],
+  mode: CampaignSortMode,
+): T[] {
+  const sorted = [...rows];
+  sorted.sort((a, b) =>
+    mode === "time"
+      ? a.totalTime - b.totalTime || b.points - a.points || a.username.localeCompare(b.username)
+      : b.points - a.points || a.totalTime - b.totalTime || a.username.localeCompare(b.username),
+  );
+  return sorted;
+}
+
+/**
+ * Ranks ordered rows 1-based, ties sharing the better rank. The key compared is
+ * the value the board is sorted by, so the ranks match what the reader sees.
+ */
+export function rankCampaignRows<T extends { points: number; totalTime: number }>(
+  rows: T[],
+  mode: CampaignSortMode,
+): (T & { rank: number })[] {
+  let rank = 0;
+  let previous: number | null = null;
+  return rows.map((row, index) => {
+    const key = mode === "time" ? row.totalTime : row.points;
+    if (previous === null || key !== previous) {
+      rank = index + 1;
+      previous = key;
+    }
+    return { ...row, rank };
+  });
+}
+
 /**
  * A short "how long ago" label for a cached snapshot, e.g. `just now`, `4m ago`.
  * Used to show how current a campaign's standings are, since they are served
